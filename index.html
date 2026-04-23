@@ -1031,7 +1031,6 @@ function renderTable(rows) {
 
   const pf    = S.phaseFilter;
   const isP34 = pf==='p3';
-  const isP5  = pf==='p4';
   const cols  = isP34 ? 8 : 12;
 
   // ── Dynamic thead ─────────────────────────────────────────────────────────
@@ -1053,7 +1052,7 @@ function renderTable(rows) {
       <th onclick="sortBy('store')">Store</th>
       <th onclick="sortBy('route')">Route</th>
       <th onclick="sortBy('type')">Type</th>
-      <th onclick="sortBy('status')">${isP5?'Workflow Status':'Status'}</th>
+      <th onclick="sortBy('status')">Workflow Status</th>
       <th onclick="sortBy('dWhs')">WHS</th>
       <th>→ Hub</th>
       <th>→ Store</th>
@@ -1105,10 +1104,7 @@ function renderTable(rows) {
         <td><span class="rb ${rc}">${r.route}</span></td>
         <td><span class="tb ${tc}">${r.type}</span></td>
         <td>
-          ${isP5
-            ? `<span class="wb ${wf.cls}">${wf.label}</span>`
-            : `<span class="sb ${sm.cls}"><span class="dot" style="background:${sm.dot}"></span>${r.status}</span>`
-          }
+          <span class="wb ${wf.cls}">${wf.label}</span>
           ${od?'<span class="od-flag">⚠ Delayed</span>':''}
         </td>
         <td class="td-date${!r.dWhs?' empty':''}">${fmtD(r.dWhs)}</td>
