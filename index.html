@@ -240,6 +240,95 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 .spinner{width:16px;height:16px;border:2px solid var(--silver);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--mist)}::-webkit-scrollbar-thumb{background:var(--silver);border-radius:3px}
+
+/* ══════════════════════════════════════════
+   MOBILE & SMALL SCREEN — ≤ 768px
+══════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── LOGIN ── */
+  .login-box{width:calc(100% - 32px);padding:32px 24px;border-radius:14px}
+  .login-logo img{max-height:72px}
+
+  /* ── HEADER ── */
+  .hi{padding:0 14px;height:52px;gap:8px}
+  .htitle{display:none}
+  .hdiv{display:none}
+  .conn-dot{width:7px;height:7px}
+  #conn-lbl{display:none}
+  .hright{gap:7px}
+  .user-chip{padding:3px 8px;gap:5px;font-size:11px}
+  #user-role-badge{display:none}
+  .btn-sm{font-size:11px;padding:5px 8px}
+  /* Collapse Export button label on mobile */
+  #export-btn-lbl{display:none}
+
+  /* ── MAIN ── */
+  main{padding:12px 12px 60px}
+
+  /* ── CONTROLS ── */
+  .controls{padding:10px 12px;border-radius:8px}
+  .crow{gap:7px}
+  .sep{display:none}
+  .sw{min-width:0;max-width:none;flex:1 1 100%}
+  select.fs{font-size:12px;padding:6px 8px}
+  .dw{font-size:11px}
+  .dw input{width:38px;padding:4px 6px}
+  .btn-toggle{font-size:11px;padding:5px 9px}
+  #month-sel{min-width:0;flex:1}
+
+  /* ── SUMMARY CARDS — 3 cols on mobile ── */
+  .summary{grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}
+  .sc{padding:10px 10px}
+  .sn{font-size:20px}
+  .sl{font-size:9.5px}
+  .sd{font-size:9px}
+
+  /* ── TABLE CARD ── */
+  .tcard-header{padding:9px 12px;gap:7px;flex-wrap:wrap}
+  .tcard-title{font-size:9.5px}
+  #total-pill{font-size:9px;padding:2px 7px}
+  /* Table scrolls horizontally — no changes needed to table itself */
+  .tw{-webkit-overflow-scrolling:touch}
+
+  /* ── EXPANDED ROW DETAIL ── */
+  .det-inner{padding:12px 12px 14px}
+  .timeline{min-width:340px}
+  .ts{min-width:90px}
+  .tc{width:36px;height:36px;font-size:16px}
+  .det-meta{gap:12px}
+  .det-actions{margin-left:0;margin-top:10px;width:100%;justify-content:flex-end}
+
+  /* ── MODAL ── */
+  .mo{padding:12px 10px;align-items:flex-end}
+  .modal{border-radius:14px 14px 0 0;max-height:92vh;animation:mInMobile .22s ease}
+  @keyframes mInMobile{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+  .mb{max-height:62vh;padding:14px 14px}
+  .mh{padding:13px 16px}
+  .mf{padding:11px 14px}
+  /* Collapse 2-col and 3-col form rows to single column */
+  .frow{grid-template-columns:1fr;gap:10px;margin-bottom:10px}
+  .frow.three{grid-template-columns:1fr}
+  /* Slightly smaller inputs on mobile */
+  input[type=text],input[type=date],input[type=password],select.ms,textarea{
+    font-size:15px; /* prevent iOS zoom on focus */
+    padding:9px 11px;
+  }
+  .login-field-wrap input{font-size:15px}
+
+  /* ── TOASTS ── */
+  #toasts{bottom:12px;right:10px;left:10px}
+  .toast{min-width:0;width:100%}
+}
+
+/* ── Very small phones — ≤ 390px ── */
+@media (max-width: 390px) {
+  .summary{grid-template-columns:repeat(2,1fr)}
+  .la{font-size:13px;letter-spacing:1.5px}
+  .lb{display:none}
+  #user-nm{display:none}
+  .user-av{width:24px;height:24px}
+}
 </style>
 </head>
 <body>
@@ -305,7 +394,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
         <span id="user-nm"></span>
         <span id="user-role-badge" style="font-size:9.5px;color:#888"></span>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="exportCSV()">⬇ Export</button>
+      <button class="btn btn-outline btn-sm" onclick="exportCSV()">⬇ <span id="export-btn-lbl">Export</span></button>
       <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add CDF</button>
       <button class="btn btn-outline btn-sm" onclick="doLogout()" title="Sign out">⏻</button>
     </div>
