@@ -125,6 +125,12 @@ thead th{font-family:"Montserrat",sans-serif;font-size:9px;font-weight:700;text-
 thead th:hover{color:var(--blue)}
 thead th.sorted{color:var(--blue)}
 tbody tr{border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background .1s}
+.wb{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;border:1px solid transparent;white-space:nowrap}
+.wb-await{background:#F5F5F5;color:#888;border-color:#DDD}
+.wb-action{background:var(--amber-pale);color:#7a5500;border-color:#FFD54F}
+.wb-change{background:var(--red-pale);color:var(--red);border-color:var(--red-mid)}
+.wb-done{background:var(--green-pale);color:#1a7a38;border-color:var(--green-mid)}
+.wb-info{background:var(--blue-pale);color:var(--blue);border-color:var(--blue-mid)}
 tbody tr:hover{background:#f6faff}
 tbody tr.overdue-row{background:#fff9f7}
 tbody tr.overdue-row:hover{background:#fff2ee}
@@ -517,20 +523,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
     </div>
     <div class="tw">
       <table>
-        <thead><tr>
-          <th onclick="sortBy('cdf')">CDF Ref</th>
-          <th onclick="sortBy('store')">Store</th>
-          <th onclick="sortBy('route')">Route</th>
-          <th onclick="sortBy('type')">Type</th>
-          <th onclick="sortBy('status')">Status</th>
-          <th onclick="sortBy('dWhs')">WHS</th>
-          <th>→ Hub</th>
-          <th>→ Store</th>
-          <th onclick="sortBy('dRecv')">Received</th>
-          <th onclick="sortBy('_transit')">Transit</th>
-          <th>Truck</th>
-          <th></th>
-        </tr></thead>
+        <thead id="thead"></thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
@@ -1022,6 +1015,32 @@ function renderDispatchCards() {
 }
 
 /* ── Table ── */
+/* ── Workflow status helper ── */
+function getWorkflowStatus(r) {
+  const sm = r.smgrStatus||'';
+  const st = r.storeStatus||'';
+  const fl = r.fulfillStatus||'';
+  const pdf= r.pdfStatus||'';
+  // Phase 3
+  if(sm==='')                    return {label:'🔍 Awaiting SM Review',   cls:'wb-await'};
+  if(sm==='Changes Requested')   return {label:'📝 SM Changes Requested', cls:'wb-change'};
+  if(sm==='Approved'&&pdf!=='Generated') return {label:'📄 PDF Pending',  cls:'wb-action'};
+  // Phase 4
+  if(st==='')                    return {label:'📤 Awaiting Coordinator', cls:'wb-await'};
+  if(st==='Changes Requested')   return {label:'🏪 Store Changes Requested',cls:'wb-change'};
+  // Phase 5A
+  if(fl==='')                    return {label:'📦 Pending WHS Send',     cls:'wb-action'};
+  if(fl==='Sent to WHS')         return {label:'📋 Awaiting Actuals',     cls:'wb-action'};
+  // Phase 5B dispatch
+  const sm2 = STATUS_META[r.status]||STATUS_META['In Transit'];
+  if(r.status==='On Hold')       return {label:'⏸ On Hold',              cls:'wb-await'};
+  if(r.status==='In Transit')    return {label:'🚚 In Transit',           cls:'wb-info'};
+  if(r.status==='Pending Dispatch') return {label:'📬 Pending Dispatch',  cls:'wb-action'};
+  if(r.status==='Preparing Order')  return {label:'📋 Preparing Order',   cls:'wb-action'};
+  if(r.dRecv)                    return {label:'✅ Received',             cls:'wb-done'};
+  return {label:'● '+r.status,   cls:'wb-await'};
+}
+
 function renderTable(rows) {
   if(!rows) rows = getFiltered();
   rows = [...rows].sort((a,b) => {
@@ -1032,13 +1051,49 @@ function renderTable(rows) {
       : String(bv).localeCompare(String(av),undefined,{numeric:true});
   });
 
+  const pf    = S.phaseFilter;
+  const isP34 = pf==='p3'||pf==='p4';
+  const isP5  = pf==='p5';
+  const cols  = isP34 ? 8 : 12;
+
+  // ── Dynamic thead ─────────────────────────────────────────────────────────
+  const thead = document.getElementById('thead');
+  if(isP34) {
+    thead.innerHTML = `<tr>
+      <th onclick="sortBy('cdf')">CDF Ref</th>
+      <th onclick="sortBy('store')">Store</th>
+      <th onclick="sortBy('type')">Type</th>
+      <th onclick="sortBy('boxes')">Boxes</th>
+      <th>Workflow Status</th>
+      <th onclick="sortBy('updatedBy')">Last Updated By</th>
+      <th onclick="sortBy('updatedAt')">Updated At</th>
+      <th></th>
+    </tr>`;
+  } else {
+    thead.innerHTML = `<tr>
+      <th onclick="sortBy('cdf')">CDF Ref</th>
+      <th onclick="sortBy('store')">Store</th>
+      <th onclick="sortBy('route')">Route</th>
+      <th onclick="sortBy('type')">Type</th>
+      <th onclick="sortBy('status')">${isP5?'Workflow Status':'Status'}</th>
+      <th onclick="sortBy('dWhs')">WHS</th>
+      <th>→ Hub</th>
+      <th>→ Store</th>
+      <th onclick="sortBy('dRecv')">Received</th>
+      <th onclick="sortBy('_transit')">Transit</th>
+      <th>Truck</th>
+      <th></th>
+    </tr>`;
+  }
+
   const tbody = document.getElementById('tbody');
   if(!rows.length){
-    tbody.innerHTML=`<tr><td colspan="12"><div class="empty-state"><div style="font-size:28px;margin-bottom:8px">📋</div>No records match your filters</div></td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="${cols}"><div class="empty-state"><div style="font-size:28px;margin-bottom:8px">📋</div>No records match your filters</div></td></tr>`;
     return;
   }
 
   tbody.innerHTML = rows.map(r => {
+    const wf   = getWorkflowStatus(r);
     const sm   = STATUS_META[r.status]||STATUS_META['In Transit'];
     const od   = isOverdue(r);
     const td   = tdDays(r);
@@ -1048,6 +1103,22 @@ function renderTable(rows) {
     const rc   = {Direct:'r-direct','Via SDC':'r-sdc','Via CDC':'r-cdc',Unknown:'r-unknown'}[r.route]||'r-unknown';
     const tc   = {Regular:'t-regular','Spare Parts':'t-sp',Shopee:'t-shopee',Supplies:'t-supplies'}[r.type]||'t-regular';
     const uid  = r.id||r.cdf;
+    const upAt = r.updatedAt ? fmtD(r.updatedAt.slice(0,10)) : '—';
+
+    if(isP34) {
+      return `
+        <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="toggleExpand('${esc(uid)}')" data-id="${esc(uid)}">
+          <td class="td-cdf">${esc(r.cdf)}</td>
+          <td class="td-store">${esc(r.store)}</td>
+          <td><span class="tb ${tc}">${r.type}</span></td>
+          <td class="td-dim">${esc(r.boxes||'—')}</td>
+          <td><span class="wb ${wf.cls}">${wf.label}</span>${od?'<span class="od-flag" style="margin-left:4px">⚠</span>':''}</td>
+          <td class="td-dim">${esc(r.updatedBy||'—')}</td>
+          <td class="td-date td-dim">${upAt}</td>
+          <td style="font-size:11px;color:#ccc">${isEx?'▲':'▼'}</td>
+        </tr>
+        ${isEx?buildDetail(r):''}`;
+    }
 
     return `
       <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="toggleExpand('${esc(uid)}')" data-id="${esc(uid)}">
@@ -1056,7 +1127,10 @@ function renderTable(rows) {
         <td><span class="rb ${rc}">${r.route}</span></td>
         <td><span class="tb ${tc}">${r.type}</span></td>
         <td>
-          <span class="sb ${sm.cls}"><span class="dot" style="background:${sm.dot}"></span>${r.status}</span>
+          ${isP5
+            ? `<span class="wb ${wf.cls}">${wf.label}</span>`
+            : `<span class="sb ${sm.cls}"><span class="dot" style="background:${sm.dot}"></span>${r.status}</span>`
+          }
           ${od?'<span class="od-flag">⚠ Delayed</span>':''}
         </td>
         <td class="td-date${!r.dWhs?' empty':''}">${fmtD(r.dWhs)}</td>
@@ -1067,8 +1141,7 @@ function renderTable(rows) {
         <td class="td-dim" style="font-family:'DM Mono',monospace;font-size:11px">${esc(r.truck||'—')}</td>
         <td style="font-size:11px;color:#ccc">${isEx?'▲':'▼'}</td>
       </tr>
-      ${isEx?buildDetail(r):''}
-    `;
+      ${isEx?buildDetail(r):''}`;
   }).join('');
 }
 
