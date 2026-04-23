@@ -101,7 +101,7 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .ssc.active{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-mid)}
 .ssc-n{font-family:"Montserrat",sans-serif;font-weight:800;font-size:16px;line-height:1;color:var(--carbon)}
 .ssc-l{font-size:9.5px;color:#777;margin-top:2px;font-weight:500}
-/* Dispatch status cards (inside Phase 4B) */
+/* Dispatch status cards (inside Phase 4) */
 .summary{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px}
 .sc{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:10px 12px;box-shadow:var(--sh);cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative;overflow:hidden}
 .sc::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
@@ -122,17 +122,19 @@ table{width:100%;border-collapse:collapse;min-width:980px}
 thead th{font-family:"Montserrat",sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#888;padding:9px 12px;text-align:left;border-bottom:2px solid var(--silver);background:var(--mist);white-space:nowrap;cursor:pointer;user-select:none}
 thead th:hover{color:var(--blue)}
 thead th.sorted{color:var(--blue)}
-tbody tr{border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background .1s}
+tbody tr{border-bottom:2px solid #e2e8f0;cursor:pointer;transition:background .1s}
+tbody tr:nth-child(odd):not(.det-tr):not(.exp-row){background:#FAFBFC}
+tbody tr:nth-child(even):not(.det-tr):not(.exp-row){background:#fff}
 .wb{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;border:1px solid transparent;white-space:nowrap}
 .wb-await{background:#F5F5F5;color:#888;border-color:#DDD}
 .wb-action{background:var(--amber-pale);color:#7a5500;border-color:#FFD54F}
 .wb-change{background:var(--red-pale);color:var(--red);border-color:var(--red-mid)}
 .wb-done{background:var(--green-pale);color:#1a7a38;border-color:var(--green-mid)}
 .wb-info{background:var(--blue-pale);color:var(--blue);border-color:var(--blue-mid)}
-tbody tr:hover{background:#f6faff}
-tbody tr.overdue-row{background:#fff9f7}
-tbody tr.overdue-row:hover{background:#fff2ee}
-tbody tr.exp-row{background:var(--blue-pale)}
+tbody tr:hover{background:#EDF2FF}
+tbody tr.overdue-row{background:#FFF5F5}
+tbody tr.overdue-row:hover{background:#FFE8E8}
+tbody tr.exp-row{background:#E8EFFE;border-bottom:none}
 td{padding:9px 12px;vertical-align:middle}
 .td-cdf{font-family:"DM Mono",monospace;font-size:11.5px;font-weight:500;color:var(--blue)}
 .td-store{font-weight:600;font-size:12.5px}
@@ -162,7 +164,7 @@ td{padding:9px 12px;vertical-align:middle}
 .od-flag{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;color:var(--red);background:var(--red-pale);border:1px solid var(--red-mid);padding:2px 6px;border-radius:3px;margin-left:4px}
 
 /* ── DETAIL EXPAND ── */
-.det-tr td{padding:0!important;background:var(--blue-pale);border-bottom:1px solid var(--blue-mid)!important}
+.det-tr td{padding:0!important;background:#E8EFFE;border-bottom:3px solid #b3c6f0!important}
 .det-inner{padding:10px 16px 12px}
 .timeline{display:flex;align-items:flex-start;gap:0;margin-bottom:16px;overflow-x:auto;padding:22px 0 8px}
 .ts{display:flex;flex-direction:column;align-items:center;min-width:120px;flex:1;position:relative}
@@ -1001,7 +1003,7 @@ function renderSummary(rows) {
   };
 }
 
-/* ── Dispatch status cards (rendered inside Phase 5B) ── */
+/* ── Dispatch status cards (Phase 4) ── */
 function buildDispatchCards(rows, needsAttn) {
   const cnt = {}; Object.keys(STATUS_META).forEach(k => cnt[k]=0);
   rows.forEach(r => { if(cnt[r.status]!==undefined) cnt[r.status]++; });
@@ -1032,17 +1034,17 @@ function getWorkflowStatus(r) {
   const st = r.storeStatus||'';
   const fl = r.fulfillStatus||'';
   const pdf= r.pdfStatus||'';
-  // Phase 3
+  // Phase 3 — SM Approval
   if(sm==='')                    return {label:'🔍 Awaiting SM Review',   cls:'wb-await'};
   if(sm==='Changes Requested')   return {label:'📝 SM Changes Requested', cls:'wb-change'};
   if(sm==='Approved'&&pdf!=='Generated') return {label:'📄 PDF Pending',  cls:'wb-action'};
-  // Phase 4
+  // Phase 3 — Store Approval
   if(st==='')                    return {label:'📤 Awaiting Coordinator', cls:'wb-await'};
   if(st==='Changes Requested')   return {label:'🏪 Store Changes Requested',cls:'wb-change'};
-  // Phase 5A
+  // Phase 4 — Fulfillment
   if(fl==='')                    return {label:'🏭 WHS Prepare Order',     cls:'wb-action'};
   if(fl==='Sent to WHS')         return {label:'📋 Awaiting Actuals',     cls:'wb-action'};
-  // Phase 5B dispatch
+  // Phase 4 — Dispatch
   const sm2 = STATUS_META[r.status]||STATUS_META['In Transit'];
   if(r.status==='On Hold')       return {label:'⏸ On Hold',              cls:'wb-await'};
   if(r.status==='In Transit')    return {label:'🚚 In Transit',           cls:'wb-info'};
@@ -1172,7 +1174,7 @@ function computePhaseCounts() {
 
 
 function buildDetail(r) {
-  // ── Build dispatch timeline (Phase 5B) ───────────────────────────────────
+  // ── Build dispatch timeline (Phase 4) ─────────────────────────────────────
   let steps = [];
   if(r.route==='Direct') steps=[
     {l:'WHS',d:r.dWhs,i:'🏭'},{l:'WHS → Store',d:r.dDirect,i:'🚛'},{l:'Received',d:r.dRecv,i:'✅'}
@@ -1221,7 +1223,7 @@ function buildDetail(r) {
 
 
 
-  // ── Phase 3 panel ─────────────────────────────────────────────────────────
+  // ── Phase 3 panel — Approvals ─────────────────────────────────────────────
   const smBadge  = smSt==='Approved'?'wfs-approved':smSt==='Changes Requested'?'wfs-changes':'wfs-pending';
   const smActions = canApproveSM && smSt!=='Approved' ? `
     <div class="wf-actions">
@@ -1261,7 +1263,7 @@ function buildDetail(r) {
       </div>
     </div>`;
 
-  // ── Phase 4 panel ─────────────────────────────────────────────────────────
+  // ── Phase 3 continued — Store Approval ────────────────────────────────────
   const storeBadge = storeSt==='Approved'?'wfs-approved':storeSt==='Changes Requested'?'wfs-changes':'wfs-pending';
   const storeActions = !locked4 && canApproveStore && storeSt!=='Approved' ? `
     <div class="wf-actions">
@@ -1272,7 +1274,7 @@ function buildDetail(r) {
     <div class="ph-panel" data-phase="p4">
       <div class="wf-panel" style="${locked4?'opacity:.55;pointer-events:none':''}">
         <div class="wf-panel-hd">
-          <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">4</span>
+          <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">3</span>
           <span class="wf-panel-title">Store Manager Approval</span>
           <span class="wf-status-badge ${locked4?'wfs-pending':storeBadge}">${locked4?'Locked — awaiting SM approval':(storeSt||'Awaiting Coordinator')}</span>
         </div>
@@ -1288,7 +1290,7 @@ function buildDetail(r) {
       </div>
     </div>`;
 
-  // ── Phase 5 panel — 5A fulfillment + 5B dispatch timeline ─────────────────
+  // ── Phase 4 panel — Fulfillment & Dispatch ─────────────────────────────────
   const fulfBadge = fulfSt==='Actuals Logged'?'wfs-fulfilled':fulfSt==='Partial'?'wfs-partial':fulfSt==='Sent to WHS'?'wfs-sent':'wfs-pending';
   // 5A send to WHS button
   const sendBtn = !locked5 && canFulfill && !fulfSt ? `
@@ -1331,7 +1333,7 @@ function buildDetail(r) {
     <div class="ph-panel open" data-phase="p5">
       <div class="wf-panel" style="${locked5?'opacity:.55;pointer-events:none':''}">
         <div class="wf-panel-hd">
-          <span class="wf-phase-num" style="background:var(--teal)">5</span>
+          <span class="wf-phase-num" style="background:var(--teal)">4</span>
           <span class="wf-panel-title">Fulfillment &amp; Dispatch</span>
           <span class="wf-status-badge ${locked5?'wfs-pending':fulfBadge}">${locked5?'Locked — awaiting store approval':(fulfSt||'Not yet sent to warehouse')}</span>
         </div>
@@ -1370,7 +1372,7 @@ function buildForm(r) {
   const p6Locked = isEdit && !['Actuals Logged','Partial'].includes(r.fulfillStatus||'');
   const p6Banner = isEdit && p6Locked ? `
     <div class="alert alert-info" style="margin-bottom:12px;font-size:11.5px">
-      ⏸ <strong>Dispatch dates are locked</strong> — complete Phase 5 (log warehouse actuals) to unlock.
+      ⏸ <strong>Dispatch dates are locked</strong> — confirm actuals in Phase 4 to unlock.
     </div>` : '';
   return `${p6Banner}
     <div class="frow"><div class="fg">
@@ -1451,7 +1453,7 @@ function syncDateLocks() {
   const h2cell = document.getElementById('hub2-cell');
   const hub2Visible = h2cell && h2cell.style.display !== 'none';
 
-  // Phase 6 gate: all dispatch dates locked until Phase 5 actuals are logged
+  // Phase 4 gate: dispatch dates locked until actuals are confirmed
   const p6Locked = document.getElementById('f-dWhs')?.dataset.p6locked === 'true';
 
   const fDWhs = document.getElementById('f-dWhs');
@@ -1524,8 +1526,7 @@ function getFormVals() {
     status: (function(){
       const onHold = document.getElementById('f-onhold')?.checked;
       if (onHold) return 'On Hold';
-      // Dispatch status (In Transit, Received etc.) only applies in Phase 5B —
-      // after warehouse actuals are logged. Before that, lock to Preparing Order.
+      // Dispatch status only applies in Phase 4 after actuals confirmed.
       const editingRec = S.editingId ? S.records.find(r=>(r.id||r.cdf)===S.editingId) : null;
       const dispatchActive = editingRec && ['Actuals Logged','Partial'].includes(editingRec.fulfillStatus||'');
       if (!dispatchActive) return editingRec?.status || 'Preparing Order';
@@ -1592,7 +1593,7 @@ function closeModal() {
   S.editingId = null;
 }
 
-/* ══════════════════ APPROVAL MODAL (Phase 3 & 4) ══════════════════ */
+/* ══════════════════ APPROVAL MODAL (Phase 3) ══════════════════ */
 function openApprovalModal(uid, phase, action) {
   const r = S.records.find(x=>(x.id||x.cdf)===uid);
   if(!r) return;
@@ -1701,7 +1702,7 @@ async function generatePDF(uid) {
   toast('PDF status marked as Generated');
 }
 
-/* ══════════════════ MARK SENT TO WAREHOUSE (Phase 5 — IS only) ══════════════════ */
+/* ══════════════════ MARK SENT TO WAREHOUSE (Phase 4 — IS only) ══════════════════ */
 async function markSentToWHS(uid) {
   if(!confirm('Confirm that the finalized order has been sent to the Warehouse team?')) return;
   const patch = {
@@ -1715,7 +1716,7 @@ async function markSentToWHS(uid) {
   toast('Order marked as Sent to Warehouse');
 }
 
-/* ══════════════════ CONFIRM ACTUALS LOGGED (Phase 5 — IS only) ══════════════════ */
+/* ══════════════════ CONFIRM ACTUALS LOGGED (Phase 4 — IS only) ══════════════════ */
 async function markActualsLogged(uid) {
   if(!confirm('Confirm that warehouse actuals have been received and logged?\n\nThis will move the CDF to Pending Dispatch.')) return;
   const patch = {
@@ -1730,7 +1731,7 @@ async function markActualsLogged(uid) {
   toast('Actuals logged — CDF moved to Pending Dispatch');
 }
 
-/* ══════════════════ FULFILLMENT MODAL (Phase 5) ══════════════════ */
+/* ══════════════════ FULFILLMENT MODAL (Phase 4) ══════════════════ */
 async function saveRecord() {
   const vals = getFormVals();
   const isNew = !S.editingId;
@@ -1784,7 +1785,7 @@ async function apiAddCDF(vals) {
   const now = new Date().toISOString();
   const user = S.user.username;
   // Until the full workflow engine is built, new CDFs skip Phases 3 & 4
-  // and land directly in Phase 5 — WHS Prepare Order
+  // and land directly in Phase 4 — WHS Prepare Order
   const workflowDefaults = {
     smgrStatus:     'Approved',
     smgrApprovedBy: user,
@@ -1861,7 +1862,7 @@ function setMonth(m) {
 }
 
 function setStatusFilter(k) {
-  // Legacy — used by dispatch cards inside Phase 5B expanded panel
+  // Legacy — used by dispatch cards inside Phase 4 expanded panel
   S.statusFilter = S.statusFilter===k?'':k;
   S.expandedId=null; renderAll();
 }
