@@ -128,17 +128,28 @@ td{padding:9px 12px;vertical-align:middle}
 /* ── DETAIL EXPAND ── */
 .det-tr td{padding:0!important;background:var(--blue-pale);border-bottom:1px solid var(--blue-mid)!important}
 .det-inner{padding:14px 18px 16px}
-.timeline{display:flex;align-items:flex-start;gap:0;margin-bottom:12px;overflow-x:auto}
-.ts{display:flex;flex-direction:column;align-items:center;min-width:110px;flex:1;position:relative}
-.ts:not(:last-child)::after{content:"";position:absolute;top:13px;left:50%;width:100%;height:2px;background:var(--silver);z-index:0}
+.timeline{display:flex;align-items:flex-start;gap:0;margin-bottom:16px;overflow-x:auto;padding:8px 0}
+.ts{display:flex;flex-direction:column;align-items:center;min-width:120px;flex:1;position:relative}
+.ts:not(:last-child)::after{content:"";position:absolute;top:22px;left:50%;width:100%;height:3px;background:var(--silver);z-index:0;border-radius:2px}
 .ts.done::after{background:var(--green)}
-.ts.active::after{background:linear-gradient(to right,var(--green),var(--silver))}
-.tc{width:26px;height:26px;border-radius:50%;border:2px solid var(--silver);background:var(--white);display:flex;align-items:center;justify-content:center;font-size:11px;position:relative;z-index:1;flex-shrink:0}
-.ts.done .tc{border-color:var(--green);background:var(--green-pale)}
-.ts.active .tc{border-color:var(--blue);background:var(--blue-pale)}
-.ts.pending .tc{opacity:.45}
-.tl{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-top:4px;text-align:center}
-.td2{font-family:"DM Mono",monospace;font-size:10px;color:var(--carbon);margin-top:2px;text-align:center}
+.ts.active::after{background:linear-gradient(to right,var(--green) 40%,var(--silver))}
+/* Icon circle */
+.tc{width:44px;height:44px;border-radius:50%;border:2.5px solid var(--silver);background:var(--white);display:flex;align-items:center;justify-content:center;font-size:20px;position:relative;z-index:1;flex-shrink:0;transition:all .2s}
+.ts.done .tc{border-color:var(--green);background:var(--green-pale);box-shadow:0 0 0 4px #22a74920}
+.ts.active .tc{border-color:var(--blue);background:var(--blue-pale);box-shadow:0 0 0 5px #1b4da025,0 0 0 9px #1b4da010;animation:pulse-ring 2s ease-out infinite}
+.ts.pending .tc{opacity:.3;filter:grayscale(1)}
+@keyframes pulse-ring{0%{box-shadow:0 0 0 4px #1b4da030,0 0 0 8px #1b4da015}70%{box-shadow:0 0 0 8px #1b4da010,0 0 0 14px #1b4da005}100%{box-shadow:0 0 0 4px #1b4da030,0 0 0 8px #1b4da015}}
+/* Labels */
+.tl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-top:8px;text-align:center;color:#999}
+.ts.done .tl{color:var(--green)}
+.ts.active .tl{color:var(--blue);font-size:9.5px}
+.ts.pending .tl{color:#bbb}
+/* Date */
+.td2{font-family:"DM Mono",monospace;font-size:10.5px;margin-top:3px;text-align:center;color:#aaa}
+.ts.done .td2{color:var(--carbon);font-weight:500}
+.ts.active .td2{color:var(--blue);font-weight:600}
+/* Active step badge */
+.ts.active::before{content:"NOW";position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:800;letter-spacing:1px;color:var(--white);background:var(--blue);padding:2px 6px;border-radius:10px;z-index:2}
 .det-meta{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;padding-top:10px;border-top:1px solid var(--blue-mid)}
 .dm{display:flex;flex-direction:column;gap:1px}
 .dml{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#999;font-weight:700}
@@ -649,9 +660,10 @@ function buildDetail(r) {
 
   let lastDone=-1;
   steps.forEach((s,i)=>{if(s.d) lastDone=i;});
+  // If all steps done (received), no active step — mark all as done
+  const allDone = lastDone===steps.length-1;
   const tl = steps.map((s,i)=>{
-    const st = i<=lastDone?'done':i===lastDone+1?'active':'pending';
-    const last = i===steps.length-1;
+    const st = i<=lastDone?'done':(!allDone&&i===lastDone+1)?'active':'pending';
     return `<div class="ts ${st}"><div class="tc">${s.i}</div><div class="tl">${s.l}</div><div class="td2">${s.d?fmtD(s.d):'—'}</div></div>`;
   }).join('');
 
