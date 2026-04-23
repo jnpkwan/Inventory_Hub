@@ -1207,7 +1207,7 @@ function buildDetail(r) {
         : role==='IS'
           ? `<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate CDF PDF</button>
              <span style="font-size:10px;color:#aaa">IS runs script &amp; uploads to Drive</span>`
-          : `<span style="font-size:10.5px;color:#aaa">PDF not yet generated</span>`
+          : `<span style="font-size:10.5px;color:var(--amber);font-weight:600">⏳ Waiting for IS to generate PDF — Store Approval step will unlock once done.</span>`
       }
     </div>` : '';
   const panelP3 = `
@@ -1326,9 +1326,9 @@ function buildDetail(r) {
       ${canDelete?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>`:''}
     </div>`;
 
-  // Only show panels the CDF has reached — progressive reveal
-  const showP4 = smSt==='Approved';          // SM approved → show store approval
-  const showP5 = storeSt==='Approved';       // Store approved → show fulfillment
+  // Progressive reveal — only show panels the CDF has actually reached
+  const showP4 = smSt==='Approved' && pdfSt==='Generated'; // PDF must be generated before coordinator can act
+  const showP5 = storeSt==='Approved';                     // Store approved → fulfillment begins
 
   return `<tr class="det-tr"><td colspan="12"><div class="det-inner">
     ${panelP3}
@@ -1628,6 +1628,8 @@ async function saveApproval(uid, phase, action) {
 
   await apiUpdateCDF(uid, patch);
   closeModal();
+  // Keep the row expanded so user sees the updated panel
+  S.expandedId = uid;
   renderAll();
   toast(action==='approve'?'Approval recorded':action==='resubmit'?'Resubmitted':'Change request logged');
 }
@@ -1653,6 +1655,7 @@ async function generatePDF(uid) {
     pdfGeneratedAt: new Date().toISOString()
   };
   await apiUpdateCDF(uid, patch);
+  S.expandedId = uid;
   renderAll();
   toast('PDF status marked as Generated');
 }
@@ -1666,6 +1669,7 @@ async function markSentToWHS(uid) {
     sentToWhsAt: new Date().toISOString()
   };
   await apiUpdateCDF(uid, patch);
+  S.expandedId = uid;
   renderAll();
   toast('Order marked as Sent to Warehouse');
 }
@@ -1738,6 +1742,7 @@ async function saveFulfillment(uid) {
 
   await apiUpdateCDF(uid, patch);
   closeModal();
+  S.expandedId = uid;
   renderAll();
   toast('Fulfillment saved');
 }
@@ -1761,12 +1766,19 @@ async function saveRecord() {
   btn.innerHTML='<div class="spinner"></div> Saving…'; btn.disabled=true;
 
   try {
-    if(S.editingId) {
-      await apiUpdateCDF(S.editingId, vals);
+    const wasEditing = !!S.editingId;
+    const editedId   = S.editingId;
+    if(wasEditing) {
+      await apiUpdateCDF(editedId, vals);
+      closeModal();
+      S.expandedId = editedId; // keep row open to see changes
     } else {
       await apiAddCDF(vals);
+      closeModal();
+      S.expandedId = null;
     }
-    closeModal();
+    renderAll();
+    toast(wasEditing ? 'Record updated' : 'CDF added');
   } catch(e) {
     toast(e.message, 'err');
     btn.innerHTML='Save'; btn.disabled=false;
@@ -1779,15 +1791,13 @@ async function apiAddCDF(vals) {
   const rec = {...vals, id:tempId, createdBy:S.user.username,
                createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
   S.records.unshift(rec);
-  renderAll();
-  toast('CDF entry added');
 
   if(!CFG.offline && CFG.apiUrl) {
     try {
       const saved = await gasPost('addCDF', {...vals, username:S.user.username});
       const idx = S.records.findIndex(r=>r.id===tempId);
       if(idx>=0) S.records[idx]=saved;
-      renderAll();
+      renderAll(); // re-render after server confirms with real ID
     } catch(e) { toast('Saved locally — sync failed: '+e.message,'warn'); }
   }
 }
@@ -1795,9 +1805,6 @@ async function apiAddCDF(vals) {
 async function apiUpdateCDF(uid, vals) {
   const idx = S.records.findIndex(r=>(r.id||r.cdf)===uid);
   if(idx>=0) S.records[idx]={...S.records[idx],...vals,updatedBy:S.user.username,updatedAt:new Date().toISOString()};
-  S.expandedId = null;
-  renderAll();
-  toast('Record updated');
 
   if(!CFG.offline && CFG.apiUrl) {
     try {
