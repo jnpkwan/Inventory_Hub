@@ -1113,6 +1113,7 @@ function renderTable(rows) {
     const hub1 = r.dSdc||r.dCdc||'';
     const hub2 = r.dSdc2||r.dCdc2||'';
     const rc   = {Direct:'r-direct','Via SDC':'r-sdc','Via CDC':'r-cdc',Unknown:'r-unknown'}[r.route]||'r-unknown';
+    const canEdit = S.user.role==='EXECUTIVE'||S.user.role==='IS';
     const tc   = {Regular:'t-regular','Spare Parts':'t-sp',Shopee:'t-shopee',Supplies:'t-supplies'}[r.type]||'t-regular';
     const uid  = r.id||r.cdf;
     const upAt = r.updatedAt ? fmtD(r.updatedAt.slice(0,10)) : '—';
