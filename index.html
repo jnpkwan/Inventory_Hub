@@ -75,13 +75,12 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 
 /* ── SUMMARY ── */
 /* Phase pipeline cards (top) */
-.ph-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+.ph-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
 .phc{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:11px 14px;box-shadow:var(--sh);position:relative;overflow:hidden}
 .phc::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
 .phc.phc-1::before,.phc.phc-2::before{background:#C8D4F0}
 .phc.phc-3::before{background:#7B1FA2}
-.phc.phc-4::before{background:var(--amber)}
-.phc.phc-5::before{background:var(--teal)}
+.phc.phc-4::before{background:var(--teal)}
 .phc-num{font-size:9px;font-weight:800;color:#bbb;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
 .phc-n{font-family:"Montserrat",sans-serif;font-weight:800;font-size:22px;line-height:1;color:var(--carbon)}
 .phc-n.dim{color:#ccc}
@@ -91,8 +90,7 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .phc:hover{box-shadow:var(--shm)}
 .phc.active{box-shadow:0 0 0 2px var(--blue-mid);border-color:var(--blue)}
 .phc.phc-3.active{box-shadow:0 0 0 2px #CE93D8;border-color:#7B1FA2}
-.phc.phc-4.active{box-shadow:0 0 0 2px #FFE082;border-color:var(--amber)}
-.phc.phc-5.active{box-shadow:0 0 0 2px #80CBC4;border-color:var(--teal)}
+.phc.phc-4.active{box-shadow:0 0 0 2px #80CBC4;border-color:var(--teal)}
 .phc.phc-1,.phc.phc-2{cursor:default}
 /* Sub-card row */
 .sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px;padding:10px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
@@ -103,7 +101,7 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .ssc.active{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-mid)}
 .ssc-n{font-family:"Montserrat",sans-serif;font-weight:800;font-size:16px;line-height:1;color:var(--carbon)}
 .ssc-l{font-size:9.5px;color:#777;margin-top:2px;font-weight:500}
-/* Dispatch status cards (inside Phase 5B) */
+/* Dispatch status cards (inside Phase 4B) */
 .summary{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px}
 .sc{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:10px 12px;box-shadow:var(--sh);cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative;overflow:hidden}
 .sc::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
@@ -838,26 +836,25 @@ function getFiltered() {
     // ── Phase filter ─────────────────────────────────────────────────────────
     const sm = r.smgrStatus||''; const st = r.storeStatus||'';
     const fl = r.fulfillStatus||'';
-    if(S.phaseFilter==='p3') { if(sm==='Approved') return false; }
-    else if(S.phaseFilter==='p4') { if(sm!=='Approved'||st==='Approved') return false; }
-    else if(S.phaseFilter==='p5') { if(st!=='Approved') return false; }
+    if(S.phaseFilter==='p3') { if(st==='Approved') return false; }
+    else if(S.phaseFilter==='p4') { if(st!=='Approved') return false; }
     // ── Sub-filter (stacks on phase filter) ───────────────────────────────────
     const sf = S.subFilter;
     if(sf) {
       const uid = r.id||r.cdf;
-      if(sf==='p3_await')  { if(sm!=='')                          return false; }
-      if(sf==='p3_chg')    { if(sm!=='Changes Requested')         return false; }
+      if(sf==='p3_await')  { if(sm!=='')                                    return false; }
+      if(sf==='p3_chg')    { if(sm!=='Changes Requested')                  return false; }
       if(sf==='p3_pdf')    { if(sm!=='Approved'||(r.pdfStatus||'')==='Generated') return false; }
-      if(sf==='p4_await')  { if(sm!=='Approved'||st!=='')         return false; }
-      if(sf==='p4_chg')    { if(st!=='Changes Requested')         return false; }
-      if(sf==='p5_whs')    { if(st!=='Approved'||fl!=='')         return false; }
-      if(sf==='p5_act')    { if(fl!=='Sent to WHS')               return false; }
-      if(sf==='p5_prep')   { if(r.status!=='Preparing Order')     return false; }
-      if(sf==='p5_pd')     { if(r.status!=='Pending Dispatch')    return false; }
-      if(sf==='p5_hold')   { if(r.status!=='On Hold')             return false; }
-      if(sf==='p5_tr')     { if(r.status!=='In Transit')          return false; }
-      if(sf==='p5_recv')   { if(r.status!=='Received')            return false; }
-      if(sf==='p5_attn')   { if(!S._attnIds||!S._attnIds.has(uid)) return false; }
+      if(sf==='p3_coord')  { if(sm!=='Approved'||st!=='')         return false; }
+      if(sf==='p3_stchg')    { if(st!=='Changes Requested')         return false; }
+      if(sf==='p4_whs')    { if(st!=='Approved'||fl!=='')         return false; }
+      if(sf==='p4_act')    { if(fl!=='Sent to WHS')               return false; }
+      if(sf==='p4_prep')   { if(r.status!=='Preparing Order')     return false; }
+      if(sf==='p4_pd')     { if(r.status!=='Pending Dispatch')    return false; }
+      if(sf==='p4_hold')   { if(r.status!=='On Hold')             return false; }
+      if(sf==='p4_tr')     { if(r.status!=='In Transit')          return false; }
+      if(sf==='p4_recv')   { if(r.status!=='Received')            return false; }
+      if(sf==='p4_attn')   { if(!S._attnIds||!S._attnIds.has(uid)) return false; }
     }
     // Legacy statusFilter (dispatch card clicks from within expanded row)
     if(!S.phaseFilter && S.statusFilter) {
@@ -887,19 +884,18 @@ function renderSummary(rows) {
   S._dispatchCards = buildDispatchCards(all, needsAttn);
 
   // ── Phase counts ──────────────────────────────────────────────────────────
-  const p3cnt  = all.filter(r=>(r.smgrStatus||'')!=='Approved').length;
-  const p4cnt  = all.filter(r=>(r.smgrStatus||'')==='Approved'&&(r.storeStatus||'')!=='Approved').length;
-  const p5acnt = all.filter(r=>(r.storeStatus||'')==='Approved'&&!['Actuals Logged','Partial'].includes(r.fulfillStatus||'')).length;
-  const p5bcnt = all.filter(r=>['Actuals Logged','Partial'].includes(r.fulfillStatus||'')&&!r.dRecv).length;
-  const p5cnt  = p5acnt + p5bcnt;
+  // Phase 3 = combined approvals (any CDF not yet store-approved)
+  const p3cnt  = all.filter(r=>(r.storeStatus||'')!=='Approved').length;
+  const p4acnt = all.filter(r=>(r.storeStatus||'')==='Approved'&&!['Actuals Logged','Partial'].includes(r.fulfillStatus||'')).length;
+  const p4bcnt = all.filter(r=>['Actuals Logged','Partial'].includes(r.fulfillStatus||'')&&!r.dRecv).length;
+  const p4cnt  = p4acnt + p4bcnt;
 
   const pf = S.phaseFilter;
   const phCards = [
-    {id:'p1', cls:'phc-1', count:null, label:'Order Generation',     sub:'Replenishment engine soon', dim:true,  disabled:true},
-    {id:'p2', cls:'phc-2', count:null, label:'Allocation',            sub:'Replenishment engine soon', dim:true,  disabled:true},
-    {id:'p3', cls:'phc-3', count:p3cnt,label:'SM Approval',           sub:p3cnt>0?p3cnt+' awaiting approval':'All approved', dim:false, disabled:false},
-    {id:'p4', cls:'phc-4', count:p4cnt,label:'Store Approval',        sub:p4cnt>0?p4cnt+' awaiting store':'All confirmed',   dim:false, disabled:false},
-    {id:'p5', cls:'phc-5', count:p5cnt,label:'Fulfillment & Dispatch',sub:`${p5acnt} at warehouse · ${p5bcnt} in transit`,   dim:false, disabled:false},
+    {id:'p1', cls:'phc-1', count:null,  label:'Order Generation',     sub:'Replenishment engine soon', dim:true,  disabled:true},
+    {id:'p2', cls:'phc-2', count:null,  label:'Allocation',            sub:'Replenishment engine soon', dim:true,  disabled:true},
+    {id:'p3', cls:'phc-3', count:p3cnt, label:'Approvals',             sub:p3cnt>0?p3cnt+' pending approval':'All approved', dim:false, disabled:false},
+    {id:'p4', cls:'phc-4', count:p4cnt, label:'Fulfillment & Dispatch',sub:`${p4acnt} at warehouse · ${p4bcnt} in transit`,  dim:false, disabled:false},
   ];
 
   document.getElementById('ph-summary').innerHTML = phCards.map(c=>{
@@ -921,62 +917,48 @@ function renderSummary(rows) {
 
   // ── Sub-card row ──────────────────────────────────────────────────────────
   let subHTML = '';
+  const sf = S.subFilter;
+  const mkSub=(k,icon,lbl,n,col)=>{
+    const ac=sf===k?' active':'';
+    return '<div class="ssc'+ac+'" data-sf="'+k+'">'
+      +'<div style="position:absolute;top:0;left:0;right:0;height:2px;background:'+col+'"></div>'
+      +'<div class="ssc-n">'+n+'</div>'
+      +'<div class="ssc-l">'+icon+' '+lbl+'</div>'
+      +'</div>';
+  };
+
   if(pf==='p3') {
-    const awaiting = all.filter(r=>(r.smgrStatus||'')==='').length;
-    const changes  = all.filter(r=>r.smgrStatus==='Changes Requested').length;
-    const pdfPend  = all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')!=='Generated').length;
-    const sf = S.subFilter;
-    const mkSub=(k,icon,lbl,n,col)=>`
-      <div class="ssc${sf===k?' active':''}" onclick="setSubFilter('${k}')" style="--ssc-c:${col}">
-        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:${col}"></div>
-        <div class="ssc-n">${n}</div>
-        <div class="ssc-l">${icon} ${lbl}</div>
-      </div>`;
-    subHTML = `<div class="sub-summary">
-      <div class="sub-label">Phase 3 — SM Approval breakdown</div>
-      ${mkSub('p3_await','🔍','Awaiting Review',awaiting,'#9C27B0')}
-      ${mkSub('p3_chg','📝','Changes Requested',changes,'#F9A825')}
-      ${mkSub('p3_pdf','📄','PDF Pending',pdfPend,'#1B4DA0')}
-    </div>`;
+    // All sub-steps across both SM and Store approval
+    const smAwait   = all.filter(r=>(r.smgrStatus||'')==='').length;
+    const smChg     = all.filter(r=>r.smgrStatus==='Changes Requested').length;
+    const pdfPend   = all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')!=='Generated'&&(r.storeStatus||'')!=='Approved').length;
+    const coordAwait= all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')==='Generated'&&(r.storeStatus||'')==='').length;
+    const storeChg  = all.filter(r=>r.storeStatus==='Changes Requested').length;
+    subHTML = '<div class="sub-summary">'
+      +'<div class="sub-label">Phase 3 — Approvals breakdown</div>'
+      +mkSub('p3_await', '🔍','Awaiting SM Review',     smAwait,   '#7B1FA2')
+      +mkSub('p3_chg',   '📝','SM Changes Requested',   smChg,     '#F9A825')
+      +mkSub('p3_pdf',   '📄','PDF Pending',            pdfPend,   '#1B4DA0')
+      +mkSub('p3_coord', '📤','Awaiting Coordinator',   coordAwait,'#F9A825')
+      +mkSub('p3_stchg', '🏪','Store Changes Requested',storeChg,  '#C0392B')
+      +'</div>';
   } else if(pf==='p4') {
-    const awaitCoord = all.filter(r=>r.smgrStatus==='Approved'&&(r.storeStatus||'')==='').length;
-    const storeChg   = all.filter(r=>r.storeStatus==='Changes Requested').length;
-    const sf = S.subFilter;
-    const mkSub=(k,icon,lbl,n,col)=>`
-      <div class="ssc${sf===k?' active':''}" onclick="setSubFilter('${k}')" style="--ssc-c:${col}">
-        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:${col}"></div>
-        <div class="ssc-n">${n}</div>
-        <div class="ssc-l">${icon} ${lbl}</div>
-      </div>`;
-    subHTML = `<div class="sub-summary">
-      <div class="sub-label">Phase 4 — Store Approval breakdown</div>
-      ${mkSub('p4_await','📤','Awaiting Coordinator',awaitCoord,'#F9A825')}
-      ${mkSub('p4_chg','🏪','Store Requested Changes',storeChg,'#C0392B')}
-    </div>`;
-  } else if(pf==='p5') {
-    const pendWhs   = all.filter(r=>r.storeStatus==='Approved'&&!(r.fulfillStatus)).length;
-    const awaitAct  = all.filter(r=>r.fulfillStatus==='Sent to WHS').length;
+    const pendWhs  = all.filter(r=>r.storeStatus==='Approved'&&!(r.fulfillStatus)).length;
+    const awaitAct = all.filter(r=>r.fulfillStatus==='Sent to WHS').length;
     const cnt={}; Object.keys(STATUS_META).forEach(k=>cnt[k]=0);
     all.filter(r=>r.storeStatus==='Approved').forEach(r=>{if(cnt[r.status]!==undefined)cnt[r.status]++;});
     const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
-    const sf = S.subFilter;
-    const mkSub=(k,icon,lbl,n,col)=>`
-      <div class="ssc${sf===k?' active':''}" onclick="setSubFilter('${k}')" style="--ssc-c:${col}">
-        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:${col}"></div>
-        <div class="ssc-n">${n}</div>
-        <div class="ssc-l">${icon} ${lbl}</div>
-      </div>`;
-    subHTML = `<div class="sub-summary">
-      <div class="sub-label">Phase 5 — Fulfillment &amp; Dispatch breakdown</div>
-      ${mkSub('p5_whs',  '📦','Pending WHS Send',    pendWhs,'#00695C')}
-      ${mkSub('p5_act',  '📋','Awaiting Actuals',     awaitAct,'#1B4DA0')}
-      ${mkSub('p5_prep', '📋','Preparing Order',      cnt['Preparing Order'],'#9C27B0')}
-      ${mkSub('p5_pd',   '📬','Pending Dispatch',     cnt['Pending Dispatch'],'#F9A825')}
-      ${mkSub('p5_hold', '⏸','On Hold',              cnt['On Hold'],'#78909C')}
-      ${mkSub('p5_tr',   '🚚','In Transit',           cnt['In Transit'],'#1B4DA0')}
-      ${mkSub('p5_recv', '✅','Received',             cnt['Received'],'#22A749')}
-      ${mkSub('p5_attn', '🚨','Needs Attention',      attn,'#C0392B')}
-    </div>`;
+    subHTML = '<div class="sub-summary">'
+      +'<div class="sub-label">Phase 4 — Fulfillment &amp; Dispatch breakdown</div>'
+      +mkSub('p4_whs',  '📦','Pending WHS Send',   pendWhs,              '#00695C')
+      +mkSub('p4_act',  '📋','Awaiting Actuals',    awaitAct,             '#1B4DA0')
+      +mkSub('p4_prep', '📋','Preparing Order',     cnt['Preparing Order'],'#9C27B0')
+      +mkSub('p4_pd',   '📬','Pending Dispatch',    cnt['Pending Dispatch'],'#F9A825')
+      +mkSub('p4_hold', '⏸', 'On Hold',            cnt['On Hold'],        '#78909C')
+      +mkSub('p4_tr',   '🚚','In Transit',          cnt['In Transit'],     '#1B4DA0')
+      +mkSub('p4_recv', '✅','Received',            cnt['Received'],       '#22A749')
+      +mkSub('p4_attn', '🚨','Needs Attention',     attn,                 '#C0392B')
+      +'</div>';
   }
 
   // Render sub-cards (or clear if no phase selected)
@@ -988,6 +970,10 @@ function renderSummary(rows) {
     phEl.parentNode.insertBefore(subEl, phEl.nextSibling);
   }
   subEl.innerHTML = subHTML;
+  subEl.onclick = function(e) {
+    const card = e.target.closest('[data-sf]');
+    if(card) setSubFilter(card.dataset.sf);
+  };
 }
 
 /* ── Dispatch status cards (rendered inside Phase 5B) ── */
@@ -1052,8 +1038,8 @@ function renderTable(rows) {
   });
 
   const pf    = S.phaseFilter;
-  const isP34 = pf==='p3'||pf==='p4';
-  const isP5  = pf==='p5';
+  const isP34 = pf==='p3';
+  const isP5  = pf==='p4';
   const cols  = isP34 ? 8 : 12;
 
   // ── Dynamic thead ─────────────────────────────────────────────────────────
@@ -1153,14 +1139,12 @@ function toggleExpand(uid) {
 /* ══════════════════ PHASE PILL COUNTS (month-level) ══════════════════ */
 function computePhaseCounts() {
   const recs = S.records;
-  const c = {p3:0, p4:0, p5:0};
+  const c = {p3:0, p4:0};
   recs.forEach(r => {
-    const sm = r.smgrStatus||'';
     const st = r.storeStatus||'';
     const fl = r.fulfillStatus||'';
-    if(sm!=='Approved') c.p3++;
-    if(sm==='Approved' && st!=='Approved') c.p4++;
-    if(st==='Approved' && !['Actuals Logged','Partial'].includes(fl)) c.p5++;
+    if(st!=='Approved') c.p3++;
+    if(st==='Approved' && !['Actuals Logged','Partial'].includes(fl)) c.p4++;
   });
   return c;
 }
@@ -1222,11 +1206,9 @@ function buildDetail(r) {
   const dispatchUnlocked = ['Actuals Logged','Partial'].includes(fulfSt);
 
   // ── Determine which phase auto-opens ─────────────────────────────────────
-  let autoOpen = 'p5'; // default: show Phase 5 (most content)
-  if(canApproveSM && smSt!=='Approved') autoOpen='p3';
-  else if(canFulfill && smSt==='Approved' && storeSt!=='Approved') autoOpen='p4';
-  else if(canFulfill && storeSt==='Approved' && !dispatchUnlocked) autoOpen='p5';
-  else if(canApproveStore && smSt==='Approved' && storeSt!=='Approved') autoOpen='p4';
+  let autoOpen = 'p5'; // default: Phase 4 (fulfillment)
+  if(storeSt!=='Approved') autoOpen='p3';          // any approval still pending → open Approvals panel
+  else if(!dispatchUnlocked) autoOpen='p5';        // store approved, actuals not logged → fulfillment
 
   // ── Phase pill counts (month-level) ──────────────────────────────────────
   const cnts = computePhaseCounts();
@@ -1235,14 +1217,8 @@ function buildDetail(r) {
   function pillClass(phase) {
     if(phase==='p1'||phase==='p2') return 'system';
     if(phase==='p3') {
-      if(smSt==='Approved') return 'done';
-      if(canApproveSM) return 'pending-action';
-      return 'locked';
-    }
-    if(phase==='p4') {
-      if(locked4) return 'locked';
-      if(storeSt==='Approved') return 'done';
-      if(canApproveStore) return 'pending-action';
+      if(storeSt==='Approved') return 'done';                          // both approvals cleared
+      if(canApproveSM||canApproveStore) return 'pending-action';
       return 'locked';
     }
     if(phase==='p5') {
@@ -1256,8 +1232,7 @@ function buildDetail(r) {
 
   function pillIcon(phase) {
     if(phase==='p1'||phase==='p2') return '⚙';
-    if(phase==='p3') return smSt==='Approved'?'✓':'●';
-    if(phase==='p4') return locked4?'🔒':storeSt==='Approved'?'✓':'●';
+    if(phase==='p3') return storeSt==='Approved'?'✓':'●';
     if(phase==='p5') return locked5?'🔒':r.dRecv?'✓':'●';
     return '●';
   }
@@ -1275,13 +1250,10 @@ function buildDetail(r) {
         <span class="ph-num">2</span> Allocation <span style="font-size:9px;opacity:.6">soon</span>
       </div>
       <div class="ph-pill ${pillClass('p3')}" data-phase="p3" onclick="event.stopPropagation();togglePhasePanel('${uid}','p3')">
-        <span class="ph-num">3</span> SM Approval ${pillIcon('p3')} ${cntBadge(cnts.p3)}
-      </div>
-      <div class="ph-pill ${pillClass('p4')}" data-phase="p4" onclick="event.stopPropagation();togglePhasePanel('${uid}','p4')">
-        <span class="ph-num">4</span> Store Approval ${pillIcon('p4')} ${cntBadge(cnts.p4)}
+        <span class="ph-num">3</span> Approvals ${pillIcon('p3')} ${cntBadge(cnts.p3)}
       </div>
       <div class="ph-pill ${pillClass('p5')}" data-phase="p5" onclick="event.stopPropagation();togglePhasePanel('${uid}','p5')">
-        <span class="ph-num">5</span> Fulfillment &amp; Dispatch ${pillIcon('p5')} ${cntBadge(cnts.p5)}
+        <span class="ph-num">4</span> Fulfillment &amp; Dispatch ${pillIcon('p5')} ${cntBadge(cnts.p4)}
       </div>
     </div>`;
 
