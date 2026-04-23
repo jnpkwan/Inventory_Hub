@@ -1706,7 +1706,6 @@ async function generatePDF(uid) {
 
 /* ══════════════════ MARK SENT TO WAREHOUSE (Phase 4 — IS only) ══════════════════ */
 async function markSentToWHS(uid) {
-  if(!confirm('Confirm that the finalized order has been sent to the Warehouse team?')) return;
   const patch = {
     fulfillStatus: 'Sent to WHS',
     sentToWhsBy: S.user.username,
