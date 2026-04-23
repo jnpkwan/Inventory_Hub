@@ -849,7 +849,6 @@ function getFiltered() {
       if(sf==='p3_stchg')    { if(st!=='Changes Requested')         return false; }
       if(sf==='p4_whs')    { if(st!=='Approved'||fl!=='')         return false; }
       if(sf==='p4_act')    { if(fl!=='Sent to WHS')               return false; }
-      if(sf==='p4_prep')   { if(r.status!=='Preparing Order')     return false; }
       if(sf==='p4_pd')     { if(r.status!=='Pending Dispatch')    return false; }
       if(sf==='p4_hold')   { if(r.status!=='On Hold')             return false; }
       if(sf==='p4_tr')     { if(r.status!=='In Transit')          return false; }
@@ -950,14 +949,13 @@ function renderSummary(rows) {
     const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
     subHTML = '<div class="sub-summary">'
       +'<div class="sub-label">Phase 4 — Fulfillment &amp; Dispatch breakdown</div>'
-      +mkSub('p4_whs',  '📦','Pending WHS Send',   pendWhs,              '#00695C')
-      +mkSub('p4_act',  '📋','Awaiting Actuals',    awaitAct,             '#1B4DA0')
-      +mkSub('p4_prep', '📋','Preparing Order',     cnt['Preparing Order'],'#9C27B0')
-      +mkSub('p4_pd',   '📬','Pending Dispatch',    cnt['Pending Dispatch'],'#F9A825')
-      +mkSub('p4_hold', '⏸', 'On Hold',            cnt['On Hold'],        '#78909C')
-      +mkSub('p4_tr',   '🚚','In Transit',          cnt['In Transit'],     '#1B4DA0')
-      +mkSub('p4_recv', '✅','Received',            cnt['Received'],       '#22A749')
-      +mkSub('p4_attn', '🚨','Needs Attention',     attn,                 '#C0392B')
+      +mkSub('p4_whs',  '🏭','WHS Prepare Order',    pendWhs,               '#00695C')
+      +mkSub('p4_act',  '📋','Awaiting Actual Count', awaitAct,              '#7B1FA2')
+      +mkSub('p4_pd',   '📬','Pending Dispatch',      cnt['Pending Dispatch'],'#F9A825')
+      +mkSub('p4_tr',   '🚚','In Transit',            cnt['In Transit'],      '#1B4DA0')
+      +mkSub('p4_recv', '✅','Received',              cnt['Received'],        '#22A749')
+      +mkSub('p4_hold', '⏸', 'On Hold',              cnt['On Hold'],         '#78909C')
+      +mkSub('p4_attn', '🚨','Needs Attention',       attn,                  '#C0392B')
       +'</div>';
   }
 
