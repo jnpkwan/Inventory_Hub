@@ -967,6 +967,11 @@ function renderSummary(rows) {
     const phEl = document.getElementById('ph-summary');
     phEl.parentNode.insertBefore(subEl, phEl.nextSibling);
   }
+  if(pf && subHTML) {
+    subHTML += '<div style="grid-column:1/-1;text-align:right;margin-top:2px">'
+      +'<span onclick="clearPhaseFilter()" style="font-size:10px;color:#bbb;cursor:pointer;user-select:none">✕ Clear filter</span>'
+      +'</div>';
+  }
   subEl.innerHTML = subHTML;
   subEl.onclick = function(e) {
     const card = e.target.closest('[data-sf]');
@@ -1427,20 +1432,22 @@ function buildForm(r) {
         ${MONTHS.map(m=>`<option value="${m}" ${(r.month||S.month)===m?'selected':''}>${m.charAt(0)+m.slice(1).toLowerCase()}</option>`).join('')}
       </select>
     </div><div class="fg">
-      <label>Type</label>
+      <label>Type ${isNew?'<span class="req">*</span>':''}</label>
       <select class="ms" id="f-type-m">
+        ${!isEdit?'<option value="">— Select type —</option>':''}
         ${['Regular','Spare Parts','Shopee','Supplies'].map(t=>`<option value="${t}" ${r.type===t?'selected':''}>${t}</option>`).join('')}
       </select>
     </div><div class="fg">
-      <label>Route</label>
+      <label>Route <span class="req">*</span></label>
       <select class="ms" id="f-route-m" onchange="updateRouteFields()">
+        ${!isEdit?'<option value="">— Select route —</option>':''}
         ${['Direct','Via SDC','Via CDC'].map(v=>`<option value="${v}" ${r.route===v?'selected':''}>${v}</option>`).join('')}
       </select>
     </div></div>
 
     <div class="section-label">Dates</div>
     <div class="frow"><div class="fg">
-      <label>WHS</label>
+      <label>WHS ${isNew?'<span class="req">*</span>':''}</label>
       <input type="date" id="f-dWhs" value="${r.dWhs||''}" oninput="syncDateLocks()" data-p6locked="${p6Locked}">
     </div><div class="fg">
       <label id="hub1-lbl">WHS → SDC</label>
@@ -1456,7 +1463,7 @@ function buildForm(r) {
 
     <div class="section-label">Shipment Details</div>
     <div class="frow three"><div class="fg">
-      <label>No. of Boxes</label>
+      <label>No. of Boxes ${isNew?'<span class="req">*</span>':''}</label>
       <input type="text" id="f-boxes" value="${esc(r.boxes||'')}" placeholder="12">
     </div><div class="fg">
       <label>Truck / Plate No.</label>
@@ -1805,8 +1812,18 @@ async function saveFulfillment(uid) {
 
 async function saveRecord() {
   const vals = getFormVals();
+  const isNew = !S.editingId;
+
   if(!vals.cdf)   { toast('CDF Reference is required','err'); return; }
   if(!vals.store) { toast('Store Name is required','err'); return; }
+
+  // Additional fields required on initial entry
+  if(isNew) {
+    if(!vals.type)  { toast('Type is required','err'); return; }
+    if(!vals.route || vals.route==='Unknown') { toast('Route is required','err'); return; }
+    if(!vals.boxes) { toast('Number of boxes is required','err'); return; }
+    if(!vals.dWhs)  { toast('WHS date is required','err'); return; }
+  }
 
   const btn = document.querySelector('#mo-footer .btn-primary');
   btn.innerHTML='<div class="spinner"></div> Saving…'; btn.disabled=true;
@@ -1887,12 +1904,13 @@ function setStatusFilter(k) {
 }
 
 function setPhaseFilter(id) {
-  if(S.phaseFilter===id) {
-    // Deselect — clear everything
-    S.phaseFilter=''; S.subFilter=''; S.statusFilter='';
-  } else {
-    S.phaseFilter=id; S.subFilter=''; S.statusFilter='';
-  }
+  if(S.phaseFilter===id) return; // already active — do nothing, keep sub-cards visible
+  S.phaseFilter=id; S.subFilter=''; S.statusFilter='';
+  S.expandedId=null; renderAll();
+}
+
+function clearPhaseFilter() {
+  S.phaseFilter=''; S.subFilter=''; S.statusFilter='';
   S.expandedId=null; renderAll();
 }
 
