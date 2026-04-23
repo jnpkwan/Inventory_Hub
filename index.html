@@ -1458,15 +1458,28 @@ function syncDateLocks() {
   if (fDWhs) fDWhs.disabled = p6Locked;
 
   const fHub1 = document.getElementById('f-hub1');
-  if (fHub1) fHub1.disabled = p6Locked || !dWhs;
+  if (fHub1) {
+    fHub1.disabled = p6Locked || !dWhs;
+    if (dWhs) fHub1.min = dWhs; // hub1 must be on or after WHS date
+  }
 
-  if (hub2El && hub2Visible) hub2El.disabled = p6Locked || !hub1;
+  if (hub2El && hub2Visible) {
+    hub2El.disabled = p6Locked || !hub1;
+    if (hub1) hub2El.min = hub1; // hub2 must be on or after hub1
+  }
 
   const fRecv = document.getElementById('f-dRecv');
   if (fRecv) {
-    if (p6Locked) fRecv.disabled = true;
-    else if (route === 'Direct') fRecv.disabled = !hub1;
-    else fRecv.disabled = !(hub2El?.value);
+    if (p6Locked) {
+      fRecv.disabled = true;
+    } else if (route === 'Direct') {
+      fRecv.disabled = !hub1;
+      if (hub1) fRecv.min = hub1;
+    } else {
+      const hub2val = hub2El?.value || '';
+      fRecv.disabled = !hub2val;
+      if (hub2val) fRecv.min = hub2val;
+    }
   }
 }
 
@@ -1732,6 +1745,16 @@ async function saveRecord() {
     if(!vals.boxes) { toast('Number of boxes is required','err'); return; }
     if(!vals.dWhs)  { toast('WHS date is required','err'); return; }
   }
+  // Date sequence validation — always enforced on edit and add
+  const d = (v) => v ? new Date(v) : null;
+  const dWhs  = d(vals.dWhs);
+  const dHub1 = d(vals.dSdc||vals.dDirect||vals.dCdc);
+  const dHub2 = d(vals.dSdc2||vals.dCdc2);
+  const dRecv = d(vals.dRecv);
+  if(dWhs && dHub1 && dHub1 < dWhs) { toast('WHS → Hub date cannot be before WHS date','err'); return; }
+  if(dHub1 && dHub2 && dHub2 < dHub1) { toast('Hub → Store date cannot be before WHS → Hub date','err'); return; }
+  if(dHub2 && dRecv && dRecv < dHub2) { toast('Received date cannot be before Hub → Store date','err'); return; }
+  if(!dHub2 && dHub1 && dRecv && dRecv < dHub1) { toast('Received date cannot be before dispatch date','err'); return; }
 
   const btn = document.querySelector('#mo-footer .btn-primary');
   btn.innerHTML='<div class="spinner"></div> Saving…'; btn.disabled=true;
