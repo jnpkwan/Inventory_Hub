@@ -1039,7 +1039,7 @@ function getWorkflowStatus(r) {
   if(st==='')                    return {label:'📤 Awaiting Coordinator', cls:'wb-await'};
   if(st==='Changes Requested')   return {label:'🏪 Store Changes Requested',cls:'wb-change'};
   // Phase 5A
-  if(fl==='')                    return {label:'📦 Pending WHS Send',     cls:'wb-action'};
+  if(fl==='')                    return {label:'🏭 WHS Prepare Order',     cls:'wb-action'};
   if(fl==='Sent to WHS')         return {label:'📋 Awaiting Actuals',     cls:'wb-action'};
   // Phase 5B dispatch
   const sm2 = STATUS_META[r.status]||STATUS_META['In Transit'];
@@ -1322,7 +1322,6 @@ function buildDetail(r) {
   const dispatchSection = `
     <hr class="wf-divider" style="margin:10px 0">
     <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#999;margin-bottom:8px">5B — Dispatch &amp; Receiving</div>
-    ${renderDispatchCards()}
     ${dispatchBanner}
     <div style="${dispatchUnlocked?'':'opacity:.4;pointer-events:none'}">
       <div class="timeline" style="margin-bottom:10px">${tl}</div>
@@ -1520,6 +1519,11 @@ function getFormVals() {
     status: (function(){
       const onHold = document.getElementById('f-onhold')?.checked;
       if (onHold) return 'On Hold';
+      // Dispatch status (In Transit, Received etc.) only applies in Phase 5B —
+      // after warehouse actuals are logged. Before that, lock to Preparing Order.
+      const editingRec = S.editingId ? S.records.find(r=>(r.id||r.cdf)===S.editingId) : null;
+      const dispatchActive = editingRec && ['Actuals Logged','Partial'].includes(editingRec.fulfillStatus||'');
+      if (!dispatchActive) return editingRec?.status || 'Preparing Order';
       const dRecv = document.getElementById('f-dRecv').value;
       const hub1v = document.getElementById('f-hub1').value;
       const hub2v = document.getElementById('f-hub2').value;
