@@ -1048,12 +1048,13 @@ function getWorkflowStatus(r) {
   // Phase 4 — Dispatch: derive from dates, not stored status
   if(r.status==='On Hold')       return {label:'⏸ On Hold',              cls:'wb-await'};
   if(r.dRecv)                    return {label:'✅ Received',             cls:'wb-done'};
-  // Check if any leg-2 date exists (SDC→Store or CDC→Store or Direct→Store)
-  const hub2 = r.dSdc2||r.dCdc2||'';
-  const hub1 = r.dSdc||r.dCdc||r.dDirect||'';
-  if(hub2)  return {label:'🚚 In Transit',           cls:'wb-info'};   // left hub, heading to store
-  if(hub1)  return {label:'🚚 In Transit',           cls:'wb-info'};   // left WHS, heading to hub/store
-  return {label:'📬 Pending Dispatch',  cls:'wb-action'};              // actuals logged, not yet dispatched
+  // In Transit = package is actually heading to the store
+  // For Direct: dDirect filled = heading to store
+  // For Via SDC/CDC: dSdc2/dCdc2 filled = left hub, heading to store
+  const toStore = r.dSdc2||r.dCdc2||r.dDirect||'';
+  if(toStore)  return {label:'🚚 In Transit',           cls:'wb-info'};
+  // Anything else (at WHS, heading to hub) = Pending Dispatch
+  return {label:'📬 Pending Dispatch',  cls:'wb-action'};
 }
 
 function renderTable(rows) {
@@ -1728,9 +1729,8 @@ async function markActualsLogged(uid) {
   if(!confirm('Confirm that warehouse actuals have been received and logged?\n\nThis will move the CDF to Pending Dispatch.')) return;
   const r = S.records.find(x=>(x.id||x.cdf)===uid);
   // Derive status from existing dates rather than hardcoding Pending Dispatch
-  const hub1 = r ? (r.dSdc||r.dCdc||r.dDirect||'') : '';
-  const hub2 = r ? (r.dSdc2||r.dCdc2||'') : '';
-  const derivedStatus = r?.dRecv ? 'Received' : (hub2||hub1) ? 'In Transit' : 'Pending Dispatch';
+  const toStore = r ? (r.dSdc2||r.dCdc2||r.dDirect||'') : '';
+  const derivedStatus = r?.dRecv ? 'Received' : toStore ? 'In Transit' : 'Pending Dispatch';
   const patch = {
     fulfillStatus: 'Actuals Logged',
     status: derivedStatus,
