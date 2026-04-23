@@ -197,17 +197,6 @@ td{padding:9px 12px;vertical-align:middle}
 .det-actions{display:flex;gap:7px;margin-left:auto;align-items:flex-start}
 
 /* ── PHASE STEPPER ── */
-.ph-stepper{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--blue-mid)}
-.ph-pill{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;font-size:10.5px;font-weight:700;cursor:pointer;border:1.5px solid transparent;transition:all .15s;user-select:none;white-space:nowrap}
-.ph-pill.done{background:var(--green-pale);color:#1a7a38;border-color:var(--green-mid)}
-.ph-pill.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-.ph-pill.pending-action{background:var(--amber-pale);color:#7a5500;border-color:var(--amber)}
-.ph-pill.locked{background:#F5F5F5;color:#bbb;border-color:#E8E8E8;cursor:default}
-.ph-pill.system{background:#F0F4FF;color:#8899CC;border-color:#C8D4F0;cursor:default}
-.ph-num{font-size:9px;font-weight:900;opacity:.7}
-.ph-cnt{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;border-radius:8px;background:rgba(0,0,0,.15);font-size:9px;font-weight:800;padding:0 4px}
-.ph-panel{display:none;animation:fadeIn .15s ease}
-.ph-panel.open{display:block}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 
 /* ── WORKFLOW PANELS ── */
@@ -1152,18 +1141,6 @@ function computePhaseCounts() {
   return c;
 }
 
-function togglePhasePanel(uid, phaseId) {
-  const stepper = document.getElementById('ph-stepper-'+uid);
-  if(!stepper) return;
-  const container = stepper.closest('.det-inner');
-  if(!container) return;
-  const panels = container.querySelectorAll('.ph-panel');
-  const target = container.querySelector('.ph-panel[data-phase="'+phaseId+'"]');
-  if(!target) return;
-  const isOpen = target.classList.contains('open');
-  panels.forEach(p => p.classList.remove('open'));
-  if(!isOpen) target.classList.add('open');
-}
 
 function buildDetail(r) {
   // ── Build dispatch timeline (Phase 5B) ───────────────────────────────────
@@ -1208,57 +1185,12 @@ function buildDetail(r) {
   const locked5 = storeSt!=='Approved';
   const dispatchUnlocked = ['Actuals Logged','Partial'].includes(fulfSt);
 
-  // ── Determine which phase auto-opens ─────────────────────────────────────
-  let autoOpen = 'p5'; // default: Phase 4 (fulfillment)
-  if(storeSt!=='Approved') autoOpen='p3';          // any approval still pending → open Approvals panel
-  else if(!dispatchUnlocked) autoOpen='p5';        // store approved, actuals not logged → fulfillment
 
-  // ── Phase pill counts (month-level) ──────────────────────────────────────
-  const cnts = computePhaseCounts();
 
-  // ── Helper: pill badge ────────────────────────────────────────────────────
-  function pillClass(phase) {
-    if(phase==='p1'||phase==='p2') return 'system';
-    if(phase==='p3') {
-      if(storeSt==='Approved') return 'done';                          // both approvals cleared
-      if(canApproveSM||canApproveStore) return 'pending-action';
-      return 'locked';
-    }
-    if(phase==='p5') {
-      if(locked5) return 'locked';
-      if(dispatchUnlocked && r.dRecv) return 'done';
-      if(canFulfill||canEdit) return 'pending-action';
-      return 'locked';
-    }
-    return 'locked';
-  }
 
-  function pillIcon(phase) {
-    if(phase==='p1'||phase==='p2') return '⚙';
-    if(phase==='p3') return storeSt==='Approved'?'✓':'●';
-    if(phase==='p5') return locked5?'🔒':r.dRecv?'✓':'●';
-    return '●';
-  }
 
-  function cntBadge(n) {
-    return n>0?`<span class="ph-cnt">${n}</span>`:'';
-  }
 
-  const stepper = `
-    <div class="ph-stepper" id="ph-stepper-${uid}">
-      <div class="ph-pill system" title="Inventory Assessment — coming soon">
-        <span class="ph-num">1</span> Inventory Assessment <span style="font-size:9px;opacity:.6">soon</span>
-      </div>
-      <div class="ph-pill system" title="Order Generation — coming soon">
-        <span class="ph-num">2</span> Order Generation <span style="font-size:9px;opacity:.6">soon</span>
-      </div>
-      <div class="ph-pill ${pillClass('p3')}" data-phase="p3" onclick="event.stopPropagation();togglePhasePanel('${uid}','p3')">
-        <span class="ph-num">3</span> Approvals ${pillIcon('p3')} ${cntBadge(cnts.p3)}
-      </div>
-      <div class="ph-pill ${pillClass('p5')}" data-phase="p5" onclick="event.stopPropagation();togglePhasePanel('${uid}','p5')">
-        <span class="ph-num">4</span> Fulfillment &amp; Dispatch ${pillIcon('p5')} ${cntBadge(cnts.p4)}
-      </div>
-    </div>`;
+
 
   // ── Phase 3 panel ─────────────────────────────────────────────────────────
   const smBadge  = smSt==='Approved'?'wfs-approved':smSt==='Changes Requested'?'wfs-changes':'wfs-pending';
@@ -1283,7 +1215,7 @@ function buildDetail(r) {
       }
     </div>` : '';
   const panelP3 = `
-    <div class="ph-panel ${autoOpen==='p3'?'open':''}" data-phase="p3">
+    <div class="ph-panel open" data-phase="p3">
       <div class="wf-panel">
         <div class="wf-panel-hd">
           <span class="wf-phase-num" style="background:#7B1FA2">3</span>
@@ -1309,7 +1241,7 @@ function buildDetail(r) {
       <button class="btn btn-changes" onclick="event.stopPropagation();openApprovalModal('${uid}','store','changes')">✏ Store Requests Changes</button>
     </div>` : '';
   const panelP4 = `
-    <div class="ph-panel ${autoOpen==='p4'?'open':''}" data-phase="p4">
+    <div class="ph-panel" data-phase="p4">
       <div class="wf-panel" style="${locked4?'opacity:.55;pointer-events:none':''}">
         <div class="wf-panel-hd">
           <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">4</span>
@@ -1376,7 +1308,7 @@ function buildDetail(r) {
       </div>
     </div>`;
   const panelP5 = `
-    <div class="ph-panel ${autoOpen==='p5'?'open':''}" data-phase="p5">
+    <div class="ph-panel open" data-phase="p5">
       <div class="wf-panel" style="${locked5?'opacity:.55;pointer-events:none':''}">
         <div class="wf-panel-hd">
           <span class="wf-phase-num" style="background:var(--teal)">5</span>
@@ -1399,7 +1331,6 @@ function buildDetail(r) {
     </div>`;
 
   return `<tr class="det-tr"><td colspan="12"><div class="det-inner">
-    ${stepper}
     ${panelP3}
     ${panelP4}
     ${panelP5}
@@ -1410,6 +1341,7 @@ function buildDetail(r) {
 /* ══════════════════ ADD / EDIT MODAL ══════════════════ */
 function buildForm(r) {
   const isEdit = !!r;
+  const isNew  = !isEdit;
   r = r || {status:'Preparing Order', route:'Via SDC', type:'Regular', month:S.month};
   // Phase 6 date fields locked until warehouse actuals logged
   const p6Locked = isEdit && !['Actuals Logged','Partial'].includes(r.fulfillStatus||'');
