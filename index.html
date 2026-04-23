@@ -908,16 +908,18 @@ function renderSummary(rows) {
   // ── Phase counts ──────────────────────────────────────────────────────────
   // Phase 3 = combined approvals (any CDF not yet store-approved)
   const p3cnt  = all.filter(r=>(r.storeStatus||'')!=='Approved').length;
-  const p4acnt = all.filter(r=>(r.storeStatus||'')==='Approved'&&!['Actuals Logged','Partial'].includes(r.fulfillStatus||'')).length;
-  const p4bcnt = all.filter(r=>['Actuals Logged','Partial'].includes(r.fulfillStatus||'')&&!r.dRecv).length;
-  const p4cnt  = p4acnt + p4bcnt;
+  // Phase 4 sub-label: active (not yet dispatched) vs in transit vs received
+  const p4active  = all.filter(r=>(r.storeStatus||'')==='Approved'&&r.status!=='In Transit'&&!r.dRecv).length;
+  const p4transit = all.filter(r=>(r.storeStatus||'')==='Approved'&&r.status==='In Transit').length;
+  const p4done    = all.filter(r=>(r.storeStatus||'')==='Approved'&&!!r.dRecv).length;
+  const p4cnt     = all.filter(r=>(r.storeStatus||'')==='Approved').length;
 
   const pf = S.phaseFilter;
   const phCards = [
     {id:'p1', cls:'phc-1', count:null,  label:'Inventory Assessment', sub:'Replenishment engine soon', dim:true,  disabled:true},
     {id:'p2', cls:'phc-2', count:null,  label:'Order Generation',     sub:'Replenishment engine soon', dim:true,  disabled:true},
     {id:'p3', cls:'phc-3', count:p3cnt, label:'Approvals',             sub:p3cnt>0?p3cnt+' pending approval':'All approved', dim:false, disabled:false},
-    {id:'p4', cls:'phc-4', count:p4cnt, label:'Fulfillment & Dispatch',sub:`${p4acnt} at warehouse · ${p4bcnt} in transit`,  dim:false, disabled:false},
+    {id:'p4', cls:'phc-4', count:p4cnt, label:'Fulfillment & Dispatch', sub:`${p4active} active · ${p4transit} in transit · ${p4done} received`, dim:false, disabled:false},
   ];
 
   document.getElementById('ph-summary').innerHTML = phCards.map(c=>{
