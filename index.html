@@ -1330,10 +1330,14 @@ function buildDetail(r) {
       ${canDelete?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>`:''}
     </div>`;
 
+  // Only show panels the CDF has reached — progressive reveal
+  const showP4 = smSt==='Approved';          // SM approved → show store approval
+  const showP5 = storeSt==='Approved';       // Store approved → show fulfillment
+
   return `<tr class="det-tr"><td colspan="12"><div class="det-inner">
     ${panelP3}
-    ${panelP4}
-    ${panelP5}
+    ${showP4 ? panelP4 : ''}
+    ${showP5 ? panelP5 : ''}
     ${actionsRow}
   </div></td></tr>`;
 }
