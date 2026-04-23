@@ -162,6 +162,35 @@ td{padding:9px 12px;vertical-align:middle}
 .dmv{font-weight:500;color:var(--carbon)}
 .det-actions{display:flex;gap:7px;margin-left:auto;align-items:flex-start}
 
+/* ── WORKFLOW PANELS ── */
+.wf-panels{display:flex;flex-direction:column;gap:8px;margin-top:12px;border-top:1px solid var(--blue-mid);padding-top:12px}
+.wf-panel{border-radius:8px;border:1.5px solid var(--silver);background:#fff;overflow:hidden}
+.wf-panel-hd{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--mist);border-bottom:1px solid var(--silver)}
+.wf-phase-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:800;color:#fff;flex-shrink:0}
+.wf-panel-title{font-family:"Montserrat",sans-serif;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.8px;color:#666}
+.wf-status-badge{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;border:1px solid transparent}
+.wfs-pending{background:#F5F5F5;color:#888;border-color:#DDD}
+.wfs-approved{background:var(--green-pale);color:#1a7a38;border-color:var(--green-mid)}
+.wfs-changes{background:var(--amber-pale);color:#9a6700;border-color:#f5d87a}
+.wfs-sent{background:var(--blue-pale);color:var(--blue);border-color:var(--blue-mid)}
+.wfs-fulfilled{background:var(--teal-pale);color:var(--teal);border-color:#80cbc4}
+.wfs-partial{background:var(--red-pale);color:var(--red);border-color:var(--red-mid)}
+.wf-panel-bd{padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.wf-note{font-size:11.5px;color:#555;background:#fffbe6;border-left:3px solid var(--amber);padding:5px 9px;border-radius:0 4px 4px 0;font-style:italic}
+.wf-meta-row{display:flex;gap:16px;flex-wrap:wrap}
+.wf-meta{display:flex;flex-direction:column;gap:1px}
+.wf-ml{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#aaa;font-weight:700}
+.wf-mv{font-size:11.5px;font-weight:500;color:var(--carbon)}
+.wf-actions{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+.btn-approve{background:var(--green);color:#fff;font-size:11px;padding:5px 11px}
+.btn-approve:hover{background:#1a8038}
+.btn-changes{background:var(--amber-pale);color:#7a5500;border:1.5px solid var(--amber);font-size:11px;padding:5px 11px}
+.btn-changes:hover{background:#fdf0c0}
+.btn-fulfill{background:var(--teal);color:#fff;font-size:11px;padding:5px 11px}
+.btn-fulfill:hover{background:#004d40}
+.btn-resubmit{background:var(--blue);color:#fff;font-size:11px;padding:5px 11px}
+.btn-resubmit:hover{background:#133a7a}
+
 /* ── MODAL ── */
 .mo{position:fixed;inset:0;background:rgba(30,30,30,.4);display:flex;align-items:center;justify-content:center;z-index:500;padding:20px}
 .modal{background:var(--white);border-radius:var(--rl);width:100%;max-width:580px;box-shadow:var(--shm);animation:mIn .18s ease;border:1px solid var(--silver)}
@@ -875,24 +904,108 @@ function buildDetail(r) {
   steps.forEach((s,i)=>{if(s.d) lastDone=i;});
   const allDone = lastDone===steps.length-1;
   const lastStepIdx = steps.length - 1;
-  // Determine if the record is actively in transit (moving toward store)
   const isInTransit = r.status === 'In Transit';
   const tl = steps.map((s,i)=>{
     let st;
-    if(i<=lastDone) {
-      st = 'done';
-    } else if(!allDone && i===lastDone+1 && i!==lastStepIdx) {
-      // Active = next step to happen; only pulse/NOW when actually In Transit
-      st = isInTransit ? 'active' : 'active-pending';
-    } else {
-      st = 'pending';
-    }
+    if(i<=lastDone) { st='done'; }
+    else if(!allDone && i===lastDone+1 && i!==lastStepIdx) { st=isInTransit?'active':'active-pending'; }
+    else { st='pending'; }
     return `<div class="ts ${st}"><div class="tc">${s.i}</div><div class="tl">${s.l}</div><div class="td2">${s.d?fmtD(s.d):'—'}</div></div>`;
   }).join('');
 
   const td = tdDays(r);
-  const isRestricted = S.user.role === 'IS' || S.user.role === 'COORDINATOR';
-  const canEdit = S.user.role==='EXECUTIVE' || S.user.role==='IS';
+  const uid = esc(r.id||r.cdf);
+  const role = S.user.role;
+  const canEdit = role==='EXECUTIVE'||role==='IS';
+  const canDelete = role==='EXECUTIVE';
+  const canApproveSM = role==='EXECUTIVE';
+  const canApproveStore = role==='COORDINATOR'||role==='EXECUTIVE';
+  const canFulfill = role==='IS'||role==='EXECUTIVE';
+
+  // Phase 3: Sales Manager Approval
+  const smSt = r.smgrStatus||'';
+  const smBadge = smSt==='Approved'?'wfs-approved':smSt==='Changes Requested'?'wfs-changes':'wfs-pending';
+  const smLabel = smSt||'Awaiting Review';
+  const smActions = canApproveSM && smSt!=='Approved' ? `
+    <div class="wf-actions">
+      <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','approve')">✓ Approve</button>
+      <button class="btn btn-changes" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','changes')">✏ Request Changes</button>
+    </div>` : '';
+  const smResubmit = canFulfill && smSt==='Changes Requested' ? `
+    <div class="wf-actions">
+      <button class="btn btn-resubmit" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','resubmit')">↑ Resubmit</button>
+    </div>` : '';
+  const p3 = `
+    <div class="wf-panel">
+      <div class="wf-panel-hd">
+        <span class="wf-phase-num" style="background:#7B1FA2">3</span>
+        <span class="wf-panel-title">Sales Manager Approval</span>
+        <span class="wf-status-badge ${smBadge}">${smLabel}</span>
+      </div>
+      <div class="wf-panel-bd">
+        ${smSt==='Changes Requested'&&r.smgrNotes?`<div class="wf-note">📝 ${esc(r.smgrNotes)}</div>`:''}
+        <div class="wf-meta-row">
+          ${r.smgrApprovedBy?`<div class="wf-meta"><div class="wf-ml">${smSt==='Approved'?'Approved by':'Reviewed by'}</div><div class="wf-mv">${esc(r.smgrApprovedBy)}</div></div>`:''}
+          ${r.smgrApprovedAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.smgrApprovedAt.slice(0,10))}</div></div>`:''}
+        </div>
+        ${smActions}${smResubmit}
+      </div>
+    </div>`;
+
+  // Phase 4: Store Approval
+  const locked4 = smSt!=='Approved';
+  const storeSt = r.storeStatus||'';
+  const storeBadge = storeSt==='Approved'?'wfs-approved':storeSt==='Changes Requested'?'wfs-changes':'wfs-pending';
+  const storeLabel = locked4?'Locked — awaiting Sales Mgr approval':(storeSt||'Awaiting Coordinator');
+  const storeActions = !locked4 && canApproveStore && storeSt!=='Approved' ? `
+    <div class="wf-actions">
+      <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','store','approve')">✓ Store Approved</button>
+      <button class="btn btn-changes" onclick="event.stopPropagation();openApprovalModal('${uid}','store','changes')">✏ Store Requests Changes</button>
+    </div>` : '';
+  const p4 = `
+    <div class="wf-panel" style="${locked4?'opacity:.55;pointer-events:none':''}">
+      <div class="wf-panel-hd">
+        <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">4</span>
+        <span class="wf-panel-title">Store Manager Approval</span>
+        <span class="wf-status-badge ${locked4?'wfs-pending':storeBadge}">${storeLabel}</span>
+      </div>
+      <div class="wf-panel-bd">
+        ${storeSt==='Changes Requested'&&r.storeNotes?`<div class="wf-note">🏪 Store: ${esc(r.storeNotes)}</div>`:''}
+        ${r.coordNotes?`<div class="wf-note" style="border-color:var(--green);background:var(--green-pale)">🤝 Coordinator: ${esc(r.coordNotes)}</div>`:''}
+        <div class="wf-meta-row">
+          ${r.storeUpdatedBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.storeUpdatedBy)}</div></div>`:''}
+          ${r.storeUpdatedAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.storeUpdatedAt.slice(0,10))}</div></div>`:''}
+        </div>
+        ${storeActions}
+      </div>
+    </div>`;
+
+  // Phase 5: Warehouse Fulfillment
+  const locked5 = storeSt!=='Approved';
+  const fulfSt = r.fulfillStatus||'';
+  const fulfBadge = fulfSt==='Fulfilled'?'wfs-fulfilled':fulfSt==='Partial'?'wfs-partial':fulfSt==='Sent to WHS'?'wfs-sent':'wfs-pending';
+  const fulfLabel = locked5?'Locked — awaiting store approval':(fulfSt||'Not yet sent');
+  const fulfActions = !locked5 && canFulfill ? `
+    <div class="wf-actions">
+      <button class="btn btn-fulfill" onclick="event.stopPropagation();openFulfillmentModal('${uid}')">🏭 ${fulfSt?'Update Fulfillment':'Enter Fulfillment'}</button>
+    </div>` : '';
+  const p5 = `
+    <div class="wf-panel" style="${locked5?'opacity:.55;pointer-events:none':''}">
+      <div class="wf-panel-hd">
+        <span class="wf-phase-num" style="background:var(--teal)">5</span>
+        <span class="wf-panel-title">Warehouse Fulfillment</span>
+        <span class="wf-status-badge ${locked5?'wfs-pending':fulfBadge}">${fulfLabel}</span>
+      </div>
+      <div class="wf-panel-bd">
+        <div class="wf-meta-row">
+          ${r.boxes?`<div class="wf-meta"><div class="wf-ml">Ordered Boxes</div><div class="wf-mv">${esc(r.boxes)}</div></div>`:''}
+          ${r.actualBoxes?`<div class="wf-meta"><div class="wf-ml">Actual Shipped</div><div class="wf-mv" style="${r.actualBoxes!==r.boxes?'color:var(--red);font-weight:700':'color:var(--teal);font-weight:700'}">${esc(r.actualBoxes)}</div></div>`:''}
+          ${r.reasonCode?`<div class="wf-meta"><div class="wf-ml">Reason Code</div><div class="wf-mv" style="color:var(--red)">${esc(r.reasonCode)}</div></div>`:''}
+          ${r.fulfillBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.fulfillBy)}</div></div>`:''}
+        </div>
+        ${fulfActions}
+      </div>
+    </div>`;
 
   return `<tr class="det-tr"><td colspan="12"><div class="det-inner">
     <div class="timeline">${tl}</div>
@@ -904,10 +1017,11 @@ function buildDetail(r) {
       ${r.remarks?`<div class="dm"><div class="dml">Remarks</div><div class="dmv">${esc(r.remarks)}</div></div>`:''}
       ${r.updatedBy?`<div class="dm"><div class="dml">Last Updated By</div><div class="dmv">${esc(r.updatedBy)}</div></div>`:''}
       <div class="det-actions">
-        ${canEdit?`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${esc(r.id||r.cdf)}">✏ Edit</button>`:''}
-        ${(S.user.role==='EXECUTIVE')?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${esc(r.id||r.cdf)}">✕ Delete</button>`:''}
+        ${canEdit?`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${uid}">✏ Edit</button>`:''}
+        ${canDelete?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>`:''}
       </div>
     </div>
+    <div class="wf-panels">${p3}${p4}${p5}</div>
   </div></td></tr>`;
 }
 
@@ -1106,6 +1220,164 @@ function openEditModal(uid) {
 function closeModal() {
   document.getElementById('mo').style.display='none';
   S.editingId = null;
+}
+
+/* ══════════════════ APPROVAL MODAL (Phase 3 & 4) ══════════════════ */
+function openApprovalModal(uid, phase, action) {
+  const r = S.records.find(x=>(x.id||x.cdf)===uid);
+  if(!r) return;
+
+  const isSM = phase==='sm';
+  const isResubmit = action==='resubmit';
+  const isChanges = action==='changes';
+
+  const titles = {
+    sm: { approve:'Approve Order — Sales Manager', changes:'Request Changes — Sales Manager', resubmit:'Resubmit to Sales Manager' },
+    store: { approve:'Confirm Store Approval', changes:'Log Store Change Request' }
+  };
+
+  document.getElementById('mo-title').textContent = titles[phase][action];
+
+  let body = '';
+  if(isResubmit) {
+    body = `
+      <div class="fg"><label>Resubmit Note <span style="color:#aaa;font-weight:400;text-transform:none">(optional)</span></label>
+        <textarea id="wf-note" placeholder="Note to Sales Manager about what was revised…"></textarea>
+      </div>`;
+  } else if(isChanges) {
+    const lbl = isSM ? 'Changes Required' : 'Store Manager Notes';
+    const ph = isSM ? 'Describe what needs to be revised…' : "Log the store manager's reason for changes…";
+    const coordLbl = !isSM ? `
+      <div class="fg" style="margin-top:10px"><label>Coordinator Notes <span style="color:#aaa;font-weight:400;text-transform:none">(optional)</span></label>
+        <textarea id="wf-coord-note" placeholder="Your notes on this interaction…"></textarea>
+      </div>` : '';
+    body = `
+      <div class="fg"><label>${lbl} <span class="req">*</span></label>
+        <textarea id="wf-note" placeholder="${ph}"></textarea>
+      </div>${coordLbl}`;
+  } else {
+    // approve
+    const coordLbl = !isSM ? `
+      <div class="fg" style="margin-top:10px"><label>Coordinator Notes <span style="color:#aaa;font-weight:400;text-transform:none">(optional)</span></label>
+        <textarea id="wf-coord-note" placeholder="Notes on this store approval…"></textarea>
+      </div>` : '';
+    body = `
+      <div class="alert alert-info" style="margin-bottom:0">
+        ${isSM ? '👔 You are approving this order as Sales Manager. CDF generation will be unlocked.' : '🤝 You are confirming the store manager approved this CDF.'}
+      </div>${coordLbl}`;
+  }
+
+  document.getElementById('mo-body').innerHTML = `<div style="padding:4px 0">${body}</div>`;
+  document.getElementById('mo-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    <button class="btn ${action==='approve'?'btn-primary':action==='resubmit'?'btn-resubmit':'btn-changes'}" onclick="saveApproval('${uid}','${phase}','${action}')">
+      ${action==='approve'?'✓ Confirm Approval':action==='resubmit'?'↑ Resubmit':'Save'}
+    </button>`;
+  document.getElementById('mo').style.display='flex';
+}
+
+async function saveApproval(uid, phase, action) {
+  const noteEl = document.getElementById('wf-note');
+  const coordEl = document.getElementById('wf-coord-note');
+  const note = noteEl?.value.trim()||'';
+  const coordNote = coordEl?.value.trim()||'';
+
+  if((action==='changes') && !note) { toast('Please enter a reason for the change request','err'); return; }
+
+  const now = new Date().toISOString();
+  const user = S.user.username;
+  let patch = {};
+
+  if(phase==='sm') {
+    if(action==='approve') patch = {smgrStatus:'Approved', smgrNotes:'', smgrApprovedBy:user, smgrApprovedAt:now};
+    else if(action==='changes') patch = {smgrStatus:'Changes Requested', smgrNotes:note, smgrApprovedBy:user, smgrApprovedAt:now};
+    else if(action==='resubmit') patch = {smgrStatus:'', smgrNotes:note||'Revised and resubmitted', smgrApprovedBy:'', smgrApprovedAt:''};
+  } else {
+    if(action==='approve') patch = {storeStatus:'Approved', storeNotes:'', storeUpdatedBy:user, storeUpdatedAt:now, coordNotes:coordNote||r_coordNote(uid)};
+    else if(action==='changes') patch = {storeStatus:'Changes Requested', storeNotes:note, storeUpdatedBy:user, storeUpdatedAt:now, coordNotes:coordNote||r_coordNote(uid)};
+  }
+
+  await apiUpdateCDF(uid, patch);
+  closeModal();
+  renderAll();
+  toast(action==='approve'?'Approval recorded':action==='resubmit'?'Resubmitted':'Change request logged');
+}
+
+function r_coordNote(uid) {
+  const r = S.records.find(x=>(x.id||x.cdf)===uid);
+  return r?.coordNotes||'';
+}
+
+/* ══════════════════ FULFILLMENT MODAL (Phase 5) ══════════════════ */
+function openFulfillmentModal(uid) {
+  const r = S.records.find(x=>(x.id||x.cdf)===uid);
+  if(!r) return;
+
+  const REASON_CODES = ['Warehouse stock insufficient','Product damaged','Supplier delivery delay','Picking error','Store refused partial','Other (specify)'];
+  const curr = r.fulfillStatus||'';
+
+  document.getElementById('mo-title').textContent = 'Warehouse Fulfillment — ' + r.cdf;
+  document.getElementById('mo-body').innerHTML = `
+    <div style="padding:4px 0;display:flex;flex-direction:column;gap:14px">
+      <div class="frow three">
+        <div class="fg">
+          <label>Fulfillment Status <span class="req">*</span></label>
+          <select class="ms" id="wf-fstatus">
+            <option value="Sent to WHS" ${curr==='Sent to WHS'?'selected':''}>Sent to WHS</option>
+            <option value="Fulfilled" ${curr==='Fulfilled'?'selected':''}>Fulfilled (full)</option>
+            <option value="Partial" ${curr==='Partial'?'selected':''}>Partial shipment</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Ordered Boxes</label>
+          <input type="text" value="${esc(r.boxes||'')}" disabled style="background:var(--mist);color:#999">
+        </div>
+        <div class="fg">
+          <label>Actual Shipped <span class="req">*</span></label>
+          <input type="text" id="wf-actual" value="${esc(r.actualBoxes||r.boxes||'')}" placeholder="e.g. 10">
+        </div>
+      </div>
+      <div class="fg" id="wf-reason-wrap">
+        <label>Reason Code <span class="req">*</span> <span style="color:#bbb;font-weight:400;text-transform:none;font-size:10px">— required when actual ≠ ordered</span></label>
+        <select class="ms" id="wf-reason">
+          <option value="">— Select reason —</option>
+          ${REASON_CODES.map(rc=>`<option value="${rc}" ${r.reasonCode===rc?'selected':''}>${rc}</option>`).join('')}
+        </select>
+      </div>
+      <div class="fg">
+        <label>Fulfillment Notes <span style="color:#bbb;font-weight:400;text-transform:none">(optional)</span></label>
+        <textarea id="wf-fnotes" placeholder="Additional warehouse notes…">${esc(r.fulfillNotes||'')}</textarea>
+      </div>
+    </div>`;
+  document.getElementById('mo-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-fulfill" onclick="saveFulfillment('${uid}')">💾 Save Fulfillment</button>`;
+  document.getElementById('mo').style.display='flex';
+}
+
+async function saveFulfillment(uid) {
+  const r = S.records.find(x=>(x.id||x.cdf)===uid);
+  const fstatus = document.getElementById('wf-fstatus').value;
+  const actual = document.getElementById('wf-actual').value.trim();
+  const reason = document.getElementById('wf-reason').value;
+  const notes = document.getElementById('wf-fnotes').value.trim();
+
+  if(!actual) { toast('Enter actual shipped quantity','err'); return; }
+  if(actual !== (r.boxes||'') && !reason) { toast('Reason code required when actual ≠ ordered','err'); return; }
+
+  const patch = {
+    fulfillStatus: fstatus,
+    actualBoxes: actual,
+    reasonCode: reason,
+    fulfillNotes: notes,
+    fulfillBy: S.user.username,
+    fulfillAt: new Date().toISOString()
+  };
+
+  await apiUpdateCDF(uid, patch);
+  closeModal();
+  renderAll();
+  toast('Fulfillment saved');
 }
 
 async function saveRecord() {
