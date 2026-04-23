@@ -1429,13 +1429,13 @@ function buildForm(r) {
 
     <div class="section-label">Shipment Details</div>
     <div class="frow three"><div class="fg">
-      <label>No. of Boxes</label>
+      <label id="boxes-lbl">No. of Boxes</label>
       <input type="text" id="f-boxes" value="${esc(r.boxes||'')}" placeholder="12">
     </div><div class="fg">
-      <label>Truck / Plate No.</label>
+      <label id="truck-lbl">Truck / Plate No.</label>
       <input type="text" id="f-truck" value="${esc(r.truck||'')}" placeholder="TRK-001">
     </div><div class="fg">
-      <label>CAS No.</label>
+      <label id="cas-lbl">CAS No.</label>
       <input type="text" id="f-cas" value="${esc(r.cas||'')}" placeholder="169070">
     </div></div>
 
@@ -1479,7 +1479,16 @@ function syncDateLocks() {
     if (hub1) hub2El.min = hub1; // hub2 must be on or after hub1
   }
 
-  const fRecv = document.getElementById('f-dRecv');
+  // Show required hint on Boxes/Truck/CAS when package is heading to store
+  const hub2val = hub2El?.value || '';
+  const toStoreFilled = route==='Direct' ? !!hub1 : !!hub2val;
+  const boxesLbl = document.getElementById('boxes-lbl');
+  const truckLbl = document.getElementById('truck-lbl');
+  const casLbl   = document.getElementById('cas-lbl');
+  const reqMark  = '<span class="req">*</span>';
+  if(boxesLbl) boxesLbl.innerHTML = 'No. of Boxes' + (toStoreFilled ? ' '+reqMark : '');
+  if(truckLbl) truckLbl.innerHTML = 'Truck / Plate No.' + (toStoreFilled ? ' '+reqMark : '');
+  if(casLbl)   casLbl.innerHTML   = 'CAS No.' + (toStoreFilled ? ' '+reqMark : '');
   if (fRecv) {
     if (p6Locked) {
       fRecv.disabled = true;
@@ -1767,6 +1776,13 @@ async function saveRecord() {
   if(dHub1 && dHub2 && dHub2 < dHub1) { toast('Hub → Store date cannot be before WHS → Hub date','err'); return; }
   if(dHub2 && dRecv && dRecv < dHub2) { toast('Received date cannot be before Hub → Store date','err'); return; }
   if(!dHub2 && dHub1 && dRecv && dRecv < dHub1) { toast('Received date cannot be before dispatch date','err'); return; }
+  // Boxes, Truck and CAS required when package is heading to store
+  const toStoreFilled = vals.route==='Direct' ? !!vals.dDirect : !!(vals.dSdc2||vals.dCdc2);
+  if(toStoreFilled) {
+    if(!vals.boxes) { toast('No. of Boxes is required when dispatching to store','err'); return; }
+    if(!vals.truck) { toast('Truck / Plate No. is required when dispatching to store','err'); return; }
+    if(!vals.cas)   { toast('CAS No. is required when dispatching to store','err'); return; }
+  }
 
   const btn = document.querySelector('#mo-footer .btn-primary');
   btn.innerHTML='<div class="spinner"></div> Saving…'; btn.disabled=true;
