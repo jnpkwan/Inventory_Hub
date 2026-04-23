@@ -1045,13 +1045,15 @@ function getWorkflowStatus(r) {
   // Phase 4 — Fulfillment
   if(fl==='')                    return {label:'🏭 WHS Prepare Order',     cls:'wb-action'};
   if(fl==='Sent to WHS')         return {label:'📋 Awaiting Actuals',     cls:'wb-action'};
-  // Phase 4 — Dispatch
+  // Phase 4 — Dispatch: derive from dates, not stored status
   if(r.status==='On Hold')       return {label:'⏸ On Hold',              cls:'wb-await'};
-  if(r.status==='In Transit')    return {label:'🚚 In Transit',           cls:'wb-info'};
-  if(r.status==='Pending Dispatch') return {label:'📬 Pending Dispatch',  cls:'wb-action'};
-  if(r.status==='Preparing Order')  return {label:'📋 Preparing Order',   cls:'wb-action'};
   if(r.dRecv)                    return {label:'✅ Received',             cls:'wb-done'};
-  return {label:'● '+r.status,   cls:'wb-await'};
+  // Check if any leg-2 date exists (SDC→Store or CDC→Store or Direct→Store)
+  const hub2 = r.dSdc2||r.dCdc2||'';
+  const hub1 = r.dSdc||r.dCdc||r.dDirect||'';
+  if(hub2)  return {label:'🚚 In Transit',           cls:'wb-info'};   // left hub, heading to store
+  if(hub1)  return {label:'🚚 In Transit',           cls:'wb-info'};   // left WHS, heading to hub/store
+  return {label:'📬 Pending Dispatch',  cls:'wb-action'};              // actuals logged, not yet dispatched
 }
 
 function renderTable(rows) {
@@ -1724,9 +1726,14 @@ async function markSentToWHS(uid) {
 /* ══════════════════ CONFIRM ACTUALS LOGGED (Phase 4 — IS only) ══════════════════ */
 async function markActualsLogged(uid) {
   if(!confirm('Confirm that warehouse actuals have been received and logged?\n\nThis will move the CDF to Pending Dispatch.')) return;
+  const r = S.records.find(x=>(x.id||x.cdf)===uid);
+  // Derive status from existing dates rather than hardcoding Pending Dispatch
+  const hub1 = r ? (r.dSdc||r.dCdc||r.dDirect||'') : '';
+  const hub2 = r ? (r.dSdc2||r.dCdc2||'') : '';
+  const derivedStatus = r?.dRecv ? 'Received' : (hub2||hub1) ? 'In Transit' : 'Pending Dispatch';
   const patch = {
     fulfillStatus: 'Actuals Logged',
-    status: 'Pending Dispatch',
+    status: derivedStatus,
     fulfillBy: S.user.username,
     fulfillAt: new Date().toISOString()
   };
