@@ -909,13 +909,22 @@ function renderSummary(rows) {
     {id:'p5', cls:'phc-5', count:p5cnt,label:'Fulfillment & Dispatch',sub:`${p5acnt} at warehouse · ${p5bcnt} in transit`,   dim:false, disabled:false},
   ];
 
-  document.getElementById('ph-summary').innerHTML = phCards.map(c=>`
-    <div class="phc ${c.cls}${pf===c.id?' active':''}" ${c.disabled?'':'onclick="setPhaseFilter(''+c.id+'')"'} title="${c.disabled?'Coming soon':'Filter by '+c.label}">
-      <div class="phc-num">Phase ${c.id[1]}</div>
-      <div class="phc-n${c.dim?' dim':''}">` + (c.dim?'—':c.count) + `</div>
-      <div class="phc-l">${c.label}</div>
-      <div class="phc-sub">${c.sub}</div>
-    </div>`).join('');
+  document.getElementById('ph-summary').innerHTML = phCards.map(c=>{
+    const activeClass = pf===c.id?' active':'';
+    const clickAttr   = c.disabled?'':'data-phase-id="'+c.id+'"';
+    const nStr        = c.dim?'—':c.count;
+    const dimClass    = c.dim?' dim':'';
+    return '<div class="phc '+c.cls+activeClass+'" '+clickAttr+' title="'+(c.disabled?'Coming soon':'Filter by '+c.label)+'">'
+      +'<div class="phc-num">Phase '+c.id[1]+'</div>'
+      +'<div class="phc-n'+dimClass+'">'+nStr+'</div>'
+      +'<div class="phc-l">'+c.label+'</div>'
+      +'<div class="phc-sub">'+c.sub+'</div>'
+      +'</div>';
+  }).join('');
+  document.getElementById('ph-summary').onclick = function(e) {
+    const card = e.target.closest('[data-phase-id]');
+    if(card) setPhaseFilter(card.dataset.phaseId);
+  };
 
   // ── Sub-card row ──────────────────────────────────────────────────────────
   let subHTML = '';
