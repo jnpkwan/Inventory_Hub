@@ -1336,7 +1336,7 @@ function buildDetail(r) {
           <span class="wf-status-badge ${locked5?'wfs-pending':fulfBadge}">${locked5?'Locked — awaiting store approval':(fulfSt||'Not yet sent to warehouse')}</span>
         </div>
         <div class="wf-panel-bd">
-          ${fulfMeta}${sendBtn}
+          ${fulfMeta}${sendBtn}${logActualsBtn}
           ${dispatchSection}
         </div>
       </div>
