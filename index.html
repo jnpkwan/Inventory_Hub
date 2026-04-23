@@ -143,24 +143,23 @@ td{padding:9px 12px;vertical-align:middle}
 .td-dim{font-size:11.5px;color:#777}
 
 /* ── BADGES ── */
-.sb{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;border:1px solid transparent;white-space:nowrap}
 .sb .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
-.s-received{background:var(--green-pale);color:#1a7a38;border-color:var(--green-mid)}
-.s-transit{background:var(--blue-pale);color:var(--blue);border-color:var(--blue-mid)}
-.s-pending{background:var(--amber-pale);color:#9a6700;border-color:#f5d87a}
+
+
+
 .s-preparing{background:#F3E5F5;color:#6A1B9A;border-color:#CE93D8}
-.s-hold{background:var(--grey-pale);color:#546E7A;border-color:#b0bec5}
-.s-completed{background:var(--teal-pale);color:var(--teal);border-color:#80cbc4}
-.rb{display:inline-block;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:.3px;text-transform:uppercase}
-.r-direct{background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7}
-.r-sdc{background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9}
-.r-cdc{background:#F3E5F5;color:#6A1B9A;border:1px solid #CE93D8}
-.r-unknown{background:#F5F5F5;color:#757575;border:1px solid #E0E0E0}
-.tb{display:inline-block;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px}
-.t-regular{background:#EEE;color:#555}
-.t-sp{background:#FFF3E0;color:#E65100;border:1px solid #FFCC80}
-.t-shopee{background:#FFF0F5;color:#C2185B;border:1px solid #F48FB1}
-.t-supplies{background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7}
+
+
+
+
+
+
+
+
+
+
+
+
 .od-flag{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;color:var(--red);background:var(--red-pale);border:1px solid var(--red-mid);padding:2px 6px;border-radius:3px;margin-left:4px}
 
 /* ── DETAIL EXPAND ── */
@@ -1045,7 +1044,6 @@ function getWorkflowStatus(r) {
   if(fl==='')                    return {label:'🏭 WHS Prepare Order',     cls:'wb-action'};
   if(fl==='Sent to WHS')         return {label:'📋 Awaiting Actuals',     cls:'wb-action'};
   // Phase 4 — Dispatch
-  const sm2 = STATUS_META[r.status]||STATUS_META['In Transit'];
   if(r.status==='On Hold')       return {label:'⏸ On Hold',              cls:'wb-await'};
   if(r.status==='In Transit')    return {label:'🚚 In Transit',           cls:'wb-info'};
   if(r.status==='Pending Dispatch') return {label:'📬 Pending Dispatch',  cls:'wb-action'};
@@ -1106,15 +1104,12 @@ function renderTable(rows) {
 
   tbody.innerHTML = rows.map(r => {
     const wf   = getWorkflowStatus(r);
-    const sm   = STATUS_META[r.status]||STATUS_META['In Transit'];
     const od   = isOverdue(r);
     const td   = tdDays(r);
     const isEx = S.expandedId === r.id || S.expandedId === r.cdf;
     const hub1 = r.dSdc||r.dCdc||'';
     const hub2 = r.dSdc2||r.dCdc2||'';
-    const rc   = {Direct:'r-direct','Via SDC':'r-sdc','Via CDC':'r-cdc',Unknown:'r-unknown'}[r.route]||'r-unknown';
     const canEdit = S.user.role==='EXECUTIVE'||S.user.role==='IS';
-    const tc   = {Regular:'t-regular','Spare Parts':'t-sp',Shopee:'t-shopee',Supplies:'t-supplies'}[r.type]||'t-regular';
     const uid  = r.id||r.cdf;
     const upAt = r.updatedAt ? fmtD(r.updatedAt.slice(0,10)) : '—';
 
@@ -1123,7 +1118,7 @@ function renderTable(rows) {
         <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="toggleExpand('${esc(uid)}')" data-id="${esc(uid)}">
           <td class="td-cdf">${esc(r.cdf)}</td>
           <td class="td-store">${esc(r.store)}</td>
-          <td><span class="tb ${tc}">${r.type}</span></td>
+          <td class="td-dim">${r.type}</td>
           <td class="td-dim">${esc(r.boxes||'—')}</td>
           <td><span class="wb ${wf.cls}">${wf.label}</span>${od?'<span class="od-flag" style="margin-left:4px">⚠</span>':''}</td>
           <td class="td-dim">${esc(r.updatedBy||'—')}</td>
@@ -1140,8 +1135,8 @@ function renderTable(rows) {
       <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="toggleExpand('${esc(uid)}')" data-id="${esc(uid)}">
         <td class="td-cdf">${esc(r.cdf)}</td>
         <td class="td-store">${esc(r.store)}</td>
-        <td><span class="rb ${rc}">${r.route}</span></td>
-        <td><span class="tb ${tc}">${r.type}</span></td>
+        <td class="td-dim">${r.route}</td>
+        <td class="td-dim">${r.type}</td>
         <td>
           <span class="wb ${wf.cls}">${wf.label}</span>
           ${od?'<span class="od-flag">⚠ Delayed</span>':''}
@@ -1244,7 +1239,7 @@ function buildDetail(r) {
   // PDF badge/button shown inline in the meta row — no extra divider line
   const pdfInline = smSt==='Approved'
     ? (pdfSt==='Generated'
-        ? `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv"><span class="wf-status-badge wfs-fulfilled" style="font-size:9.5px">📄 Generated ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''}</span></div></div>`
+        ? `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="color:var(--teal);font-weight:600">📄 Generated ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''}</div></div>`
         : (role==='IS'||role==='EXECUTIVE')
           ? `<div class="wf-meta" style="margin-top:2px"><div class="wf-ml">PDF</div><div class="wf-mv"><button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10px" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate PDF</button></div></div>`
           : `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="font-size:10px;color:var(--amber);font-weight:600">⏳ Pending IS</div></div>`)
@@ -1313,7 +1308,6 @@ function buildDetail(r) {
     <div class="wf-meta-row">
       ${r.sentToWhsBy?`<div class="wf-meta"><div class="wf-ml">Sent to WHS by</div><div class="wf-mv">${esc(r.sentToWhsBy)}</div></div>`:''}
       ${r.sentToWhsAt?`<div class="wf-meta"><div class="wf-ml">Sent Date</div><div class="wf-mv">${fmtD(r.sentToWhsAt.slice(0,10))}</div></div>`:''}
-      ${r.fulfillBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.fulfillBy)}</div></div>`:''}
       <div style="margin-left:auto;display:flex;gap:12px;align-items:flex-start">
         ${r.boxes?`<div class="wf-meta"><div class="wf-ml">Boxes</div><div class="wf-mv">${esc(r.boxes)}</div></div>`:''}
         ${r.truck?`<div class="wf-meta"><div class="wf-ml">Truck</div><div class="wf-mv" style="font-family:'DM Mono',monospace">${esc(r.truck)}</div></div>`:''}
