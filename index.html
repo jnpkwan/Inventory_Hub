@@ -163,7 +163,7 @@ td{padding:9px 12px;vertical-align:middle}
 
 /* ── DETAIL EXPAND ── */
 .det-tr td{padding:0!important;background:var(--blue-pale);border-bottom:1px solid var(--blue-mid)!important}
-.det-inner{padding:14px 18px 16px}
+.det-inner{padding:10px 16px 12px}
 .timeline{display:flex;align-items:flex-start;gap:0;margin-bottom:16px;overflow-x:auto;padding:22px 0 8px}
 .ts{display:flex;flex-direction:column;align-items:center;min-width:120px;flex:1;position:relative}
 .ts:not(:last-child)::after{content:"";position:absolute;top:22px;left:50%;width:100%;height:3px;background:var(--silver);z-index:0;border-radius:2px}
@@ -202,7 +202,7 @@ td{padding:9px 12px;vertical-align:middle}
 /* ── WORKFLOW PANELS ── */
 .wf-panel{border-radius:8px;border:1.5px solid var(--silver);background:#fff;overflow:hidden;margin-bottom:8px}
 .wf-panel:last-child{margin-bottom:0}
-.wf-panel-hd{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--mist);border-bottom:1px solid var(--silver)}
+.wf-panel-hd{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--mist);border-bottom:1px solid var(--silver)}
 .wf-phase-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:800;color:#fff;flex-shrink:0}
 .wf-panel-title{font-family:"Montserrat",sans-serif;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.8px;color:#666}
 .wf-status-badge{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;border:1px solid transparent}
@@ -212,13 +212,14 @@ td{padding:9px 12px;vertical-align:middle}
 .wfs-sent{background:var(--blue-pale);color:var(--blue);border-color:var(--blue-mid)}
 .wfs-fulfilled{background:var(--teal-pale);color:var(--teal);border-color:#80cbc4}
 .wfs-partial{background:var(--red-pale);color:var(--red);border-color:var(--red-mid)}
-.wf-panel-bd{padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.wf-panel-bd{padding:7px 12px 8px;display:flex;flex-direction:column;gap:4px}
 .wf-note{font-size:11.5px;color:#555;background:#fffbe6;border-left:3px solid var(--amber);padding:5px 9px;border-radius:0 4px 4px 0;font-style:italic}
-.wf-meta-row{display:flex;gap:16px;flex-wrap:wrap}
+.wf-note.resubmit{background:var(--blue-pale);border-color:var(--blue);color:var(--blue)}
+.wf-meta-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .wf-meta{display:flex;flex-direction:column;gap:1px}
 .wf-ml{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#aaa;font-weight:700}
 .wf-mv{font-size:11.5px;font-weight:500;color:var(--carbon)}
-.wf-actions{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:center}
+.wf-actions{display:flex;gap:6px;margin-top:2px;flex-wrap:wrap;align-items:center}
 .wf-divider{border:none;border-top:1px solid var(--silver);margin:8px 0}
 .btn-approve{background:var(--green);color:#fff;font-size:11px;padding:5px 11px}
 .btn-approve:hover{background:#1a8038}
@@ -1231,17 +1232,15 @@ function buildDetail(r) {
     <div class="wf-actions">
       <button class="btn btn-resubmit" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','resubmit')">↑ Resubmit</button>
     </div>` : '';
-  const pdfGenBtn = smSt==='Approved' ? `
-    <hr class="wf-divider">
-    <div class="wf-actions">
-      ${pdfSt==='Generated'
-        ? `<span class="wf-status-badge wfs-fulfilled" style="font-size:10px">📄 PDF Generated — ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''} by ${esc(r.pdfGeneratedBy||'')}</span>`
+  // PDF badge/button shown inline in the meta row — no extra divider line
+  const pdfInline = smSt==='Approved'
+    ? (pdfSt==='Generated'
+        ? `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv"><span class="wf-status-badge wfs-fulfilled" style="font-size:9.5px">📄 Generated ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''}</span></div></div>`
         : (role==='IS'||role==='EXECUTIVE')
-          ? `<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate CDF PDF</button>
-             <span style="font-size:10px;color:#aaa">IS runs script &amp; uploads to Drive</span>`
-          : `<span style="font-size:10.5px;color:var(--amber);font-weight:600">⏳ Waiting for IS to generate PDF — Store Approval step will unlock once done.</span>`
-      }
-    </div>` : '';
+          ? `<div class="wf-meta" style="margin-top:2px"><div class="wf-ml">PDF</div><div class="wf-mv"><button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10px" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate PDF</button></div></div>`
+          : `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="font-size:10px;color:var(--amber);font-weight:600">⏳ Pending IS</div></div>`)
+    : '';
+  const pdfGenBtn = ''; // kept for compat — logic moved to pdfInline
   const panelP3 = `
     <div class="ph-panel open" data-phase="p3">
       <div class="wf-panel">
@@ -1251,12 +1250,13 @@ function buildDetail(r) {
           <span class="wf-status-badge ${smBadge}">${smSt||'Awaiting Review'}</span>
         </div>
         <div class="wf-panel-bd">
-          ${smSt==='Changes Requested'&&r.smgrNotes?`<div class="wf-note">📝 ${esc(r.smgrNotes)}</div>`:''}
+          ${r.smgrNotes?`<div class="wf-note${smSt===''?' resubmit':''}">${smSt==='Changes Requested'?'📝':'↑'} ${esc(r.smgrNotes)}</div>`:''}
           <div class="wf-meta-row">
             ${r.smgrApprovedBy?`<div class="wf-meta"><div class="wf-ml">${smSt==='Approved'?'Approved by':'Reviewed by'}</div><div class="wf-mv">${esc(r.smgrApprovedBy)}</div></div>`:''}
             ${r.smgrApprovedAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.smgrApprovedAt.slice(0,10))}</div></div>`:''}
+            ${pdfInline}
           </div>
-          ${smActions}${smResubmit}${pdfGenBtn}
+          ${smActions}${smResubmit}
         </div>
       </div>
     </div>`;
@@ -1312,18 +1312,16 @@ function buildDetail(r) {
       ⏸ <span>Dispatch tracking unlocks after warehouse actuals are logged.</span>
     </div>` : '';
   const dispatchSection = `
-    <hr class="wf-divider" style="margin:10px 0">
-    <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#999;margin-bottom:8px">5B — Dispatch &amp; Receiving</div>
+    <hr class="wf-divider" style="margin:6px 0 8px">
     ${dispatchBanner}
     <div style="${dispatchUnlocked?'':'opacity:.4;pointer-events:none'}">
-      <div class="timeline" style="margin-bottom:10px">${tl}</div>
+      <div class="timeline" style="margin-bottom:8px">${tl}</div>
       <div class="det-meta" style="border-top:none;padding-top:0">
-        <div class="dm"><div class="dml">Boxes</div><div class="dmv">${esc(r.boxes||'—')}</div></div>
-        <div class="dm"><div class="dml">Truck / Plate</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.truck||'—')}</div></div>
-        <div class="dm"><div class="dml">CAS No.</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.cas||'—')}</div></div>
-        <div class="dm"><div class="dml">Transit Days</div><div class="dmv" style="${isOverdue(r)?'color:#C0392B;font-weight:700':''}">${td!==null?td+' days':'—'}</div></div>
+        ${r.boxes?`<div class="dm"><div class="dml">Boxes</div><div class="dmv">${esc(r.boxes)}</div></div>`:''}
+        ${r.truck?`<div class="dm"><div class="dml">Truck</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.truck)}</div></div>`:''}
+        ${r.cas?`<div class="dm"><div class="dml">CAS No.</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.cas)}</div></div>`:''}
+        ${td!==null?`<div class="dm"><div class="dml">Transit</div><div class="dmv" style="${isOverdue(r)?'color:#C0392B;font-weight:700':''}">${td}d</div></div>`:''}
         ${r.remarks?`<div class="dm"><div class="dml">Remarks</div><div class="dmv">${esc(r.remarks)}</div></div>`:''}
-        ${r.updatedBy?`<div class="dm"><div class="dml">Last Updated By</div><div class="dmv">${esc(r.updatedBy)}</div></div>`:''}
       </div>
     </div>`;
   const panelP5 = `
@@ -1335,8 +1333,7 @@ function buildDetail(r) {
           <span class="wf-status-badge ${locked5?'wfs-pending':fulfBadge}">${locked5?'Locked — awaiting store approval':(fulfSt||'Not yet sent to warehouse')}</span>
         </div>
         <div class="wf-panel-bd">
-          <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#999;margin-bottom:4px">5A — Warehouse Preparation</div>
-          ${fulfMeta}${sendBtn}${logActualsBtn}
+          ${fulfMeta}${sendBtn}
           ${dispatchSection}
         </div>
       </div>
@@ -1344,7 +1341,7 @@ function buildDetail(r) {
 
   // ── Actions row ───────────────────────────────────────────────────────────
   const actionsRow = `
-    <div style="display:flex;gap:7px;justify-content:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid var(--blue-mid)">
+    <div style="display:flex;gap:7px;justify-content:flex-end;margin-top:8px;padding-top:8px;border-top:1px solid var(--silver)">
       ${canEdit?`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${uid}">✏ Edit</button>`:''}
       ${canDelete?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>`:''}
     </div>`;
