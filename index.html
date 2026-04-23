@@ -199,7 +199,10 @@ textarea{resize:vertical;min-height:58px}
 .toast.ok{border-left:3px solid var(--green)}.toast.err{border-left:3px solid var(--red)}.toast.warn{border-left:3px solid var(--amber)}
 @keyframes tIn{from{opacity:0;transform:translateX(10px)}to{opacity:1}}
 
-.empty-state{text-align:center;padding:48px;color:#bbb}
+.btn-toggle{display:inline-flex;align-items:center;gap:5px;font-family:"DM Sans",sans-serif;font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:20px;border:1.5px solid var(--silver);background:var(--white);color:#888;cursor:pointer;transition:all .15s;white-space:nowrap;user-select:none}
+.btn-toggle.active{background:var(--blue-pale);border-color:var(--blue);color:var(--blue)}
+.btn-toggle .tog-dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.5;transition:opacity .15s}
+.btn-toggle.active .tog-dot{opacity:1}
 .spinner{width:16px;height:16px;border:2px solid var(--silver);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--mist)}::-webkit-scrollbar-thumb{background:var(--silver);border-radius:3px}
@@ -294,6 +297,9 @@ textarea{resize:vertical;min-height:58px}
         <option value="Shopee">Shopee</option>
       </select>
       <div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="7" min="1" max="60" onchange="renderAll()"> days</div>
+      <button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records">
+        <span class="tog-dot"></span> Hide Received
+      </button>
       <div class="sep"></div>
       <div class="sync-info" id="sync-info"></div>
       <span class="rc" id="rc"></span>
@@ -363,6 +369,7 @@ const S = {
   editingId:    null,
   pollTimer:    null,
   idleTimer:    null,
+  hideReceived: false,
   _attnIds:     new Set()
 };
 
@@ -516,6 +523,11 @@ function startApp() {
   const addBtn = document.querySelector('button[onclick="openAddModal()"]');
   if (addBtn) addBtn.style.display = u.role === 'COORDINATOR' ? 'none' : '';
 
+  // Default hide-received: on for IS/COORDINATOR, off for EXECUTIVE
+  S.hideReceived = (u.role === 'IS' || u.role === 'COORDINATOR');
+  const hideBtn = document.getElementById('hide-recv-btn');
+  if (hideBtn) hideBtn.classList.toggle('active', S.hideReceived);
+
   // Month tabs
   const sel = document.getElementById('month-sel');
   // Only populate months that exist in the data (or all 12 if no data yet)
@@ -604,11 +616,20 @@ function renderAll() {
     S.month.charAt(0) + S.month.slice(1).toLowerCase() + ' — CDF Records';
 }
 
+function toggleHideReceived() {
+  S.hideReceived = !S.hideReceived;
+  S.expandedId = null;
+  const btn = document.getElementById('hide-recv-btn');
+  if (btn) btn.classList.toggle('active', S.hideReceived);
+  renderAll();
+}
+
 function getFiltered() {
   const search = document.getElementById('search').value.toLowerCase();
   const fRoute = document.getElementById('f-route').value;
   const fType  = document.getElementById('f-type').value;
   return S.records.filter(r => {
+    if (S.hideReceived && (r.status === 'Received' || r.status === 'Completed')) return false;
     if (S.statusFilter === '__attn') { if (!S._attnIds || !S._attnIds.has(r.id||r.cdf)) return false; }
     else if (S.statusFilter && r.status !== S.statusFilter) return false;
     if (fRoute && r.route !== fRoute) return false;
@@ -724,8 +745,17 @@ function buildDetail(r) {
   steps.forEach((s,i)=>{if(s.d) lastDone=i;});
   // If all steps done (received), no active step — mark all as done
   const allDone = lastDone===steps.length-1;
+  const lastStepIdx = steps.length - 1; // index of the Received step
   const tl = steps.map((s,i)=>{
-    const st = i<=lastDone?'done':(!allDone&&i===lastDone+1)?'active':'pending';
+    let st;
+    if(i<=lastDone) {
+      st = 'done';
+    } else if(!allDone && i===lastDone+1 && i!==lastStepIdx) {
+      // Only mark intermediate steps as 'active', never the Received step
+      st = 'active';
+    } else {
+      st = 'pending';
+    }
     return `<div class="ts ${st}"><div class="tc">${s.i}</div><div class="tl">${s.l}</div><div class="td2">${s.d?fmtD(s.d):'—'}</div></div>`;
   }).join('');
 
