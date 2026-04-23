@@ -1295,15 +1295,7 @@ function buildDetail(r) {
     <div class="wf-actions">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markSentToWHS('${uid}')">📦 Mark as Sent to Warehouse</button>
     </div>` : '';
-  // 5A log actuals button
-  const logActualsBtn = !locked5 && canFulfill && fulfSt==='Sent to WHS' ? `
-    <div class="wf-actions">
-      <button class="btn btn-fulfill" onclick="event.stopPropagation();openFulfillmentModal('${uid}')">📋 Log Actual Quantities</button>
-      <span style="font-size:10px;color:#aaa">Enter warehouse actuals + reason code</span>
-    </div>` : (fulfSt==='Actuals Logged'||fulfSt==='Partial')&&canFulfill ? `
-    <div class="wf-actions">
-      <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openFulfillmentModal('${uid}')">✏ Update Actuals</button>
-    </div>` : '';
+  const logActualsBtn = ''; // fulfillment modal removed
   // 5A meta
   const fulfMeta = fulfSt ? `
     <div class="wf-meta-row">
@@ -1711,78 +1703,6 @@ async function markSentToWHS(uid) {
 }
 
 /* ══════════════════ FULFILLMENT MODAL (Phase 5) ══════════════════ */
-function openFulfillmentModal(uid) {
-  const r = S.records.find(x=>(x.id||x.cdf)===uid);
-  if(!r) return;
-
-  const REASON_CODES = ['Warehouse stock insufficient','Product damaged','Supplier delivery delay','Picking error','Store refused partial','Other (specify)'];
-  const curr = r.fulfillStatus||'';
-
-  document.getElementById('mo-title').textContent = 'Warehouse Fulfillment — ' + r.cdf;
-  document.getElementById('mo-body').innerHTML = `
-    <div style="padding:4px 0;display:flex;flex-direction:column;gap:14px">
-      <div class="frow three">
-        <div class="fg">
-          <label>Fulfillment Status <span class="req">*</span></label>
-          <select class="ms" id="wf-fstatus">
-            <option value="Sent to WHS" ${curr==='Sent to WHS'?'selected':''}>Sent to WHS</option>
-            <option value="Actuals Logged" ${curr==='Actuals Logged'?'selected':''}>Actuals Logged — full order</option>
-            <option value="Partial" ${curr==='Partial'?'selected':''}>Partial shipment</option>
-          </select>
-        </div>
-        <div class="fg">
-          <label>Ordered Boxes</label>
-          <input type="text" value="${esc(r.boxes||'')}" disabled style="background:var(--mist);color:#999">
-        </div>
-        <div class="fg">
-          <label>Actual Shipped <span class="req">*</span></label>
-          <input type="text" id="wf-actual" value="${esc(r.actualBoxes||r.boxes||'')}" placeholder="e.g. 10">
-        </div>
-      </div>
-      <div class="fg" id="wf-reason-wrap">
-        <label>Reason Code <span class="req">*</span> <span style="color:#bbb;font-weight:400;text-transform:none;font-size:10px">— required when actual ≠ ordered</span></label>
-        <select class="ms" id="wf-reason">
-          <option value="">— Select reason —</option>
-          ${REASON_CODES.map(rc=>`<option value="${rc}" ${r.reasonCode===rc?'selected':''}>${rc}</option>`).join('')}
-        </select>
-      </div>
-      <div class="fg">
-        <label>Fulfillment Notes <span style="color:#bbb;font-weight:400;text-transform:none">(optional)</span></label>
-        <textarea id="wf-fnotes" placeholder="Additional warehouse notes…">${esc(r.fulfillNotes||'')}</textarea>
-      </div>
-    </div>`;
-  document.getElementById('mo-footer').innerHTML = `
-    <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
-    <button class="btn btn-fulfill" onclick="saveFulfillment('${uid}')">💾 Save Fulfillment</button>`;
-  document.getElementById('mo').style.display='flex';
-}
-
-async function saveFulfillment(uid) {
-  const r = S.records.find(x=>(x.id||x.cdf)===uid);
-  const fstatus = document.getElementById('wf-fstatus').value;
-  const actual = document.getElementById('wf-actual').value.trim();
-  const reason = document.getElementById('wf-reason').value;
-  const notes = document.getElementById('wf-fnotes').value.trim();
-
-  if(!actual) { toast('Enter actual shipped quantity','err'); return; }
-  if(actual !== (r.boxes||'') && !reason) { toast('Reason code required when actual ≠ ordered','err'); return; }
-
-  const patch = {
-    fulfillStatus: fstatus,
-    actualBoxes: actual,
-    reasonCode: reason,
-    fulfillNotes: notes,
-    fulfillBy: S.user.username,
-    fulfillAt: new Date().toISOString()
-  };
-
-  await apiUpdateCDF(uid, patch);
-  closeModal();
-  S.expandedId = uid;
-  renderAll();
-  toast('Fulfillment saved');
-}
-
 async function saveRecord() {
   const vals = getFormVals();
   const isNew = !S.editingId;
