@@ -362,6 +362,7 @@ const S = {
   expandedId:   null,
   editingId:    null,
   pollTimer:    null,
+  idleTimer:    null,
   _attnIds:     new Set()
 };
 
@@ -402,6 +403,10 @@ async function doLogin() {
       CFG.offline = true;
     }
     S.user = user;
+    try {
+      localStorage.setItem('acacia_session', JSON.stringify(user));
+      localStorage.setItem('acacia_lastActive', Date.now());
+    } catch(e) {}
     startApp();
   } catch(e) {
     showLoginErr(e.message);
@@ -423,7 +428,13 @@ function showLoginErr(msg) {
 }
 
 function doLogout() {
+  try {
+    localStorage.removeItem('acacia_session');
+    localStorage.removeItem('acacia_lastActive');
+  } catch(e) {}
   clearInterval(S.pollTimer);
+  clearInterval(S.idleTimer);
+  S.idleTimer = null;
   S.user = null;
   S.records = [];
   document.getElementById('app').style.display = 'none';
@@ -436,6 +447,54 @@ function doLogout() {
 }
 
 document.getElementById('lp').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+/* ══════════════════ IDLE AUTO-LOGOUT ══════════════════ */
+const IDLE_TIMEOUT_MS = 3 * 60 * 60 * 1000; // 3 hours
+
+function touchActivity() {
+  try { localStorage.setItem('acacia_lastActive', Date.now()); } catch(e) {}
+}
+
+function startIdleTimer() {
+  // Update lastActive on any user interaction
+  ['mousemove','keydown','mousedown','touchstart','scroll','click'].forEach(evt =>
+    document.addEventListener(evt, touchActivity, { passive: true })
+  );
+  // Check every 60 seconds whether the session has gone idle
+  S.idleTimer = setInterval(() => {
+    try {
+      const last = parseInt(localStorage.getItem('acacia_lastActive') || '0', 10);
+      if (last && Date.now() - last > IDLE_TIMEOUT_MS) {
+        clearInterval(S.idleTimer);
+        toast('Session expired after 3 hours of inactivity.', 'warn');
+        setTimeout(doLogout, 2000);
+      }
+    } catch(e) {}
+  }, 60000);
+}
+
+/* ══════════════════ SESSION RESTORE ══════════════════ */
+(function restoreSession() {
+  try {
+    const saved = localStorage.getItem('acacia_session');
+    if (saved) {
+      const user = JSON.parse(saved);
+      if (user && user.username && user.role) {
+        // Reject sessions that have been idle for more than 3 hours
+        const last = parseInt(localStorage.getItem('acacia_lastActive') || '0', 10);
+        if (last && Date.now() - last > IDLE_TIMEOUT_MS) {
+          localStorage.removeItem('acacia_session');
+          localStorage.removeItem('acacia_lastActive');
+          return; // stay on login screen
+        }
+        S.user = user;
+        startApp();
+        return;
+      }
+    }
+  } catch(e) {}
+  // No saved session — stay on login screen
+})();
 
 /* ══════════════════ APP START ══════════════════ */
 function startApp() {
@@ -475,6 +534,10 @@ function startApp() {
   }
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+  // Start idle auto-logout timer
+  touchActivity();
+  startIdleTimer();
 }
 
 /* ══════════════════ DATA ══════════════════ */
