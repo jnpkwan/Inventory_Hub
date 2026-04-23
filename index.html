@@ -1418,7 +1418,7 @@ function buildForm(r) {
 
     <div class="section-label">Shipment Details</div>
     <div class="frow three"><div class="fg">
-      <label>No. of Boxes ${isNew?'<span class="req">*</span>':''}</label>
+      <label>No. of Boxes</label>
       <input type="text" id="f-boxes" value="${esc(r.boxes||'')}" placeholder="12">
     </div><div class="fg">
       <label>Truck / Plate No.</label>
@@ -1742,7 +1742,6 @@ async function saveRecord() {
   if(isNew) {
     if(!vals.type)  { toast('Type is required','err'); return; }
     if(!vals.route || vals.route==='Unknown') { toast('Route is required','err'); return; }
-    if(!vals.boxes) { toast('Number of boxes is required','err'); return; }
     if(!vals.dWhs)  { toast('WHS date is required','err'); return; }
   }
   // Date sequence validation — always enforced on edit and add
@@ -1782,16 +1781,42 @@ async function saveRecord() {
 /* ══════════════════ API CRUD ══════════════════ */
 async function apiAddCDF(vals) {
   const tempId = 'local-'+Date.now();
-  const rec = {...vals, id:tempId, createdBy:S.user.username,
-               createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
+  const now = new Date().toISOString();
+  const user = S.user.username;
+  // Until the full workflow engine is built, new CDFs skip Phases 3 & 4
+  // and land directly in Phase 5 — WHS Prepare Order
+  const workflowDefaults = {
+    smgrStatus:     'Approved',
+    smgrApprovedBy: user,
+    smgrApprovedAt: now,
+    smgrNotes:      '',
+    pdfStatus:      'Generated',
+    pdfGeneratedBy: user,
+    pdfGeneratedAt: now,
+    storeStatus:    'Approved',
+    storeUpdatedBy: user,
+    storeUpdatedAt: now,
+    storeNotes:     '',
+    coordNotes:     '',
+    fulfillStatus:  '',
+  };
+  const rec = {...vals, ...workflowDefaults, id:tempId, createdBy:user,
+               createdAt:now, updatedAt:now};
   S.records.unshift(rec);
+  // Update wfCache so poll doesn't wipe these defaults
+  if(!S._wfCache) S._wfCache = {};
+  S._wfCache[tempId] = {...workflowDefaults};
 
   if(!CFG.offline && CFG.apiUrl) {
     try {
-      const saved = await gasPost('addCDF', {...vals, username:S.user.username});
+      const saved = await gasPost('addCDF', {...vals, ...workflowDefaults, username:user});
       const idx = S.records.findIndex(r=>r.id===tempId);
-      if(idx>=0) S.records[idx]=saved;
-      renderAll(); // re-render after server confirms with real ID
+      if(idx>=0) {
+        S.records[idx]=saved;
+        S._wfCache[saved.id||saved.cdf] = {...workflowDefaults};
+        delete S._wfCache[tempId];
+      }
+      renderAll();
     } catch(e) { toast('Saved locally — sync failed: '+e.message,'warn'); }
   }
 }
