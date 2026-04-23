@@ -888,8 +888,12 @@ function sortBy(f) {
 
 /* ══════════════════ GAS HTTP ══════════════════ */
 async function gasPost(action, payload) {
-  const resp = await fetch(CFG.apiUrl,{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action,...payload})});
+  // Apps Script doesn't handle CORS preflight on POST with application/json.
+  // Solution: send everything as GET with payload encoded as a query param.
+  const url = new URL(CFG.apiUrl);
+  url.searchParams.set('action', action);
+  url.searchParams.set('payload', JSON.stringify(payload));
+  const resp = await fetch(url.toString());
   const data = await resp.json();
   if(!data.ok) throw new Error(data.error||'API error');
   return data.data;
