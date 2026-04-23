@@ -87,6 +87,22 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .phc-n.dim{color:#ccc}
 .phc-l{font-size:10px;color:#888;margin-top:2px;font-weight:500}
 .phc-sub{font-size:9px;margin-top:3px;font-weight:600;color:#aaa}
+.phc{cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.phc:hover{box-shadow:var(--shm)}
+.phc.active{box-shadow:0 0 0 2px var(--blue-mid);border-color:var(--blue)}
+.phc.phc-3.active{box-shadow:0 0 0 2px #CE93D8;border-color:#7B1FA2}
+.phc.phc-4.active{box-shadow:0 0 0 2px #FFE082;border-color:var(--amber)}
+.phc.phc-5.active{box-shadow:0 0 0 2px #80CBC4;border-color:var(--teal)}
+.phc.phc-1,.phc.phc-2{cursor:default}
+/* Sub-card row */
+.sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px;padding:10px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
+.sub-label{font-family:"Montserrat",sans-serif;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#999;margin-bottom:6px;grid-column:1/-1}
+.ssc{background:var(--white);border:1.5px solid var(--silver);border-radius:8px;padding:8px 11px;cursor:pointer;transition:all .12s;position:relative;overflow:hidden}
+.ssc::before{content:"";position:absolute;top:0;left:0;right:0;height:2px}
+.ssc:hover{box-shadow:var(--shm)}
+.ssc.active{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-mid)}
+.ssc-n{font-family:"Montserrat",sans-serif;font-weight:800;font-size:16px;line-height:1;color:var(--carbon)}
+.ssc-l{font-size:9.5px;color:#777;margin-top:2px;font-weight:500}
 /* Dispatch status cards (inside Phase 5B) */
 .summary{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px}
 .sc{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:10px 12px;box-shadow:var(--sh);cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative;overflow:hidden}
@@ -337,6 +353,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 
   /* ── SUMMARY CARDS — 3 cols on mobile ── */
   .ph-summary{grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}
+  .sub-summary{grid-template-columns:repeat(2,1fr)}
   .summary{grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}
   .sc{padding:10px 10px}
   .sn{font-size:20px}
@@ -548,6 +565,8 @@ const S = {
   records:      [],
   month:        _nowMonth,
   statusFilter: '',
+  phaseFilter:  '',   // 'p3'|'p4'|'p5'|''
+  subFilter:    '',   // sub-card key within active phase
   sortField:    'dWhs',
   sortDir:      'desc',
   expandedId:   null,
@@ -818,13 +837,40 @@ function getFiltered() {
   const fRoute = document.getElementById('f-route').value;
   const fType  = document.getElementById('f-type').value;
   return S.records.filter(r => {
-    if (S.hideReceived && (r.status === 'Received' || r.status === 'Completed')) return false;
-    if (S.statusFilter === '__attn') { if (!S._attnIds || !S._attnIds.has(r.id||r.cdf)) return false; }
-    else if (S.statusFilter && r.status !== S.statusFilter) return false;
-    if (fRoute && r.route !== fRoute) return false;
-    if (fType  && r.type  !== fType)  return false;
+    if (S.hideReceived && (r.status==='Received'||r.status==='Completed')) return false;
+    if (fRoute && r.route!==fRoute) return false;
+    if (fType  && r.type !==fType)  return false;
     if (search && !(r.store||'').toLowerCase().includes(search) &&
                   !(r.cdf||'').toLowerCase().includes(search)) return false;
+    // ── Phase filter ─────────────────────────────────────────────────────────
+    const sm = r.smgrStatus||''; const st = r.storeStatus||'';
+    const fl = r.fulfillStatus||'';
+    if(S.phaseFilter==='p3') { if(sm==='Approved') return false; }
+    else if(S.phaseFilter==='p4') { if(sm!=='Approved'||st==='Approved') return false; }
+    else if(S.phaseFilter==='p5') { if(st!=='Approved') return false; }
+    // ── Sub-filter (stacks on phase filter) ───────────────────────────────────
+    const sf = S.subFilter;
+    if(sf) {
+      const uid = r.id||r.cdf;
+      if(sf==='p3_await')  { if(sm!=='')                          return false; }
+      if(sf==='p3_chg')    { if(sm!=='Changes Requested')         return false; }
+      if(sf==='p3_pdf')    { if(sm!=='Approved'||(r.pdfStatus||'')==='Generated') return false; }
+      if(sf==='p4_await')  { if(sm!=='Approved'||st!=='')         return false; }
+      if(sf==='p4_chg')    { if(st!=='Changes Requested')         return false; }
+      if(sf==='p5_whs')    { if(st!=='Approved'||fl!=='')         return false; }
+      if(sf==='p5_act')    { if(fl!=='Sent to WHS')               return false; }
+      if(sf==='p5_prep')   { if(r.status!=='Preparing Order')     return false; }
+      if(sf==='p5_pd')     { if(r.status!=='Pending Dispatch')    return false; }
+      if(sf==='p5_hold')   { if(r.status!=='On Hold')             return false; }
+      if(sf==='p5_tr')     { if(r.status!=='In Transit')          return false; }
+      if(sf==='p5_recv')   { if(r.status!=='Received')            return false; }
+      if(sf==='p5_attn')   { if(!S._attnIds||!S._attnIds.has(uid)) return false; }
+    }
+    // Legacy statusFilter (dispatch card clicks from within expanded row)
+    if(!S.phaseFilter && S.statusFilter) {
+      if(S.statusFilter==='__attn'){ if(!S._attnIds||!S._attnIds.has(r.id||r.cdf)) return false; }
+      else if(r.status!==S.statusFilter) return false;
+    }
     return true;
   });
 }
@@ -832,41 +878,114 @@ function getFiltered() {
 /* ── Summary cards ── */
 /* ── Phase pipeline summary (top of page) ── */
 function renderSummary(rows) {
-  const all = S.records; // full month, unfiltered
-  // Phase counts
-  const p3 = all.filter(r=>(r.smgrStatus||'')!=='Approved').length;
-  const p4 = all.filter(r=>(r.smgrStatus||'')==='Approved'&&(r.storeStatus||'')!=='Approved').length;
-  const p5a= all.filter(r=>(r.storeStatus||'')==='Approved'&&!['Actuals Logged','Partial'].includes(r.fulfillStatus||'')).length;
-  const p5b= all.filter(r=>['Actuals Logged','Partial'].includes(r.fulfillStatus||'')&&!(r.dRecv)).length;
-  const done= all.filter(r=>r.dRecv).length;
+  const all = S.records;
+
+  // ── Needs-attention IDs (reused across renders) ───────────────────────────
+  const today = new Date();
+  const needsAttn = all.filter(r => {
+    if(r.status==='Received'||r.status==='Completed') return false;
+    const dates=[r.dWhs,r.dSdc,r.dDirect,r.dCdc,r.dSdc2,r.dCdc2,r.dRecv]
+      .filter(d=>d&&d.match(/^\d{4}-\d{2}-\d{2}/));
+    if(!dates.length) return false;
+    const latest=dates.map(d=>new Date(d)).filter(d=>!isNaN(d)).sort((a,b)=>b-a)[0];
+    return latest && (today-latest)/(1000*60*60*24)>7;
+  });
+  S._attnIds = new Set(needsAttn.map(r=>r.id||r.cdf));
+  S._dispatchCards = buildDispatchCards(all, needsAttn);
+
+  // ── Phase counts ──────────────────────────────────────────────────────────
+  const p3cnt  = all.filter(r=>(r.smgrStatus||'')!=='Approved').length;
+  const p4cnt  = all.filter(r=>(r.smgrStatus||'')==='Approved'&&(r.storeStatus||'')!=='Approved').length;
+  const p5acnt = all.filter(r=>(r.storeStatus||'')==='Approved'&&!['Actuals Logged','Partial'].includes(r.fulfillStatus||'')).length;
+  const p5bcnt = all.filter(r=>['Actuals Logged','Partial'].includes(r.fulfillStatus||'')&&!r.dRecv).length;
+  const p5cnt  = p5acnt + p5bcnt;
+
+  const pf = S.phaseFilter;
   const phCards = [
-    {n:1, cls:'phc-1', count:0,   label:'Order Generation',    sub:'Replenishment engine soon', dim:true},
-    {n:2, cls:'phc-2', count:0,   label:'Allocation',           sub:'Replenishment engine soon', dim:true},
-    {n:3, cls:'phc-3', count:p3,  label:'SM Approval',          sub:p3>0?p3+' awaiting approval':'All approved'},
-    {n:4, cls:'phc-4', count:p4,  label:'Store Approval',       sub:p4>0?p4+' awaiting store':'All confirmed'},
-    {n:5, cls:'phc-5', count:p5a+p5b, label:'Fulfillment & Dispatch', sub:`${p5a} at warehouse · ${p5b} in transit`},
+    {id:'p1', cls:'phc-1', count:null, label:'Order Generation',     sub:'Replenishment engine soon', dim:true,  disabled:true},
+    {id:'p2', cls:'phc-2', count:null, label:'Allocation',            sub:'Replenishment engine soon', dim:true,  disabled:true},
+    {id:'p3', cls:'phc-3', count:p3cnt,label:'SM Approval',           sub:p3cnt>0?p3cnt+' awaiting approval':'All approved', dim:false, disabled:false},
+    {id:'p4', cls:'phc-4', count:p4cnt,label:'Store Approval',        sub:p4cnt>0?p4cnt+' awaiting store':'All confirmed',   dim:false, disabled:false},
+    {id:'p5', cls:'phc-5', count:p5cnt,label:'Fulfillment & Dispatch',sub:`${p5acnt} at warehouse · ${p5bcnt} in transit`,   dim:false, disabled:false},
   ];
+
   document.getElementById('ph-summary').innerHTML = phCards.map(c=>`
-    <div class="phc ${c.cls}">
-      <div class="phc-num">Phase ${c.n}</div>
-      <div class="phc-n${c.dim?' dim':''}\">${c.dim?'—':c.count}</div>
+    <div class="phc ${c.cls}${pf===c.id?' active':''}" ${c.disabled?'':'onclick="setPhaseFilter(''+c.id+'')"'} title="${c.disabled?'Coming soon':'Filter by '+c.label}">
+      <div class="phc-num">Phase ${c.id[1]}</div>
+      <div class="phc-n${c.dim?' dim':''}">` + (c.dim?'—':c.count) + `</div>
       <div class="phc-l">${c.label}</div>
       <div class="phc-sub">${c.sub}</div>
     </div>`).join('');
-  // Needs Attention: not received/completed, no movement in >7 days
-  const needsAttn = all.filter(r => {
-    if (r.status === 'Received' || r.status === 'Completed') return false;
-    const today = new Date();
-    const dates = [r.dWhs,r.dSdc,r.dDirect,r.dCdc,r.dSdc2,r.dCdc2,r.dRecv]
-      .filter(d => d && d.match(/^\d{4}-\d{2}-\d{2}/));
-    if (!dates.length) return false;
-    const latest = dates.map(d => new Date(d)).filter(d => !isNaN(d)).sort((a,b)=>b-a)[0];
-    if (!latest) return false;
-    return (today - latest) / (1000*60*60*24) > 7;
-  });
-  S._attnIds = new Set(needsAttn.map(r=>r.id||r.cdf));
-  // Store dispatch card data for use inside Phase 5B panels
-  S._dispatchCards = buildDispatchCards(all, needsAttn);
+
+  // ── Sub-card row ──────────────────────────────────────────────────────────
+  let subHTML = '';
+  if(pf==='p3') {
+    const awaiting = all.filter(r=>(r.smgrStatus||'')==='').length;
+    const changes  = all.filter(r=>r.smgrStatus==='Changes Requested').length;
+    const pdfPend  = all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')!=='Generated').length;
+    const sf = S.subFilter;
+    const mkSub=(k,icon,lbl,n,col)=>`
+      <div class="ssc${sf===k?' active':''}" onclick="setSubFilter('${k}')" style="--ssc-c:${col}">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:${col}"></div>
+        <div class="ssc-n">${n}</div>
+        <div class="ssc-l">${icon} ${lbl}</div>
+      </div>`;
+    subHTML = `<div class="sub-summary">
+      <div class="sub-label">Phase 3 — SM Approval breakdown</div>
+      ${mkSub('p3_await','🔍','Awaiting Review',awaiting,'#9C27B0')}
+      ${mkSub('p3_chg','📝','Changes Requested',changes,'#F9A825')}
+      ${mkSub('p3_pdf','📄','PDF Pending',pdfPend,'#1B4DA0')}
+    </div>`;
+  } else if(pf==='p4') {
+    const awaitCoord = all.filter(r=>r.smgrStatus==='Approved'&&(r.storeStatus||'')==='').length;
+    const storeChg   = all.filter(r=>r.storeStatus==='Changes Requested').length;
+    const sf = S.subFilter;
+    const mkSub=(k,icon,lbl,n,col)=>`
+      <div class="ssc${sf===k?' active':''}" onclick="setSubFilter('${k}')" style="--ssc-c:${col}">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:${col}"></div>
+        <div class="ssc-n">${n}</div>
+        <div class="ssc-l">${icon} ${lbl}</div>
+      </div>`;
+    subHTML = `<div class="sub-summary">
+      <div class="sub-label">Phase 4 — Store Approval breakdown</div>
+      ${mkSub('p4_await','📤','Awaiting Coordinator',awaitCoord,'#F9A825')}
+      ${mkSub('p4_chg','🏪','Store Requested Changes',storeChg,'#C0392B')}
+    </div>`;
+  } else if(pf==='p5') {
+    const pendWhs   = all.filter(r=>r.storeStatus==='Approved'&&!(r.fulfillStatus)).length;
+    const awaitAct  = all.filter(r=>r.fulfillStatus==='Sent to WHS').length;
+    const cnt={}; Object.keys(STATUS_META).forEach(k=>cnt[k]=0);
+    all.filter(r=>r.storeStatus==='Approved').forEach(r=>{if(cnt[r.status]!==undefined)cnt[r.status]++;});
+    const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
+    const sf = S.subFilter;
+    const mkSub=(k,icon,lbl,n,col)=>`
+      <div class="ssc${sf===k?' active':''}" onclick="setSubFilter('${k}')" style="--ssc-c:${col}">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:${col}"></div>
+        <div class="ssc-n">${n}</div>
+        <div class="ssc-l">${icon} ${lbl}</div>
+      </div>`;
+    subHTML = `<div class="sub-summary">
+      <div class="sub-label">Phase 5 — Fulfillment &amp; Dispatch breakdown</div>
+      ${mkSub('p5_whs',  '📦','Pending WHS Send',    pendWhs,'#00695C')}
+      ${mkSub('p5_act',  '📋','Awaiting Actuals',     awaitAct,'#1B4DA0')}
+      ${mkSub('p5_prep', '📋','Preparing Order',      cnt['Preparing Order'],'#9C27B0')}
+      ${mkSub('p5_pd',   '📬','Pending Dispatch',     cnt['Pending Dispatch'],'#F9A825')}
+      ${mkSub('p5_hold', '⏸','On Hold',              cnt['On Hold'],'#78909C')}
+      ${mkSub('p5_tr',   '🚚','In Transit',           cnt['In Transit'],'#1B4DA0')}
+      ${mkSub('p5_recv', '✅','Received',             cnt['Received'],'#22A749')}
+      ${mkSub('p5_attn', '🚨','Needs Attention',      attn,'#C0392B')}
+    </div>`;
+  }
+
+  // Render sub-cards (or clear if no phase selected)
+  let subEl = document.getElementById('sub-summary');
+  if(!subEl) {
+    subEl = document.createElement('div');
+    subEl.id = 'sub-summary';
+    const phEl = document.getElementById('ph-summary');
+    phEl.parentNode.insertBefore(subEl, phEl.nextSibling);
+  }
+  subEl.innerHTML = subHTML;
 }
 
 /* ── Dispatch status cards (rendered inside Phase 5B) ── */
@@ -1529,7 +1648,14 @@ function r_coordNote(uid) {
 
 /* ══════════════════ GENERATE PDF (Phase 3 — IS only) ══════════════════ */
 async function generatePDF(uid) {
-  if(!confirm('Mark this CDF as "PDF Generated"?\n\nMake sure you have already run the Python script and uploaded the PDF to the shared Drive folder before confirming.')) return;
+  const r = S.records.find(x=>(x.id||x.cdf)===uid);
+  if(!r) return;
+  if(r.pdfStatus==='Generated') {
+    const again = confirm(`⚠️ A PDF was already generated for this CDF on ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):'an earlier date'} by ${r.pdfGeneratedBy||'IS'}.\n\nAre you sure you want to mark it as generated again? Only do this if you re-ran the script and uploaded a new version to Drive.`);
+    if(!again) return;
+  } else {
+    if(!confirm('Mark this CDF as "PDF Generated"?\n\nMake sure you have already run the Python script and uploaded the PDF to the shared Drive folder before confirming.')) return;
+  }
   const patch = {
     pdfStatus: 'Generated',
     pdfGeneratedBy: S.user.username,
@@ -1703,7 +1829,24 @@ function setMonth(m) {
 }
 
 function setStatusFilter(k) {
+  // Legacy — used by dispatch cards inside Phase 5B expanded panel
   S.statusFilter = S.statusFilter===k?'':k;
+  S.expandedId=null; renderAll();
+}
+
+function setPhaseFilter(id) {
+  if(S.phaseFilter===id) {
+    // Deselect — clear everything
+    S.phaseFilter=''; S.subFilter=''; S.statusFilter='';
+  } else {
+    S.phaseFilter=id; S.subFilter=''; S.statusFilter='';
+  }
+  S.expandedId=null; renderAll();
+}
+
+function setSubFilter(k) {
+  S.subFilter = S.subFilter===k?'':k;
+  S.statusFilter='';
   S.expandedId=null; renderAll();
 }
 
