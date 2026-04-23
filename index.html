@@ -1127,7 +1127,10 @@ function renderTable(rows) {
           <td><span class="wb ${wf.cls}">${wf.label}</span>${od?'<span class="od-flag" style="margin-left:4px">⚠</span>':''}</td>
           <td class="td-dim">${esc(r.updatedBy||'—')}</td>
           <td class="td-date td-dim">${upAt}</td>
-          <td style="font-size:11px;color:#ccc">${isEx?'▲':'▼'}</td>
+          <td style="text-align:right;padding-right:8px!important;white-space:nowrap">
+            ${canEdit?`<button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10.5px" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${uid}">✏ Edit</button>`:''}
+            <span style="font-size:11px;color:#ccc;margin-left:4px">${isEx?'▲':'▼'}</span>
+          </td>
         </tr>
         ${isEx?buildDetail(r):''}`;
     }
@@ -1148,7 +1151,10 @@ function renderTable(rows) {
         <td class="td-date${!r.dRecv?' empty':''}">${r.dRecv?fmtD(r.dRecv):'—'}</td>
         <td class="td-dim" style="font-family:'DM Mono',monospace;${od?'color:#C0392B;font-weight:700':''}">${td!==null?(r.dRecv?td+'d':td+'d ▸'):'—'}</td>
         <td class="td-dim" style="font-family:'DM Mono',monospace;font-size:11px">${esc(r.truck||'—')}</td>
-        <td style="font-size:11px;color:#ccc">${isEx?'▲':'▼'}</td>
+        <td style="text-align:right;padding-right:8px!important;white-space:nowrap">
+            ${canEdit?`<button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10.5px" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${uid}">✏ Edit</button>`:''}
+            <span style="font-size:11px;color:#ccc;margin-left:4px">${isEx?'▲':'▼'}</span>
+          </td>
       </tr>
       ${isEx?buildDetail(r):''}`;
   }).join('');
@@ -1306,10 +1312,13 @@ function buildDetail(r) {
     <div class="wf-meta-row">
       ${r.sentToWhsBy?`<div class="wf-meta"><div class="wf-ml">Sent to WHS by</div><div class="wf-mv">${esc(r.sentToWhsBy)}</div></div>`:''}
       ${r.sentToWhsAt?`<div class="wf-meta"><div class="wf-ml">Sent Date</div><div class="wf-mv">${fmtD(r.sentToWhsAt.slice(0,10))}</div></div>`:''}
-      ${r.boxes?`<div class="wf-meta"><div class="wf-ml">Ordered</div><div class="wf-mv">${esc(r.boxes)}</div></div>`:''}
-      ${r.actualBoxes?`<div class="wf-meta"><div class="wf-ml">Actual Shipped</div><div class="wf-mv" style="${r.actualBoxes!==r.boxes?'color:var(--red);font-weight:700':'color:var(--teal);font-weight:700'}">${esc(r.actualBoxes)}</div></div>`:''}
-      ${r.reasonCode?`<div class="wf-meta"><div class="wf-ml">Reason Code</div><div class="wf-mv" style="color:var(--red)">${esc(r.reasonCode)}</div></div>`:''}
       ${r.fulfillBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.fulfillBy)}</div></div>`:''}
+      <div style="margin-left:auto;display:flex;gap:12px;align-items:flex-start">
+        ${r.boxes?`<div class="wf-meta"><div class="wf-ml">Boxes</div><div class="wf-mv">${esc(r.boxes)}</div></div>`:''}
+        ${r.truck?`<div class="wf-meta"><div class="wf-ml">Truck</div><div class="wf-mv" style="font-family:'DM Mono',monospace">${esc(r.truck)}</div></div>`:''}
+        ${r.cas?`<div class="wf-meta"><div class="wf-ml">CAS No.</div><div class="wf-mv" style="font-family:'DM Mono',monospace">${esc(r.cas)}</div></div>`:''}
+        ${td!==null?`<div class="wf-meta"><div class="wf-ml">Transit</div><div class="wf-mv" style="${isOverdue(r)?'color:#C0392B;font-weight:700':''}">${td}d</div></div>`:''}
+      </div>
     </div>` : '';
   // 5B dispatch timeline — locked until actuals logged
   const dispatchBanner = !dispatchUnlocked && fulfSt ? `
@@ -1321,13 +1330,7 @@ function buildDetail(r) {
     ${dispatchBanner}
     <div style="${dispatchUnlocked?'':'opacity:.4;pointer-events:none'}">
       <div class="timeline" style="margin-bottom:8px">${tl}</div>
-      <div class="det-meta" style="border-top:none;padding-top:0">
-        ${r.boxes?`<div class="dm"><div class="dml">Boxes</div><div class="dmv">${esc(r.boxes)}</div></div>`:''}
-        ${r.truck?`<div class="dm"><div class="dml">Truck</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.truck)}</div></div>`:''}
-        ${r.cas?`<div class="dm"><div class="dml">CAS No.</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.cas)}</div></div>`:''}
-        ${td!==null?`<div class="dm"><div class="dml">Transit</div><div class="dmv" style="${isOverdue(r)?'color:#C0392B;font-weight:700':''}">${td}d</div></div>`:''}
-        ${r.remarks?`<div class="dm"><div class="dml">Remarks</div><div class="dmv">${esc(r.remarks)}</div></div>`:''}
-      </div>
+      ${r.remarks?`<div style="font-size:11px;color:#888;margin-top:4px"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;color:#aaa">Remarks</span> ${esc(r.remarks)}</div>`:''}
     </div>`;
   const panelP5 = `
     <div class="ph-panel open" data-phase="p5">
@@ -1345,11 +1348,10 @@ function buildDetail(r) {
     </div>`;
 
   // ── Actions row ───────────────────────────────────────────────────────────
-  const actionsRow = `
+  const actionsRow = canDelete ? `
     <div style="display:flex;gap:7px;justify-content:flex-end;margin-top:8px;padding-top:8px;border-top:1px solid var(--silver)">
-      ${canEdit?`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${uid}">✏ Edit</button>`:''}
-      ${canDelete?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>`:''}
-    </div>`;
+      <button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>
+    </div>` : '';
 
   // Progressive reveal — only show panels the CDF has actually reached
   const showP4 = smSt==='Approved' && pdfSt==='Generated'; // PDF must be generated before coordinator can act
