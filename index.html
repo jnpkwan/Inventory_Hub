@@ -225,11 +225,7 @@ textarea{resize:vertical;min-height:58px}
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center" id="login-btn" onclick="doLogin()">Sign In</button>
     <p class="offline-note">No backend yet? <a onclick="offlineMode()">Continue in offline / demo mode</a></p>
-    <div class="fg" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--silver)">
-      <label>Apps Script URL</label>
-      <input type="text" id="api-url-inp" placeholder="https://script.google.com/macros/s/…/exec" value="">
-      <p style="font-size:10.5px;color:#bbb;margin-top:4px">Saved automatically in your browser</p>
-    </div>
+
   </div>
 </div>
 
@@ -338,7 +334,7 @@ textarea{resize:vertical;min-height:58px}
 <script>
 /* ══════════════════ CONFIG ══════════════════ */
 const CFG = {
-  apiUrl:   localStorage.getItem('acacia_api_url') || '',
+  apiUrl:   'https://script.google.com/macros/s/AKfycbzyh0GHmdSSrkmf5Kf-3dfWWdm36XHN958nkJWWXqCZ7WfFdOK8KohPsI-4iQsMkG7maA/exec',
   offline:  false
 };
 
@@ -377,17 +373,11 @@ const OFFLINE_DATA = [{"month":"JANUARY","store":"BUHANGIN","cdf":"CDF3390-335",
 async function doLogin() {
   const username = document.getElementById('lu').value.trim();
   const password = document.getElementById('lp').value;
-  const apiUrl   = document.getElementById('api-url-inp').value.trim();
   const errEl    = document.getElementById('login-err');
   const btn      = document.getElementById('login-btn');
 
   errEl.style.display = 'none';
   if (!username || !password) { showLoginErr('Enter username and password'); return; }
-
-  if (apiUrl) {
-    localStorage.setItem('acacia_api_url', apiUrl);
-    CFG.apiUrl = apiUrl;
-  }
 
   btn.innerHTML = '<div class="spinner"></div> Signing in…';
   btn.disabled = true;
@@ -443,7 +433,7 @@ function startApp() {
   document.getElementById('app').style.display = 'block';
 
   // Set API URL display
-  if (CFG.apiUrl) document.getElementById('api-url-inp').value = CFG.apiUrl;
+
 
   // User chip
   const u = S.user;
@@ -493,6 +483,19 @@ async function loadData() {
         month:    S.month
       });
       setConn('online', 'Live');
+      // Normalize date fields from Sheets (may arrive as full timestamp strings)
+      const DATE_FIELDS = ['dWhs','dSdc','dDirect','dCdc','dSdc2','dCdc2','dRecv'];
+      records = records.map(r => {
+        DATE_FIELDS.forEach(f => {
+          if (r[f] && typeof r[f]==='string' && !r[f].match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const d = new Date(r[f]);
+            if (!isNaN(d)) {
+              r[f] = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+            }
+          }
+        });
+        return r;
+      });
     }
 
     // Role filter on offline data
@@ -520,10 +523,10 @@ async function loadData() {
 
 /* ══════════════════ RENDER ══════════════════ */
 function renderAll() {
-  const rows = getFiltered();
-  renderSummary(rows);
-  renderTable(rows);
-  document.getElementById('rc').textContent = rows.length + ' records';
+  const filtered = getFiltered();
+  renderSummary(S.records);   // always count from full month records
+  renderTable(filtered);
+  document.getElementById('rc').textContent = filtered.length + ' records';
   document.getElementById('tcard-title').textContent =
     S.month.charAt(0) + S.month.slice(1).toLowerCase() + ' — CDF Records';
 }
@@ -666,8 +669,8 @@ function buildDetail(r) {
       ${r.remarks?`<div class="dm"><div class="dml">Remarks</div><div class="dmv">${esc(r.remarks)}</div></div>`:''}
       ${r.updatedBy?`<div class="dm"><div class="dml">Last Updated By</div><div class="dmv">${esc(r.updatedBy)}</div></div>`:''}
       <div class="det-actions">
-        ${canEdit?`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();openEditModal('${esc(r.id||r.cdf)}')">✏ Edit</button>`:''}
-        ${(S.user.role==='EXECUTIVE')?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord('${esc(r.id||r.cdf)}')">✕ Delete</button>`:''}
+        ${canEdit?`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${esc(r.id||r.cdf)}">✏ Edit</button>`:''}
+        ${(S.user.role==='EXECUTIVE')?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${esc(r.id||r.cdf)}">✕ Delete</button>`:''}
       </div>
     </div>
   </div></td></tr>`;
@@ -972,11 +975,20 @@ function tdDays(r) {
 }
 
 function fmtD(s) {
-  if(!s) return '—';
-  const parts=s.split('-');
-  if(parts.length<3) return s;
+  if(!s || s==='—') return '—';
   const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return months[parseInt(parts[1])-1]+' '+parseInt(parts[2]);
+  // Handle YYYY-MM-DD
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(iso) return months[parseInt(iso[2])-1]+' '+parseInt(iso[3])+', '+iso[1];
+  // Handle full Date string from Google Sheets (e.g. "Fri Apr 24 2026 00:00:00 GMT+0800...")
+  const d = new Date(s);
+  if(!isNaN(d)) {
+    const hr = d.getHours(), mn = d.getMinutes();
+    const t = hr===0&&mn===0 ? '' :
+      ` ${hr%12||12}:${String(mn).padStart(2,'0')}${hr<12?'AM':'PM'}`;
+    return months[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear()+t;
+  }
+  return s; // fallback: show as-is
 }
 
 function fmtTime(d) {
@@ -1011,7 +1023,7 @@ document.addEventListener('keydown', e=>{
 });
 
 /* ── Pre-fill saved API URL ── */
-if(CFG.apiUrl) document.getElementById('api-url-inp').value=CFG.apiUrl;
+
 </script>
 </body>
 </html>
