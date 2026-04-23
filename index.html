@@ -953,9 +953,9 @@ function renderSummary(rows) {
       +mkSub('p4_act',  '📋','Awaiting Actual Count', awaitAct,              '#7B1FA2')
       +mkSub('p4_pd',   '📬','Pending Dispatch',      cnt['Pending Dispatch'],'#F9A825')
       +mkSub('p4_tr',   '🚚','In Transit',            cnt['In Transit'],      '#1B4DA0')
-      +mkSub('p4_recv', '✅','Received',              cnt['Received'],        '#22A749')
       +mkSub('p4_hold', '⏸', 'On Hold',              cnt['On Hold'],         '#78909C')
       +mkSub('p4_attn', '🚨','Needs Attention',       attn,                  '#C0392B')
+      +mkSub('p4_recv', '✅','Received',              cnt['Received'],        '#22A749')
       +'</div>';
   }
 
@@ -984,8 +984,8 @@ function buildDispatchCards(rows, needsAttn) {
     {k:'Pending Dispatch', cls:'c-pd',   n:cnt['Pending Dispatch'], l:'Pending Dispatch', d:''},
     {k:'On Hold',          cls:'c-hold', n:cnt['On Hold'],          l:'On Hold',          d:''},
     {k:'In Transit',       cls:'c-tr',   n:cnt['In Transit'],       l:'In Transit',       d:''},
+    {k:'__attn',           cls:'c-attn', n:needsAttn.length,        l:'Needs Attention',  d:'> 7 days no movement'},
     {k:'Received',         cls:'c-recv', n:cnt['Received'],         l:'Received',         d:total?Math.round(cnt['Received']/total*100)+'%':'0%'},
-    {k:'__attn',           cls:'c-attn', n:needsAttn.length,        l:'Needs Attention',  d:'> 7 days no movement'}
   ];
 }
 
