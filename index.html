@@ -25,8 +25,8 @@ html,body{height:100%}
 body{font-family:"DM Sans",sans-serif;background:var(--mist);color:var(--carbon);font-size:13px;line-height:1.5}
 
 /* ── LOGIN ── */
-#login-screen{position:fixed;inset:0;background:var(--mist);display:flex;align-items:center;justify-content:center;z-index:900}
-.login-box{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:36px 40px;width:360px;box-shadow:var(--shm)}
+#login-screen{position:fixed;inset:0;background:linear-gradient(135deg,#EBF7EF 0%,#EBF0FA 50%,#F5F5F5 100%);display:flex;align-items:center;justify-content:center;z-index:900}
+.login-box{background:var(--white);border:1px solid #E8E8E8;border-radius:16px;padding:40px 44px;width:380px;box-shadow:0 8px 32px rgba(0,0,0,.10),0 1px 4px rgba(0,0,0,.06)}
 .login-logo{text-align:center;margin-bottom:24px}
 .login-a{font-family:"Montserrat",sans-serif;font-weight:800;font-size:22px;color:var(--green);letter-spacing:3px}
 .login-b{font-family:"Montserrat",sans-serif;font-weight:600;font-size:9px;letter-spacing:2px;text-transform:uppercase;background:var(--blue);color:#fff;padding:2px 8px;display:inline-block;margin-top:2px}
@@ -62,11 +62,11 @@ main{max-width:1400px;margin:0 auto;padding:18px 24px 48px}
 .mtab.active{background:var(--blue);border-color:var(--blue);color:#fff}
 .sep{width:1px;height:22px;background:var(--silver);margin:0 2px}
 .sw{position:relative;flex:1;min-width:180px;max-width:260px}
-.sw input{width:100%;background:var(--mist);border:1px solid var(--silver);border-radius:var(--r);font-family:"DM Sans",sans-serif;font-size:12.5px;padding:7px 10px 7px 30px;outline:none;transition:border-color .15s}
-.sw input:focus{border-color:var(--green);background:var(--white)}
+.sw input{width:100%;background:#FAFAFA;border:1.5px solid #E8E8E8;border-radius:8px;font-family:"DM Sans",sans-serif;font-size:12.5px;padding:7px 10px 7px 30px;outline:none;transition:border-color .18s,background .18s,box-shadow .18s}
+.sw input:focus{border-color:var(--green);background:var(--white);box-shadow:0 0 0 3px rgba(34,167,73,.10)}
 .si{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#bbb;font-size:12px;pointer-events:none}
-select.fs{background:var(--white);border:1px solid var(--silver);border-radius:var(--r);font-family:"DM Sans",sans-serif;font-size:12.5px;padding:7px 10px;outline:none;cursor:pointer;color:var(--carbon);transition:border-color .15s}
-select.fs:focus{border-color:var(--green)}
+select.fs{background:#FAFAFA;border:1.5px solid #E8E8E8;border-radius:8px;font-family:"DM Sans",sans-serif;font-size:12.5px;padding:7px 10px;outline:none;cursor:pointer;color:var(--carbon);transition:border-color .18s,background .18s}
+select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px rgba(34,167,73,.10)}
 .dw{display:flex;align-items:center;gap:5px;font-size:12px;color:#666}
 .dw input{width:44px;padding:5px 7px;border:1px solid var(--silver);border-radius:var(--r);font-size:12px;text-align:center;outline:none}
 .dw input:focus{border-color:var(--amber)}
@@ -77,7 +77,7 @@ select.fs:focus{border-color:var(--green)}
 .summary{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}
 .sc{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:12px 14px;box-shadow:var(--sh);cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative;overflow:hidden}
 .sc::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
-.sc.c-all::before{background:var(--carbon)}.sc.c-recv::before{background:var(--green)}
+.sc.c-recv::before{background:var(--green)}
 .sc.c-tr::before{background:var(--blue)}.sc.c-pd::before{background:var(--amber)}.sc.c-prep::before{background:#9C27B0}
 .sc.c-hold::before{background:var(--grey)}.sc.c-done::before{background:var(--teal)}.sc.c-attn::before{background:var(--red)}.sc.c-attn .sn{color:var(--red)}.sc.c-attn.active{border-color:var(--red);background:var(--red-pale)}
 .sc:hover{box-shadow:var(--shm)}.sc.active{border-color:var(--green);box-shadow:0 0 0 2px var(--green-mid)}
@@ -174,12 +174,40 @@ td{padding:9px 12px;vertical-align:middle}
 .frow{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .frow.full{grid-template-columns:1fr}
 .frow.three{grid-template-columns:1fr 1fr 1fr}
-.fg{display:flex;flex-direction:column;gap:3px}
-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#777}
+.fg{display:flex;flex-direction:column;gap:5px}
+label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#999}
 label .req{color:var(--red);margin-left:2px}
-input[type=date]:disabled{background:var(--mist);color:#bbb;cursor:not-allowed;border-color:#eee}
-input:focus,select.ms:focus,textarea:focus{border-color:var(--green);box-shadow:0 0 0 2px var(--green-pale)}
-textarea{resize:vertical;min-height:58px}
+/* ── FIELD BASE ── */
+input[type=text],input[type=date],input[type=password],select.ms,textarea{
+  width:100%;background:#FAFAFA;border:1.5px solid #E8E8E8;border-radius:8px;
+  font-family:"DM Sans",sans-serif;font-size:13px;padding:10px 13px;
+  outline:none;transition:border-color .18s,background .18s,box-shadow .18s;
+  color:var(--carbon);line-height:1.4;
+}
+input[type=text]:hover,input[type=date]:hover,input[type=password]:hover,select.ms:hover,textarea:hover{
+  border-color:#C8C8C8;background:#fff;
+}
+input:focus,select.ms:focus,textarea:focus{
+  border-color:var(--green);background:#fff;
+  box-shadow:0 0 0 3px rgba(34,167,73,.12);
+}
+input[type=date]:disabled{background:var(--mist);color:#bbb;cursor:not-allowed;border-color:#eee;box-shadow:none}
+textarea{resize:vertical;min-height:62px}
+input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
+
+/* ── LOGIN FIELDS ── */
+.login-field-wrap{position:relative;margin-bottom:14px}
+.login-field-wrap .lf-icon{
+  position:absolute;left:13px;top:50%;transform:translateY(-50%);
+  font-size:14px;color:#C0C0C0;pointer-events:none;transition:color .18s;
+}
+.login-field-wrap input{
+  padding-left:40px;padding-top:13px;padding-bottom:13px;
+  font-size:13.5px;border-radius:10px;
+  background:#F7F8FA;border:1.5px solid #E4E6EA;
+}
+.login-field-wrap input:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px rgba(34,167,73,.13)}
+.login-field-wrap input:focus ~ .lf-icon{color:var(--green)}
 .status-opts{display:flex;gap:6px;flex-wrap:wrap}
 .sopt-in{display:none}
 .sopt-lb{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:5px 11px;border-radius:20px;border:1.5px solid transparent;cursor:pointer;transition:all .12s;user-select:none}
@@ -234,15 +262,15 @@ textarea{resize:vertical;min-height:58px}
     </div>
     <div class="login-title">Dispatching &amp; Receiving Dashboard</div>
     <div id="login-err" class="alert alert-err" style="display:none"></div>
-    <div class="fg" style="margin-bottom:12px">
-      <label>Username</label>
-      <input type="text" id="lu" placeholder="Enter username" autocomplete="username">
+    <div class="login-field-wrap">
+      <input type="text" id="lu" placeholder="Username" autocomplete="username">
+      <span class="lf-icon">👤</span>
     </div>
-    <div class="fg" style="margin-bottom:16px">
-      <label>Password</label>
-      <input type="password" id="lp" placeholder="Enter password" autocomplete="current-password">
+    <div class="login-field-wrap" style="margin-bottom:20px">
+      <input type="password" id="lp" placeholder="Password" autocomplete="current-password">
+      <span class="lf-icon">🔑</span>
     </div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center" id="login-btn" onclick="doLogin()">Sign In</button>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:13.5px;border-radius:10px;letter-spacing:.3px" id="login-btn" onclick="doLogin()">Sign In</button>
 
 
   </div>
@@ -307,7 +335,6 @@ textarea{resize:vertical;min-height:58px}
       </button>
       <div class="sep"></div>
       <div class="sync-info" id="sync-info"></div>
-      <span class="rc" id="rc"></span>
     </div>
   </div>
 
@@ -316,6 +343,8 @@ textarea{resize:vertical;min-height:58px}
   <div class="tcard">
     <div class="tcard-header">
       <span class="tcard-title" id="tcard-title">CDF Records</span>
+      <span id="total-pill" style="display:inline-flex;align-items:center;gap:4px;font-family:'Montserrat',sans-serif;font-weight:700;font-size:10px;background:var(--carbon);color:#fff;padding:2px 9px;border-radius:20px;letter-spacing:.5px"></span>
+      <span id="rc" style="font-size:11px;color:#aaa"></span>
       <span style="margin-left:auto;font-size:11px;color:#bbb" id="last-sync"></span>
     </div>
     <div class="tw">
@@ -615,9 +644,13 @@ async function loadData() {
 /* ══════════════════ RENDER ══════════════════ */
 function renderAll() {
   const filtered = getFiltered();
-  renderSummary(S.records);   // always count from full month records
+  renderSummary(S.records);
   renderTable(filtered);
-  document.getElementById('rc').textContent = filtered.length + ' records';
+  const total = S.records.length;
+  const pill = document.getElementById('total-pill');
+  if (pill) pill.textContent = total + ' CDF' + (total !== 1 ? 's' : '');
+  const rc = document.getElementById('rc');
+  if (rc) rc.textContent = filtered.length < total ? filtered.length + ' shown' : '';
   document.getElementById('tcard-title').textContent =
     S.month.charAt(0) + S.month.slice(1).toLowerCase() + ' — CDF Records';
 }
@@ -668,7 +701,6 @@ function renderSummary(rows) {
     {k:'On Hold',          cls:'c-hold', n:cnt['On Hold'],          l:'On Hold',          d:''},
     {k:'In Transit',       cls:'c-tr',   n:cnt['In Transit'],       l:'In Transit',       d:''},
     {k:'Received',         cls:'c-recv', n:cnt['Received'],         l:'Received',         d:total?Math.round(cnt['Received']/total*100)+'%':''},
-    {k:'',                 cls:'c-all',  n:total,                   l:'Total CDFs',       d:''},
     {k:'__attn',           cls:'c-attn', n:needsAttn.length,        l:'Needs Attention',  d:'> 7 days no movement'}
   ];
   document.getElementById('summary').innerHTML = cards.map(c=>`
