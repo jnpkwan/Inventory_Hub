@@ -79,7 +79,7 @@ select.fs:focus{border-color:var(--green)}
 .sc::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
 .sc.c-all::before{background:var(--carbon)}.sc.c-recv::before{background:var(--green)}
 .sc.c-tr::before{background:var(--blue)}.sc.c-pd::before{background:var(--amber)}
-.sc.c-hold::before{background:var(--grey)}.sc.c-done::before{background:var(--teal)}
+.sc.c-hold::before{background:var(--grey)}.sc.c-done::before{background:var(--teal)}.sc.c-attn::before{background:var(--red)}.sc.c-attn .sn{color:var(--red)}.sc.c-attn.active{border-color:var(--red);background:var(--red-pale)}
 .sc:hover{box-shadow:var(--shm)}.sc.active{border-color:var(--green);box-shadow:0 0 0 2px var(--green-mid)}
 .sn{font-family:"Montserrat",sans-serif;font-weight:800;font-size:24px;line-height:1;color:var(--carbon)}
 .sl{font-size:10.5px;color:#888;margin-top:3px;font-weight:500}
@@ -200,15 +200,18 @@ textarea{resize:vertical;min-height:58px}
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">
-      <svg width="40" height="40" viewBox="0 0 200 200">
-        <ellipse cx="100" cy="72" rx="68" ry="52" fill="#22A749"/>
-        <ellipse cx="58" cy="90" rx="38" ry="28" fill="#22A749"/>
-        <ellipse cx="142" cy="90" rx="38" ry="28" fill="#22A749"/>
-        <rect x="86" y="108" width="28" height="58" rx="5" fill="#1B4DA0"/>
-        <path d="M55 166 Q80 158 100 166 Q120 158 145 166" stroke="#1B4DA0" stroke-width="4" fill="none"/>
-      </svg>
-      <div class="login-a">ACACIA</div>
-      <div class="login-b">Home Builders Corporation</div>
+      <img id="login-logo-img" src="https://raw.githubusercontent.com/jnpkwan/Inventory_Hub/main/logo.png" alt="Acacia HBC" style="max-height:80px;max-width:200px;object-fit:contain;margin-bottom:8px" onerror="this.style.display='none';document.getElementById('login-logo-fallback').style.display='block'">
+      <div id="login-logo-fallback" style="display:none">
+        <svg width="40" height="40" viewBox="0 0 200 200">
+          <ellipse cx="100" cy="72" rx="68" ry="52" fill="#22A749"/>
+          <ellipse cx="58" cy="90" rx="38" ry="28" fill="#22A749"/>
+          <ellipse cx="142" cy="90" rx="38" ry="28" fill="#22A749"/>
+          <rect x="86" y="108" width="28" height="58" rx="5" fill="#1B4DA0"/>
+          <path d="M55 166 Q80 158 100 166 Q120 158 145 166" stroke="#1B4DA0" stroke-width="4" fill="none"/>
+        </svg>
+        <div class="login-a">ACACIA</div>
+        <div class="login-b">Home Builders Corporation</div>
+      </div>
     </div>
     <div class="login-title">Dispatching &amp; Receiving Dashboard</div>
     <div id="login-err" class="alert alert-err" style="display:none"></div>
@@ -236,14 +239,17 @@ textarea{resize:vertical;min-height:58px}
 <header>
   <div class="hi">
     <div class="logo">
-      <svg width="28" height="28" viewBox="0 0 200 200">
-        <ellipse cx="100" cy="72" rx="68" ry="52" fill="#22A749"/>
-        <ellipse cx="58" cy="90" rx="38" ry="28" fill="#22A749"/>
-        <ellipse cx="142" cy="90" rx="38" ry="28" fill="#22A749"/>
-        <rect x="86" y="108" width="28" height="58" rx="5" fill="#1B4DA0"/>
-        <path d="M55 166 Q80 158 100 166 Q120 158 145 166" stroke="#1B4DA0" stroke-width="4" fill="none"/>
-      </svg>
-      <div><div class="la">ACACIA</div><div class="lb">Home Builders Corp</div></div>
+      <img id="header-logo-img" src="https://raw.githubusercontent.com/jnpkwan/Inventory_Hub/main/logo.png" alt="Acacia HBC" style="max-height:36px;max-width:120px;object-fit:contain" onerror="this.style.display='none';document.getElementById('header-logo-fallback').style.display='flex'">
+      <div id="header-logo-fallback" style="display:none;align-items:center;gap:6px">
+        <svg width="28" height="28" viewBox="0 0 200 200">
+          <ellipse cx="100" cy="72" rx="68" ry="52" fill="#22A749"/>
+          <ellipse cx="58" cy="90" rx="38" ry="28" fill="#22A749"/>
+          <ellipse cx="142" cy="90" rx="38" ry="28" fill="#22A749"/>
+          <rect x="86" y="108" width="28" height="58" rx="5" fill="#1B4DA0"/>
+          <path d="M55 166 Q80 158 100 166 Q120 158 145 166" stroke="#1B4DA0" stroke-width="4" fill="none"/>
+        </svg>
+        <div><div class="la">ACACIA</div><div class="lb">Home Builders Corp</div></div>
+      </div>
     </div>
     <div class="hdiv"></div>
     <span class="htitle">Dispatching &amp; Receiving</span>
@@ -265,7 +271,7 @@ textarea{resize:vertical;min-height:58px}
 <main>
   <div class="controls">
     <div class="crow">
-      <div class="mtabs" id="mtabs"></div>
+      <select class="fs" id="month-sel" onchange="setMonth(this.value)" style="font-weight:600;min-width:130px"></select>
       <div class="sep"></div>
       <div class="sw"><span class="si">🔍</span><input type="text" id="search" placeholder="Store or CDF ref… (⌘K)" oninput="renderAll()"></div>
       <select class="fs" id="f-route" onchange="renderAll()">
@@ -337,19 +343,21 @@ const CFG = {
 };
 
 /* ══════════════════ STATE ══════════════════ */
+const MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+const _nowMonth = MONTHS[new Date().getMonth()];
+
 const S = {
   user:         null,
   records:      [],
-  month:        'APRIL',
+  month:        _nowMonth,
   statusFilter: '',
   sortField:    'dWhs',
   sortDir:      'desc',
   expandedId:   null,
   editingId:    null,
-  pollTimer:    null
+  pollTimer:    null,
+  _attnIds:     new Set()
 };
-
-const MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL'];
 
 const STATUS_META = {
   'Received':        {cls:'s-received', dot:'#22A749', icon:'✅'},
@@ -445,10 +453,18 @@ function startApp() {
   document.getElementById('user-nm').textContent = u.name || u.username;
   document.getElementById('user-role-badge').textContent = u.role;
 
+  // Hide Add CDF button for COORDINATOR role — read-only access
+  const addBtn = document.querySelector('button[onclick="openAddModal()"]');
+  if (addBtn) addBtn.style.display = u.role === 'COORDINATOR' ? 'none' : '';
+
   // Month tabs
-  const tabsEl = document.getElementById('mtabs');
-  tabsEl.innerHTML = MONTHS.map(m =>
-    `<button class="mtab${m===S.month?' active':''}" onclick="setMonth('${m}')">${m.slice(0,3)}</button>`
+  const sel = document.getElementById('month-sel');
+  // Only populate months that exist in the data (or all 12 if no data yet)
+  const dataMonths = [...new Set((S.records.length ? S.records : OFFLINE_DATA).map(r=>r.month))];
+  const showMonths = MONTHS.filter(m => dataMonths.includes(m));
+  const listToShow = showMonths.length ? showMonths : MONTHS;
+  sel.innerHTML = listToShow.map(m =>
+    `<option value="${m}"${m===S.month?' selected':''}>${m.charAt(0)+m.slice(1).toLowerCase()}</option>`
   ).join('');
 
   loadData();
@@ -517,7 +533,8 @@ function getFiltered() {
   const fRoute = document.getElementById('f-route').value;
   const fType  = document.getElementById('f-type').value;
   return S.records.filter(r => {
-    if (S.statusFilter && r.status !== S.statusFilter) return false;
+    if (S.statusFilter === '__attn') { if (!S._attnIds || !S._attnIds.has(r.id||r.cdf)) return false; }
+    else if (S.statusFilter && r.status !== S.statusFilter) return false;
     if (fRoute && r.route !== fRoute) return false;
     if (fType  && r.type  !== fType)  return false;
     if (search && !(r.store||'').toLowerCase().includes(search) &&
@@ -531,20 +548,32 @@ function renderSummary(rows) {
   const cnt = {}; Object.keys(STATUS_META).forEach(k => cnt[k]=0);
   rows.forEach(r => { if(cnt[r.status]!==undefined) cnt[r.status]++; });
   const total = rows.length;
-  const od    = rows.filter(isOverdue).length;
+  // Needs Attention: not received/completed and no date movement in >7 days
+  const needsAttn = rows.filter(r => {
+    if (r.status === 'Received' || r.status === 'Completed') return false;
+    const today = new Date();
+    const dates = [r.dWhs,r.dSdc,r.dDirect,r.dCdc,r.dSdc2,r.dCdc2,r.dRecv]
+      .filter(d => d && d.match(/^\d{4}-\d{2}-\d{2}/));
+    if (!dates.length) return false;
+    const latest = dates.map(d => new Date(d)).filter(d => !isNaN(d)).sort((a,b)=>b-a)[0];
+    if (!latest) return false;
+    return (today - latest) / (1000*60*60*24) > 7;
+  });
   const cards = [
-    {k:'',cls:'c-all',n:total,l:'Total CDFs',d:od?`⚠ ${od} delayed`:''},
-    {k:'Received',cls:'c-recv',n:cnt['Received'],l:'Received',d:total?Math.round(cnt['Received']/total*100)+'%':''},
-    {k:'In Transit',cls:'c-tr',n:cnt['In Transit'],l:'In Transit',d:od?`⚠ ${od} overdue`:'On time'},
-    {k:'Pending Dispatch',cls:'c-pd',n:cnt['Pending Dispatch'],l:'Pending Dispatch',d:''},
-    {k:'On Hold',cls:'c-hold',n:cnt['On Hold'],l:'On Hold',d:''},
-    {k:'Completed',cls:'c-done',n:cnt['Completed'],l:'Completed',d:''}
+    {k:'Pending Dispatch', cls:'c-pd',   n:cnt['Pending Dispatch'], l:'Pending Dispatch', d:''},
+    {k:'On Hold',          cls:'c-hold', n:cnt['On Hold'],          l:'On Hold',          d:''},
+    {k:'In Transit',       cls:'c-tr',   n:cnt['In Transit'],       l:'In Transit',       d:''},
+    {k:'Received',         cls:'c-recv', n:cnt['Received'],         l:'Received',         d:total?Math.round(cnt['Received']/total*100)+'%':''},
+    {k:'',                 cls:'c-all',  n:total,                   l:'Total CDFs',       d:''},
+    {k:'__attn',           cls:'c-attn', n:needsAttn.length,        l:'Needs Attention',  d:'> 7 days no movement'}
   ];
   document.getElementById('summary').innerHTML = cards.map(c=>`
     <div class="sc ${c.cls}${S.statusFilter===c.k?' active':''}" onclick="setStatusFilter('${c.k}')">
       <div class="sn">${c.n}</div><div class="sl">${c.l}</div>
-      ${c.d?`<div class="sd" style="color:${(c.k===''||c.k==='In Transit')&&od>0?'#C0392B':'#22A749'}">${c.d}</div>`:''}
+      ${c.d?`<div class="sd" style="color:${c.cls==='c-attn'&&c.n>0?'#C0392B':c.cls==='c-recv'?'#22A749':'inherit'}">${c.d}</div>`:''}
     </div>`).join('');
+  // store needs-attention IDs for filtering
+  S._attnIds = new Set(needsAttn.map(r=>r.id||r.cdf));
 }
 
 /* ── Table ── */
@@ -625,7 +654,7 @@ function buildDetail(r) {
 
   const td = tdDays(r);
   const isRestricted = S.user.role === 'IS' || S.user.role === 'COORDINATOR';
-  const canEdit = S.user.role==='EXECUTIVE' || !r.assignedTo || r.assignedTo===S.user.username || r.createdBy===S.user.username || !isRestricted;
+  const canEdit = S.user.role==='EXECUTIVE' || S.user.role==='IS';
 
   return `<tr class="det-tr"><td colspan="12"><div class="det-inner">
     <div class="timeline">${tl}</div>
@@ -638,7 +667,7 @@ function buildDetail(r) {
       ${r.updatedBy?`<div class="dm"><div class="dml">Last Updated By</div><div class="dmv">${esc(r.updatedBy)}</div></div>`:''}
       <div class="det-actions">
         ${canEdit?`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();openEditModal('${esc(r.id||r.cdf)}')">✏ Edit</button>`:''}
-        ${(S.user.role==='EXECUTIVE'||r.createdBy===S.user.username)?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord('${esc(r.id||r.cdf)}')">✕ Delete</button>`:''}
+        ${(S.user.role==='EXECUTIVE')?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord('${esc(r.id||r.cdf)}')">✕ Delete</button>`:''}
       </div>
     </div>
   </div></td></tr>`;
