@@ -1353,10 +1353,13 @@ function buildDetail(r) {
   // Progressive reveal — only show panels the CDF has actually reached
   const showP4 = smSt==='Approved' && pdfSt==='Generated'; // PDF must be generated before coordinator can act
   const showP5 = storeSt==='Approved';                     // Store approved → fulfillment begins
+  // If all approval gates are already cleared (e.g. new CDF bypassing phases 1-3),
+  // skip Phase 3 panels entirely and open straight to Phase 4
+  const allPreApproved = smSt==='Approved' && pdfSt==='Generated' && storeSt==='Approved';
 
   return `<tr class="det-tr"><td colspan="12"><div class="det-inner">
-    ${panelP3}
-    ${showP4 ? panelP4 : ''}
+    ${allPreApproved ? '' : panelP3}
+    ${allPreApproved ? '' : (showP4 ? panelP4 : '')}
     ${showP5 ? panelP5 : ''}
     ${actionsRow}
   </div></td></tr>`;
