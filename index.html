@@ -25,8 +25,8 @@ html,body{height:100%}
 body{font-family:"DM Sans",sans-serif;background:var(--mist);color:var(--carbon);font-size:13px;line-height:1.5}
 
 /* ── LOGIN ── */
-#login-screen{position:fixed;inset:0;background:linear-gradient(135deg,#EBF7EF 0%,#EBF0FA 50%,#F5F5F5 100%);display:flex;align-items:center;justify-content:center;z-index:900}
-.login-box{background:var(--white);border:1px solid #E8E8E8;border-radius:16px;padding:40px 44px;width:380px;box-shadow:0 8px 32px rgba(0,0,0,.10),0 1px 4px rgba(0,0,0,.06)}
+#login-screen{position:fixed;inset:0;background:linear-gradient(135deg,#EBF7EF 0%,#EBF0FA 50%,#F5F5F5 100%);display:flex;align-items:center;justify-content:center;z-index:900;padding:20px}
+.login-box{background:var(--white);border:1px solid #E8E8E8;border-radius:16px;padding:36px 40px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.10),0 1px 4px rgba(0,0,0,.06)}
 .login-logo{text-align:center;margin-bottom:24px}
 .login-a{font-family:"Montserrat",sans-serif;font-weight:800;font-size:22px;color:var(--green);letter-spacing:3px}
 .login-b{font-family:"Montserrat",sans-serif;font-weight:600;font-size:9px;letter-spacing:2px;text-transform:uppercase;background:var(--blue);color:#fff;padding:2px 8px;display:inline-block;margin-top:2px}
@@ -316,8 +316,9 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 @media (max-width: 768px) {
 
   /* ── LOGIN ── */
-  .login-box{width:calc(100% - 32px);padding:32px 24px;border-radius:14px}
-  .login-logo img{max-height:72px}
+  .login-box{padding:28px 22px;border-radius:12px}
+  .login-logo img{max-height:64px}
+  .login-title{font-size:11px;margin-bottom:16px}
 
   /* ── HEADER ── */
   .hi{padding:0 14px;height:52px;gap:8px}
