@@ -554,7 +554,8 @@ const S = {
   pollTimer:    null,
   idleTimer:    null,
   hideReceived: false,
-  _attnIds:     new Set()
+  _attnIds:     new Set(),
+  _wfCache:     {}    // preserves workflow fields across Sheet reloads
 };
 
 const STATUS_META = {
@@ -779,6 +780,37 @@ async function loadData() {
     }
 
     S.records = records;
+
+    // ── Preserve workflow fields that the Sheet doesn't store yet ──────────
+    // Until the Apps Script updateCDF handler writes smgrStatus, storeStatus,
+    // fulfillStatus etc. to the Sheet, a fresh getCDFs call will wipe them.
+    // Merge any in-memory workflow fields back into the freshly-loaded records.
+    const WORKFLOW_FIELDS = [
+      'smgrStatus','smgrNotes','smgrApprovedBy','smgrApprovedAt',
+      'storeStatus','storeNotes','coordNotes','storeUpdatedBy','storeUpdatedAt',
+      'pdfStatus','pdfGeneratedBy','pdfGeneratedAt',
+      'fulfillStatus','actualBoxes','reasonCode','fulfillNotes',
+      'fulfillBy','fulfillAt','sentToWhsBy','sentToWhsAt'
+    ];
+    if(S._wfCache) {
+      S.records = S.records.map(r => {
+        const uid = r.id||r.cdf;
+        const cached = S._wfCache[uid];
+        if(!cached) return r;
+        const merged = {...r};
+        WORKFLOW_FIELDS.forEach(f => {
+          if(cached[f] !== undefined && !r[f]) merged[f] = cached[f];
+        });
+        return merged;
+      });
+    }
+    // Update the workflow cache from current memory
+    S._wfCache = {};
+    S.records.forEach(r => {
+      const uid = r.id||r.cdf;
+      S._wfCache[uid] = {};
+      WORKFLOW_FIELDS.forEach(f => { if(r[f]) S._wfCache[uid][f] = r[f]; });
+    });
     document.getElementById('last-sync').textContent = 'Updated ' + fmtTime(new Date());
     renderAll();
   } catch(e) {
@@ -1204,7 +1236,7 @@ function buildDetail(r) {
     <div class="wf-actions">
       ${pdfSt==='Generated'
         ? `<span class="wf-status-badge wfs-fulfilled" style="font-size:10px">📄 PDF Generated — ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''} by ${esc(r.pdfGeneratedBy||'')}</span>`
-        : role==='IS'
+        : (role==='IS'||role==='EXECUTIVE')
           ? `<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate CDF PDF</button>
              <span style="font-size:10px;color:#aaa">IS runs script &amp; uploads to Drive</span>`
           : `<span style="font-size:10.5px;color:var(--amber);font-weight:600">⏳ Waiting for IS to generate PDF — Store Approval step will unlock once done.</span>`
@@ -1805,6 +1837,11 @@ async function apiAddCDF(vals) {
 async function apiUpdateCDF(uid, vals) {
   const idx = S.records.findIndex(r=>(r.id||r.cdf)===uid);
   if(idx>=0) S.records[idx]={...S.records[idx],...vals,updatedBy:S.user.username,updatedAt:new Date().toISOString()};
+
+  // Keep workflow cache in sync so loadData merges don't wipe these fields
+  if(!S._wfCache) S._wfCache = {};
+  if(!S._wfCache[uid]) S._wfCache[uid] = {};
+  Object.assign(S._wfCache[uid], vals);
 
   if(!CFG.offline && CFG.apiUrl) {
     try {
