@@ -74,16 +74,30 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .sync-info{font-size:10.5px;color:#bbb;display:flex;align-items:center;gap:5px}
 
 /* ── SUMMARY ── */
-.summary{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}
-.sc{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:12px 14px;box-shadow:var(--sh);cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative;overflow:hidden}
+/* Phase pipeline cards (top) */
+.ph-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+.phc{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:11px 14px;box-shadow:var(--sh);position:relative;overflow:hidden}
+.phc::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
+.phc.phc-1::before,.phc.phc-2::before{background:#C8D4F0}
+.phc.phc-3::before{background:#7B1FA2}
+.phc.phc-4::before{background:var(--amber)}
+.phc.phc-5::before{background:var(--teal)}
+.phc-num{font-size:9px;font-weight:800;color:#bbb;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.phc-n{font-family:"Montserrat",sans-serif;font-weight:800;font-size:22px;line-height:1;color:var(--carbon)}
+.phc-n.dim{color:#ccc}
+.phc-l{font-size:10px;color:#888;margin-top:2px;font-weight:500}
+.phc-sub{font-size:9px;margin-top:3px;font-weight:600;color:#aaa}
+/* Dispatch status cards (inside Phase 5B) */
+.summary{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px}
+.sc{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:10px 12px;box-shadow:var(--sh);cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative;overflow:hidden}
 .sc::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
 .sc.c-recv::before{background:var(--green)}
 .sc.c-tr::before{background:var(--blue)}.sc.c-pd::before{background:var(--amber)}.sc.c-prep::before{background:#9C27B0}
 .sc.c-hold::before{background:var(--grey)}.sc.c-done::before{background:var(--teal)}.sc.c-attn::before{background:var(--red)}.sc.c-attn .sn{color:var(--red)}.sc.c-attn.active{border-color:var(--red);background:var(--red-pale)}
 .sc:hover{box-shadow:var(--shm)}.sc.active{border-color:var(--green);box-shadow:0 0 0 2px var(--green-mid)}
-.sn{font-family:"Montserrat",sans-serif;font-weight:800;font-size:24px;line-height:1;color:var(--carbon)}
-.sl{font-size:10.5px;color:#888;margin-top:3px;font-weight:500}
-.sd{font-size:10px;margin-top:5px;font-weight:600}
+.sn{font-family:"Montserrat",sans-serif;font-weight:800;font-size:20px;line-height:1;color:var(--carbon)}
+.sl{font-size:10px;color:#888;margin-top:3px;font-weight:500}
+.sd{font-size:9.5px;margin-top:4px;font-weight:600}
 
 /* ── TABLE CARD ── */
 .tcard{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);box-shadow:var(--sh);overflow:hidden}
@@ -322,6 +336,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
   #month-sel{min-width:0;flex:1}
 
   /* ── SUMMARY CARDS — 3 cols on mobile ── */
+  .ph-summary{grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}
   .summary{grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}
   .sc{padding:10px 10px}
   .sn{font-size:20px}
@@ -367,6 +382,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 
 /* ── Very small phones — ≤ 390px ── */
 @media (max-width: 390px) {
+  .ph-summary{grid-template-columns:repeat(2,1fr)}
   .summary{grid-template-columns:repeat(2,1fr)}
   .la{font-size:13px;letter-spacing:1.5px}
   .lb{display:none}
@@ -473,7 +489,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
     </div>
   </div>
 
-  <div class="summary" id="summary"></div>
+  <div class="ph-summary" id="ph-summary"></div>
 
   <div class="tcard">
     <div class="tcard-header">
@@ -814,12 +830,31 @@ function getFiltered() {
 }
 
 /* ── Summary cards ── */
+/* ── Phase pipeline summary (top of page) ── */
 function renderSummary(rows) {
-  const cnt = {}; Object.keys(STATUS_META).forEach(k => cnt[k]=0);
-  rows.forEach(r => { if(cnt[r.status]!==undefined) cnt[r.status]++; });
-  const total = rows.length;
-  // Needs Attention: not received/completed and no date movement in >7 days
-  const needsAttn = rows.filter(r => {
+  const all = S.records; // full month, unfiltered
+  // Phase counts
+  const p3 = all.filter(r=>(r.smgrStatus||'')!=='Approved').length;
+  const p4 = all.filter(r=>(r.smgrStatus||'')==='Approved'&&(r.storeStatus||'')!=='Approved').length;
+  const p5a= all.filter(r=>(r.storeStatus||'')==='Approved'&&!['Actuals Logged','Partial'].includes(r.fulfillStatus||'')).length;
+  const p5b= all.filter(r=>['Actuals Logged','Partial'].includes(r.fulfillStatus||'')&&!(r.dRecv)).length;
+  const done= all.filter(r=>r.dRecv).length;
+  const phCards = [
+    {n:1, cls:'phc-1', count:0,   label:'Order Generation',    sub:'Replenishment engine soon', dim:true},
+    {n:2, cls:'phc-2', count:0,   label:'Allocation',           sub:'Replenishment engine soon', dim:true},
+    {n:3, cls:'phc-3', count:p3,  label:'SM Approval',          sub:p3>0?p3+' awaiting approval':'All approved'},
+    {n:4, cls:'phc-4', count:p4,  label:'Store Approval',       sub:p4>0?p4+' awaiting store':'All confirmed'},
+    {n:5, cls:'phc-5', count:p5a+p5b, label:'Fulfillment & Dispatch', sub:`${p5a} at warehouse · ${p5b} in transit`},
+  ];
+  document.getElementById('ph-summary').innerHTML = phCards.map(c=>`
+    <div class="phc ${c.cls}">
+      <div class="phc-num">Phase ${c.n}</div>
+      <div class="phc-n${c.dim?' dim':''}\">${c.dim?'—':c.count}</div>
+      <div class="phc-l">${c.label}</div>
+      <div class="phc-sub">${c.sub}</div>
+    </div>`).join('');
+  // Needs Attention: not received/completed, no movement in >7 days
+  const needsAttn = all.filter(r => {
     if (r.status === 'Received' || r.status === 'Completed') return false;
     const today = new Date();
     const dates = [r.dWhs,r.dSdc,r.dDirect,r.dCdc,r.dSdc2,r.dCdc2,r.dRecv]
@@ -829,21 +864,33 @@ function renderSummary(rows) {
     if (!latest) return false;
     return (today - latest) / (1000*60*60*24) > 7;
   });
-  const cards = [
+  S._attnIds = new Set(needsAttn.map(r=>r.id||r.cdf));
+  // Store dispatch card data for use inside Phase 5B panels
+  S._dispatchCards = buildDispatchCards(all, needsAttn);
+}
+
+/* ── Dispatch status cards (rendered inside Phase 5B) ── */
+function buildDispatchCards(rows, needsAttn) {
+  const cnt = {}; Object.keys(STATUS_META).forEach(k => cnt[k]=0);
+  rows.forEach(r => { if(cnt[r.status]!==undefined) cnt[r.status]++; });
+  const total = rows.length;
+  return [
     {k:'Preparing Order',  cls:'c-prep', n:cnt['Preparing Order'],  l:'Preparing Order',  d:''},
     {k:'Pending Dispatch', cls:'c-pd',   n:cnt['Pending Dispatch'], l:'Pending Dispatch', d:''},
     {k:'On Hold',          cls:'c-hold', n:cnt['On Hold'],          l:'On Hold',          d:''},
     {k:'In Transit',       cls:'c-tr',   n:cnt['In Transit'],       l:'In Transit',       d:''},
-    {k:'Received',         cls:'c-recv', n:cnt['Received'],         l:'Received',         d:total?Math.round(cnt['Received']/total*100)+'%':''},
+    {k:'Received',         cls:'c-recv', n:cnt['Received'],         l:'Received',         d:total?Math.round(cnt['Received']/total*100)+'%':'0%'},
     {k:'__attn',           cls:'c-attn', n:needsAttn.length,        l:'Needs Attention',  d:'> 7 days no movement'}
   ];
-  document.getElementById('summary').innerHTML = cards.map(c=>`
-    <div class="sc ${c.cls}${S.statusFilter===c.k?' active':''}" onclick="setStatusFilter('${c.k}')">
+}
+
+function renderDispatchCards() {
+  const cards = S._dispatchCards||[];
+  return `<div class="summary" style="margin-top:10px">`+cards.map(c=>`
+    <div class="sc ${c.cls}${S.statusFilter===c.k?' active':''}" onclick="event.stopPropagation();setStatusFilter('${c.k}')">
       <div class="sn">${c.n}</div><div class="sl">${c.l}</div>
       ${c.d?`<div class="sd" style="color:${c.cls==='c-attn'&&c.n>0?'#C0392B':c.cls==='c-recv'?'#22A749':'inherit'}">${c.d}</div>`:''}
-    </div>`).join('');
-  // store needs-attention IDs for filtering
-  S._attnIds = new Set(needsAttn.map(r=>r.id||r.cdf));
+    </div>`).join('')+'</div>';
 }
 
 /* ── Table ── */
@@ -1139,6 +1186,7 @@ function buildDetail(r) {
   const dispatchSection = `
     <hr class="wf-divider" style="margin:10px 0">
     <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#999;margin-bottom:8px">5B — Dispatch &amp; Receiving</div>
+    ${renderDispatchCards()}
     ${dispatchBanner}
     <div style="${dispatchUnlocked?'':'opacity:.4;pointer-events:none'}">
       <div class="timeline" style="margin-bottom:10px">${tl}</div>
