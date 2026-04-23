@@ -128,7 +128,7 @@ td{padding:9px 12px;vertical-align:middle}
 /* ── DETAIL EXPAND ── */
 .det-tr td{padding:0!important;background:var(--blue-pale);border-bottom:1px solid var(--blue-mid)!important}
 .det-inner{padding:14px 18px 16px}
-.timeline{display:flex;align-items:flex-start;gap:0;margin-bottom:16px;overflow-x:auto;padding:8px 0}
+.timeline{display:flex;align-items:flex-start;gap:0;margin-bottom:16px;overflow-x:auto;padding:22px 0 8px}
 .ts{display:flex;flex-direction:column;align-items:center;min-width:120px;flex:1;position:relative}
 .ts:not(:last-child)::after{content:"";position:absolute;top:22px;left:50%;width:100%;height:3px;background:var(--silver);z-index:0;border-radius:2px}
 .ts.done::after{background:var(--green)}
@@ -211,7 +211,7 @@ textarea{resize:vertical;min-height:58px}
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">
-      <img id="login-logo-img" src="https://raw.githubusercontent.com/jnpkwan/Inventory_Hub/main/logo.png" alt="Acacia HBC" style="max-height:80px;max-width:200px;object-fit:contain;margin-bottom:8px" onerror="this.style.display='none';document.getElementById('login-logo-fallback').style.display='block'">
+      <img id="login-logo-img" src="https://raw.githubusercontent.com/jnpkwan/Inventory_Hub/main/logo.png" alt="Acacia HBC" style="max-height:100px;max-width:220px;object-fit:contain;margin-bottom:8px;mix-blend-mode:multiply" onerror="this.style.display='none';document.getElementById('login-logo-fallback').style.display='block'">
       <div id="login-logo-fallback" style="display:none">
         <svg width="40" height="40" viewBox="0 0 200 200">
           <ellipse cx="100" cy="72" rx="68" ry="52" fill="#22A749"/>
@@ -235,7 +235,7 @@ textarea{resize:vertical;min-height:58px}
       <input type="password" id="lp" placeholder="Enter password" autocomplete="current-password">
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center" id="login-btn" onclick="doLogin()">Sign In</button>
-    <p class="offline-note">No backend yet? <a onclick="offlineMode()">Continue in offline / demo mode</a></p>
+
 
   </div>
 </div>
@@ -246,7 +246,7 @@ textarea{resize:vertical;min-height:58px}
 <header>
   <div class="hi">
     <div class="logo">
-      <img id="header-logo-img" src="https://raw.githubusercontent.com/jnpkwan/Inventory_Hub/main/logo.png" alt="Acacia HBC" style="max-height:36px;max-width:120px;object-fit:contain" onerror="this.style.display='none';document.getElementById('header-logo-fallback').style.display='flex'">
+      <img id="header-logo-img" src="https://raw.githubusercontent.com/jnpkwan/Inventory_Hub/main/logo.png" alt="Acacia HBC" style="max-height:36px;max-width:120px;object-fit:contain;mix-blend-mode:multiply" onerror="this.style.display='none';document.getElementById('header-logo-fallback').style.display='flex'">
       <div id="header-logo-fallback" style="display:none;align-items:center;gap:6px">
         <svg width="28" height="28" viewBox="0 0 200 200">
           <ellipse cx="100" cy="72" rx="68" ry="52" fill="#22A749"/>
@@ -286,7 +286,6 @@ textarea{resize:vertical;min-height:58px}
         <option value="Direct">Direct</option>
         <option value="Via SDC">Via SDC</option>
         <option value="Via CDC">Via CDC</option>
-        <option value="Unknown">Unknown</option>
       </select>
       <select class="fs" id="f-type" onchange="renderAll()">
         <option value="">All Types</option>
@@ -714,18 +713,9 @@ function buildForm(r) {
     </div><div class="fg">
       <label>Route</label>
       <select class="ms" id="f-route-m" onchange="updateRouteFields()">
-        ${['Direct','Via SDC','Via CDC','Unknown'].map(v=>`<option value="${v}" ${r.route===v?'selected':''}>${v}</option>`).join('')}
+        ${['Direct','Via SDC','Via CDC'].map(v=>`<option value="${v}" ${r.route===v?'selected':''}>${v}</option>`).join('')}
       </select>
     </div></div>
-
-    <div class="section-label">Status</div>
-    <div class="status-opts" style="margin-bottom:14px">
-      ${Object.entries(STATUS_META).map(([s,m])=>{
-        const sid='sr-'+s.replace(/\s/g,'-');
-        return `<input type="radio" name="f-status" id="${sid}" value="${s}" class="sopt-in" ${r.status===s?'checked':''}>
-                <label for="${sid}" class="sopt-lb ${m.cls}">${m.icon} ${s}</label>`;
-      }).join('')}
-    </div>
 
     <div class="section-label">Dates</div>
     <div class="frow"><div class="fg">
@@ -735,7 +725,7 @@ function buildForm(r) {
       <label id="hub1-lbl">WHS → SDC</label>
       <input type="date" id="f-hub1" value="${r.dSdc||r.dDirect||''}">
     </div></div>
-    <div class="frow" id="hub2-row"><div class="fg">
+    <div class="frow" id="hub2-row"><div class="fg" id="hub2-cell">
       <label id="hub2-lbl">SDC → Stores</label>
       <input type="date" id="f-hub2" value="${r.dSdc2||r.dCdc2||''}">
     </div><div class="fg">
@@ -767,20 +757,22 @@ function updateRouteFields() {
   const h1lbl = document.getElementById('hub1-lbl');
   const h2lbl = document.getElementById('hub2-lbl');
   const h2row = document.getElementById('hub2-row');
+  const h2cell = document.getElementById('hub2-cell');
   if(route==='Direct'){
     if(h1lbl) h1lbl.textContent='WHS → Store (Direct)';
-    if(h2row) h2row.style.display='none';
+    if(h2lbl) h2lbl.textContent='Received in Store';
+    if(h2row) h2row.style.display='grid';
+    if(h2cell) h2cell.style.display='none'; // Direct has no intermediate hub stop
   } else if(route==='Via SDC'){
     if(h1lbl) h1lbl.textContent='WHS → SDC';
     if(h2lbl) h2lbl.textContent='SDC → Stores';
     if(h2row) h2row.style.display='grid';
+    if(h2cell) h2cell.style.display='';
   } else if(route==='Via CDC'){
     if(h1lbl) h1lbl.textContent='WHS → CDC';
     if(h2lbl) h2lbl.textContent='CDC → Stores';
     if(h2row) h2row.style.display='grid';
-  } else {
-    if(h1lbl) h1lbl.textContent='Dispatched';
-    if(h2row) h2row.style.display='none';
+    if(h2cell) h2cell.style.display='';
   }
 }
 
@@ -797,7 +789,24 @@ function getFormVals() {
     month:   document.getElementById('f-month').value,
     type:    document.getElementById('f-type-m').value,
     route,
-    status:  document.querySelector('input[name="f-status"]:checked')?.value||'Pending Dispatch',
+    status: (function(){
+      const dRecv = document.getElementById('f-dRecv').value;
+      const hub1v = document.getElementById('f-hub1').value;
+      const hub2v = document.getElementById('f-hub2').value;
+      const dWhs  = document.getElementById('f-dWhs').value;
+      if (dRecv) return 'Received';
+      if (route === 'Direct') {
+        if (hub1v) return 'In Transit';
+        if (dWhs) return 'Pending Dispatch';
+      } else if (route === 'Via SDC') {
+        if (hub2v) return 'In Transit';
+        if (hub1v || dWhs) return 'Pending Dispatch';
+      } else if (route === 'Via CDC') {
+        if (hub2v) return 'In Transit';
+        if (hub1v || dWhs) return 'Pending Dispatch';
+      }
+      return 'Pending Dispatch';
+    })(),
     dWhs:    document.getElementById('f-dWhs').value,
     dSdc:    isSdc  ? hub1 : '',
     dDirect: isDirect?hub1 : '',
