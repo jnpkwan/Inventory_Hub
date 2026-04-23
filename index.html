@@ -1212,7 +1212,7 @@ function buildDetail(r) {
   const pdfSt  = r.pdfStatus||'';
   const locked4 = smSt!=='Approved';
   const locked5 = storeSt!=='Approved';
-  const dispatchUnlocked = ['Actuals Logged','Partial'].includes(fulfSt);
+  const dispatchUnlocked = ['Actuals Logged','Partial'].includes(fulfSt) || r.status==='Pending Dispatch' || r.status==='In Transit' || r.status==='Received';
 
 
 
@@ -1228,7 +1228,7 @@ function buildDetail(r) {
       <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','approve')">✓ Approve</button>
       <button class="btn btn-changes" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','changes')">✏ Request Changes</button>
     </div>` : '';
-  const smResubmit = canFulfill && smSt==='Changes Requested' ? `
+  const smResubmit = role==='IS' && smSt==='Changes Requested' ? `
     <div class="wf-actions">
       <button class="btn btn-resubmit" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','resubmit')">↑ Resubmit</button>
     </div>` : '';
@@ -1295,7 +1295,10 @@ function buildDetail(r) {
     <div class="wf-actions">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markSentToWHS('${uid}')">📦 Mark as Sent to Warehouse</button>
     </div>` : '';
-  const logActualsBtn = ''; // fulfillment modal removed
+  const logActualsBtn = !locked5 && canFulfill && fulfSt==='Sent to WHS' ? `
+    <div class="wf-actions" style="margin-top:4px">
+      <button class="btn btn-fulfill" onclick="event.stopPropagation();markActualsLogged('${uid}')">📋 Confirm Actuals Received &amp; Logged</button>
+    </div>` : '';
   // 5A meta
   const fulfMeta = fulfSt ? `
     <div class="wf-meta-row">
@@ -1697,6 +1700,21 @@ async function markSentToWHS(uid) {
   S.expandedId = uid;
   renderAll();
   toast('Order marked as Sent to Warehouse');
+}
+
+/* ══════════════════ CONFIRM ACTUALS LOGGED (Phase 5 — IS only) ══════════════════ */
+async function markActualsLogged(uid) {
+  if(!confirm('Confirm that warehouse actuals have been received and logged?\n\nThis will move the CDF to Pending Dispatch.')) return;
+  const patch = {
+    fulfillStatus: 'Actuals Logged',
+    status: 'Pending Dispatch',
+    fulfillBy: S.user.username,
+    fulfillAt: new Date().toISOString()
+  };
+  await apiUpdateCDF(uid, patch);
+  S.expandedId = uid;
+  renderAll();
+  toast('Actuals logged — CDF moved to Pending Dispatch');
 }
 
 /* ══════════════════ FULFILLMENT MODAL (Phase 5) ══════════════════ */
