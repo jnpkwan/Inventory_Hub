@@ -162,9 +162,23 @@ td{padding:9px 12px;vertical-align:middle}
 .dmv{font-weight:500;color:var(--carbon)}
 .det-actions{display:flex;gap:7px;margin-left:auto;align-items:flex-start}
 
+/* ── PHASE STEPPER ── */
+.ph-stepper{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--blue-mid)}
+.ph-pill{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;font-size:10.5px;font-weight:700;cursor:pointer;border:1.5px solid transparent;transition:all .15s;user-select:none;white-space:nowrap}
+.ph-pill.done{background:var(--green-pale);color:#1a7a38;border-color:var(--green-mid)}
+.ph-pill.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.ph-pill.pending-action{background:var(--amber-pale);color:#7a5500;border-color:var(--amber)}
+.ph-pill.locked{background:#F5F5F5;color:#bbb;border-color:#E8E8E8;cursor:default}
+.ph-pill.system{background:#F0F4FF;color:#8899CC;border-color:#C8D4F0;cursor:default}
+.ph-num{font-size:9px;font-weight:900;opacity:.7}
+.ph-cnt{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;border-radius:8px;background:rgba(0,0,0,.15);font-size:9px;font-weight:800;padding:0 4px}
+.ph-panel{display:none;animation:fadeIn .15s ease}
+.ph-panel.open{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+
 /* ── WORKFLOW PANELS ── */
-.wf-panels{display:flex;flex-direction:column;gap:8px;margin-top:12px;border-top:1px solid var(--blue-mid);padding-top:12px}
-.wf-panel{border-radius:8px;border:1.5px solid var(--silver);background:#fff;overflow:hidden}
+.wf-panel{border-radius:8px;border:1.5px solid var(--silver);background:#fff;overflow:hidden;margin-bottom:8px}
+.wf-panel:last-child{margin-bottom:0}
 .wf-panel-hd{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--mist);border-bottom:1px solid var(--silver)}
 .wf-phase-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:800;color:#fff;flex-shrink:0}
 .wf-panel-title{font-family:"Montserrat",sans-serif;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.8px;color:#666}
@@ -181,7 +195,8 @@ td{padding:9px 12px;vertical-align:middle}
 .wf-meta{display:flex;flex-direction:column;gap:1px}
 .wf-ml{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#aaa;font-weight:700}
 .wf-mv{font-size:11.5px;font-weight:500;color:var(--carbon)}
-.wf-actions{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+.wf-actions{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:center}
+.wf-divider{border:none;border-top:1px solid var(--silver);margin:8px 0}
 .btn-approve{background:var(--green);color:#fff;font-size:11px;padding:5px 11px}
 .btn-approve:hover{background:#1a8038}
 .btn-changes{background:var(--amber-pale);color:#7a5500;border:1.5px solid var(--amber);font-size:11px;padding:5px 11px}
@@ -887,7 +902,36 @@ function toggleExpand(uid) {
   renderTable();
 }
 
+/* ══════════════════ PHASE PILL COUNTS (month-level) ══════════════════ */
+function computePhaseCounts() {
+  const recs = S.records;
+  const c = {p3:0, p4:0, p5:0};
+  recs.forEach(r => {
+    const sm = r.smgrStatus||'';
+    const st = r.storeStatus||'';
+    const fl = r.fulfillStatus||'';
+    if(sm!=='Approved') c.p3++;
+    if(sm==='Approved' && st!=='Approved') c.p4++;
+    if(st==='Approved' && !['Actuals Logged','Partial'].includes(fl)) c.p5++;
+  });
+  return c;
+}
+
+function togglePhasePanel(uid, phaseId) {
+  const stepper = document.getElementById('ph-stepper-'+uid);
+  if(!stepper) return;
+  const container = stepper.closest('.det-inner');
+  if(!container) return;
+  const panels = container.querySelectorAll('.ph-panel');
+  const target = container.querySelector('.ph-panel[data-phase="'+phaseId+'"]');
+  if(!target) return;
+  const isOpen = target.classList.contains('open');
+  panels.forEach(p => p.classList.remove('open'));
+  if(!isOpen) target.classList.add('open');
+}
+
 function buildDetail(r) {
+  // ── Build dispatch timeline (Phase 5B) ───────────────────────────────────
   let steps = [];
   if(r.route==='Direct') steps=[
     {l:'WHS',d:r.dWhs,i:'🏭'},{l:'WHS → Store',d:r.dDirect,i:'🚛'},{l:'Received',d:r.dRecv,i:'✅'}
@@ -898,33 +942,103 @@ function buildDetail(r) {
   ]; else steps=[
     {l:'WHS',d:r.dWhs,i:'🏭'},{l:'Dispatched',d:r.dSdc||r.dDirect||r.dCdc||'',i:'🚚'},{l:'Received',d:r.dRecv,i:'✅'}
   ];
-
   let lastDone=-1;
   steps.forEach((s,i)=>{if(s.d) lastDone=i;});
   const allDone = lastDone===steps.length-1;
-  const lastStepIdx = steps.length - 1;
-  const isInTransit = r.status === 'In Transit';
+  const isInTransit = r.status==='In Transit';
   const tl = steps.map((s,i)=>{
     let st;
-    if(i<=lastDone) { st='done'; }
-    else if(!allDone && i===lastDone+1 && i!==lastStepIdx) { st=isInTransit?'active':'active-pending'; }
-    else { st='pending'; }
+    if(i<=lastDone) st='done';
+    else if(!allDone && i===lastDone+1 && i!==steps.length-1) st=isInTransit?'active':'active-pending';
+    else st='pending';
     return `<div class="ts ${st}"><div class="tc">${s.i}</div><div class="tl">${s.l}</div><div class="td2">${s.d?fmtD(s.d):'—'}</div></div>`;
   }).join('');
-
   const td = tdDays(r);
-  const uid = esc(r.id||r.cdf);
-  const role = S.user.role;
-  const canEdit = role==='EXECUTIVE'||role==='IS';
-  const canDelete = role==='EXECUTIVE';
-  const canApproveSM = role==='EXECUTIVE';
-  const canApproveStore = role==='COORDINATOR'||role==='EXECUTIVE';
-  const canFulfill = role==='IS'||role==='EXECUTIVE';
 
-  // Phase 3: Sales Manager Approval
-  const smSt = r.smgrStatus||'';
-  const smBadge = smSt==='Approved'?'wfs-approved':smSt==='Changes Requested'?'wfs-changes':'wfs-pending';
-  const smLabel = smSt||'Awaiting Review';
+  // ── Role / permission flags ───────────────────────────────────────────────
+  const uid  = esc(r.id||r.cdf);
+  const role = S.user.role;
+  const canEdit       = role==='EXECUTIVE'||role==='IS';
+  const canDelete     = role==='EXECUTIVE';
+  const canApproveSM  = role==='EXECUTIVE';
+  const canApproveStore = role==='COORDINATOR'||role==='EXECUTIVE';
+  const canFulfill    = role==='IS'||role==='EXECUTIVE';
+
+  // ── Phase state values ────────────────────────────────────────────────────
+  const smSt   = r.smgrStatus||'';
+  const storeSt= r.storeStatus||'';
+  const fulfSt = r.fulfillStatus||'';
+  const pdfSt  = r.pdfStatus||'';
+  const locked4 = smSt!=='Approved';
+  const locked5 = storeSt!=='Approved';
+  const dispatchUnlocked = ['Actuals Logged','Partial'].includes(fulfSt);
+
+  // ── Determine which phase auto-opens ─────────────────────────────────────
+  let autoOpen = 'p5'; // default: show Phase 5 (most content)
+  if(canApproveSM && smSt!=='Approved') autoOpen='p3';
+  else if(canFulfill && smSt==='Approved' && storeSt!=='Approved') autoOpen='p4';
+  else if(canFulfill && storeSt==='Approved' && !dispatchUnlocked) autoOpen='p5';
+  else if(canApproveStore && smSt==='Approved' && storeSt!=='Approved') autoOpen='p4';
+
+  // ── Phase pill counts (month-level) ──────────────────────────────────────
+  const cnts = computePhaseCounts();
+
+  // ── Helper: pill badge ────────────────────────────────────────────────────
+  function pillClass(phase) {
+    if(phase==='p1'||phase==='p2') return 'system';
+    if(phase==='p3') {
+      if(smSt==='Approved') return 'done';
+      if(canApproveSM) return 'pending-action';
+      return 'locked';
+    }
+    if(phase==='p4') {
+      if(locked4) return 'locked';
+      if(storeSt==='Approved') return 'done';
+      if(canApproveStore) return 'pending-action';
+      return 'locked';
+    }
+    if(phase==='p5') {
+      if(locked5) return 'locked';
+      if(dispatchUnlocked && r.dRecv) return 'done';
+      if(canFulfill||canEdit) return 'pending-action';
+      return 'locked';
+    }
+    return 'locked';
+  }
+
+  function pillIcon(phase) {
+    if(phase==='p1'||phase==='p2') return '⚙';
+    if(phase==='p3') return smSt==='Approved'?'✓':'●';
+    if(phase==='p4') return locked4?'🔒':storeSt==='Approved'?'✓':'●';
+    if(phase==='p5') return locked5?'🔒':r.dRecv?'✓':'●';
+    return '●';
+  }
+
+  function cntBadge(n) {
+    return n>0?`<span class="ph-cnt">${n}</span>`:'';
+  }
+
+  const stepper = `
+    <div class="ph-stepper" id="ph-stepper-${uid}">
+      <div class="ph-pill system" title="Replenishment engine — coming soon">
+        <span class="ph-num">1</span> Order Gen <span style="font-size:9px;opacity:.6">soon</span>
+      </div>
+      <div class="ph-pill system" title="Allocation algorithm — coming soon">
+        <span class="ph-num">2</span> Allocation <span style="font-size:9px;opacity:.6">soon</span>
+      </div>
+      <div class="ph-pill ${pillClass('p3')}" data-phase="p3" onclick="event.stopPropagation();togglePhasePanel('${uid}','p3')">
+        <span class="ph-num">3</span> SM Approval ${pillIcon('p3')} ${cntBadge(cnts.p3)}
+      </div>
+      <div class="ph-pill ${pillClass('p4')}" data-phase="p4" onclick="event.stopPropagation();togglePhasePanel('${uid}','p4')">
+        <span class="ph-num">4</span> Store Approval ${pillIcon('p4')} ${cntBadge(cnts.p4)}
+      </div>
+      <div class="ph-pill ${pillClass('p5')}" data-phase="p5" onclick="event.stopPropagation();togglePhasePanel('${uid}','p5')">
+        <span class="ph-num">5</span> Fulfillment &amp; Dispatch ${pillIcon('p5')} ${cntBadge(cnts.p5)}
+      </div>
+    </div>`;
+
+  // ── Phase 3 panel ─────────────────────────────────────────────────────────
+  const smBadge  = smSt==='Approved'?'wfs-approved':smSt==='Changes Requested'?'wfs-changes':'wfs-pending';
   const smActions = canApproveSM && smSt!=='Approved' ? `
     <div class="wf-actions">
       <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','approve')">✓ Approve</button>
@@ -934,125 +1048,138 @@ function buildDetail(r) {
     <div class="wf-actions">
       <button class="btn btn-resubmit" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','resubmit')">↑ Resubmit</button>
     </div>` : '';
-  // Generate PDF button — IS only, only after SM approves
-  const pdfSt = r.pdfStatus||'';
-  const pdfGenBtn = smSt==='Approved' && role==='IS' ? `
-    <div class="wf-actions" style="margin-top:6px;padding-top:8px;border-top:1px solid var(--silver)">
+  const pdfGenBtn = smSt==='Approved' ? `
+    <hr class="wf-divider">
+    <div class="wf-actions">
       ${pdfSt==='Generated'
         ? `<span class="wf-status-badge wfs-fulfilled" style="font-size:10px">📄 PDF Generated — ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''} by ${esc(r.pdfGeneratedBy||'')}</span>`
-        : `<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate CDF PDF</button>
-           <span style="font-size:10px;color:#aaa;align-self:center">IS manually runs script & uploads to Drive</span>`
+        : role==='IS'
+          ? `<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate CDF PDF</button>
+             <span style="font-size:10px;color:#aaa">IS runs script &amp; uploads to Drive</span>`
+          : `<span style="font-size:10.5px;color:#aaa">PDF not yet generated</span>`
       }
-    </div>` : (smSt==='Approved' && pdfSt==='Generated' ? `
-    <div class="wf-actions" style="margin-top:6px;padding-top:8px;border-top:1px solid var(--silver)">
-      <span class="wf-status-badge wfs-fulfilled" style="font-size:10px">📄 PDF Generated — ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''} by ${esc(r.pdfGeneratedBy||'')}</span>
-    </div>` : '');
-  const p3 = `
-    <div class="wf-panel">
-      <div class="wf-panel-hd">
-        <span class="wf-phase-num" style="background:#7B1FA2">3</span>
-        <span class="wf-panel-title">Sales Manager Approval</span>
-        <span class="wf-status-badge ${smBadge}">${smLabel}</span>
-      </div>
-      <div class="wf-panel-bd">
-        ${smSt==='Changes Requested'&&r.smgrNotes?`<div class="wf-note">📝 ${esc(r.smgrNotes)}</div>`:''}
-        <div class="wf-meta-row">
-          ${r.smgrApprovedBy?`<div class="wf-meta"><div class="wf-ml">${smSt==='Approved'?'Approved by':'Reviewed by'}</div><div class="wf-mv">${esc(r.smgrApprovedBy)}</div></div>`:''}
-          ${r.smgrApprovedAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.smgrApprovedAt.slice(0,10))}</div></div>`:''}
+    </div>` : '';
+  const panelP3 = `
+    <div class="ph-panel ${autoOpen==='p3'?'open':''}" data-phase="p3">
+      <div class="wf-panel">
+        <div class="wf-panel-hd">
+          <span class="wf-phase-num" style="background:#7B1FA2">3</span>
+          <span class="wf-panel-title">Sales Manager Approval</span>
+          <span class="wf-status-badge ${smBadge}">${smSt||'Awaiting Review'}</span>
         </div>
-        ${smActions}${smResubmit}${pdfGenBtn}
+        <div class="wf-panel-bd">
+          ${smSt==='Changes Requested'&&r.smgrNotes?`<div class="wf-note">📝 ${esc(r.smgrNotes)}</div>`:''}
+          <div class="wf-meta-row">
+            ${r.smgrApprovedBy?`<div class="wf-meta"><div class="wf-ml">${smSt==='Approved'?'Approved by':'Reviewed by'}</div><div class="wf-mv">${esc(r.smgrApprovedBy)}</div></div>`:''}
+            ${r.smgrApprovedAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.smgrApprovedAt.slice(0,10))}</div></div>`:''}
+          </div>
+          ${smActions}${smResubmit}${pdfGenBtn}
+        </div>
       </div>
     </div>`;
 
-  // Phase 4: Store Approval
-  const locked4 = smSt!=='Approved';
-  const storeSt = r.storeStatus||'';
+  // ── Phase 4 panel ─────────────────────────────────────────────────────────
   const storeBadge = storeSt==='Approved'?'wfs-approved':storeSt==='Changes Requested'?'wfs-changes':'wfs-pending';
-  const storeLabel = locked4?'Locked — awaiting Sales Mgr approval':(storeSt||'Awaiting Coordinator');
   const storeActions = !locked4 && canApproveStore && storeSt!=='Approved' ? `
     <div class="wf-actions">
       <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','store','approve')">✓ Store Approved</button>
       <button class="btn btn-changes" onclick="event.stopPropagation();openApprovalModal('${uid}','store','changes')">✏ Store Requests Changes</button>
     </div>` : '';
-  const p4 = `
-    <div class="wf-panel" style="${locked4?'opacity:.55;pointer-events:none':''}">
-      <div class="wf-panel-hd">
-        <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">4</span>
-        <span class="wf-panel-title">Store Manager Approval</span>
-        <span class="wf-status-badge ${locked4?'wfs-pending':storeBadge}">${storeLabel}</span>
-      </div>
-      <div class="wf-panel-bd">
-        ${storeSt==='Changes Requested'&&r.storeNotes?`<div class="wf-note">🏪 Store: ${esc(r.storeNotes)}</div>`:''}
-        ${r.coordNotes?`<div class="wf-note" style="border-color:var(--green);background:var(--green-pale)">🤝 Coordinator: ${esc(r.coordNotes)}</div>`:''}
-        <div class="wf-meta-row">
-          ${r.storeUpdatedBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.storeUpdatedBy)}</div></div>`:''}
-          ${r.storeUpdatedAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.storeUpdatedAt.slice(0,10))}</div></div>`:''}
+  const panelP4 = `
+    <div class="ph-panel ${autoOpen==='p4'?'open':''}" data-phase="p4">
+      <div class="wf-panel" style="${locked4?'opacity:.55;pointer-events:none':''}">
+        <div class="wf-panel-hd">
+          <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">4</span>
+          <span class="wf-panel-title">Store Manager Approval</span>
+          <span class="wf-status-badge ${locked4?'wfs-pending':storeBadge}">${locked4?'Locked — awaiting SM approval':(storeSt||'Awaiting Coordinator')}</span>
         </div>
-        ${storeActions}
+        <div class="wf-panel-bd">
+          ${storeSt==='Changes Requested'&&r.storeNotes?`<div class="wf-note">🏪 Store: ${esc(r.storeNotes)}</div>`:''}
+          ${r.coordNotes?`<div class="wf-note" style="border-color:var(--green);background:var(--green-pale)">🤝 Coordinator: ${esc(r.coordNotes)}</div>`:''}
+          <div class="wf-meta-row">
+            ${r.storeUpdatedBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.storeUpdatedBy)}</div></div>`:''}
+            ${r.storeUpdatedAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.storeUpdatedAt.slice(0,10))}</div></div>`:''}
+          </div>
+          ${storeActions}
+        </div>
       </div>
     </div>`;
 
-  // Phase 5: Warehouse Fulfillment (two sub-steps: Send to WHS, then Log Actuals)
-  const locked5 = storeSt!=='Approved';
-  const fulfSt = r.fulfillStatus||'';
+  // ── Phase 5 panel — 5A fulfillment + 5B dispatch timeline ─────────────────
   const fulfBadge = fulfSt==='Actuals Logged'?'wfs-fulfilled':fulfSt==='Partial'?'wfs-partial':fulfSt==='Sent to WHS'?'wfs-sent':'wfs-pending';
-  const fulfLabel = locked5?'Locked — awaiting store approval':(fulfSt||'Not yet sent to warehouse');
-  // Sub-step A: IS sends order to warehouse
+  // 5A send to WHS button
   const sendBtn = !locked5 && canFulfill && !fulfSt ? `
     <div class="wf-actions">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markSentToWHS('${uid}')">📦 Mark as Sent to Warehouse</button>
     </div>` : '';
-  // Sub-step B: Log actual quantities (only after Sent to WHS)
+  // 5A log actuals button
   const logActualsBtn = !locked5 && canFulfill && fulfSt==='Sent to WHS' ? `
-    <div class="wf-actions" style="margin-top:6px;padding-top:8px;border-top:1px solid var(--silver)">
+    <div class="wf-actions">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();openFulfillmentModal('${uid}')">📋 Log Actual Quantities</button>
-      <span style="font-size:10px;color:#aaa;align-self:center">Enter warehouse actuals + reason code</span>
-    </div>` : (fulfSt==='Actuals Logged'||fulfSt==='Partial') && canFulfill ? `
-    <div class="wf-actions" style="margin-top:6px">
+      <span style="font-size:10px;color:#aaa">Enter warehouse actuals + reason code</span>
+    </div>` : (fulfSt==='Actuals Logged'||fulfSt==='Partial')&&canFulfill ? `
+    <div class="wf-actions">
       <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openFulfillmentModal('${uid}')">✏ Update Actuals</button>
     </div>` : '';
-  const p5 = `
-    <div class="wf-panel" style="${locked5?'opacity:.55;pointer-events:none':''}">
-      <div class="wf-panel-hd">
-        <span class="wf-phase-num" style="background:var(--teal)">5</span>
-        <span class="wf-panel-title">Warehouse Fulfillment</span>
-        <span class="wf-status-badge ${locked5?'wfs-pending':fulfBadge}">${fulfLabel}</span>
+  // 5A meta
+  const fulfMeta = fulfSt ? `
+    <div class="wf-meta-row">
+      ${r.sentToWhsBy?`<div class="wf-meta"><div class="wf-ml">Sent to WHS by</div><div class="wf-mv">${esc(r.sentToWhsBy)}</div></div>`:''}
+      ${r.sentToWhsAt?`<div class="wf-meta"><div class="wf-ml">Sent Date</div><div class="wf-mv">${fmtD(r.sentToWhsAt.slice(0,10))}</div></div>`:''}
+      ${r.boxes?`<div class="wf-meta"><div class="wf-ml">Ordered</div><div class="wf-mv">${esc(r.boxes)}</div></div>`:''}
+      ${r.actualBoxes?`<div class="wf-meta"><div class="wf-ml">Actual Shipped</div><div class="wf-mv" style="${r.actualBoxes!==r.boxes?'color:var(--red);font-weight:700':'color:var(--teal);font-weight:700'}">${esc(r.actualBoxes)}</div></div>`:''}
+      ${r.reasonCode?`<div class="wf-meta"><div class="wf-ml">Reason Code</div><div class="wf-mv" style="color:var(--red)">${esc(r.reasonCode)}</div></div>`:''}
+      ${r.fulfillBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.fulfillBy)}</div></div>`:''}
+    </div>` : '';
+  // 5B dispatch timeline — locked until actuals logged
+  const dispatchBanner = !dispatchUnlocked && fulfSt ? `
+    <div style="font-size:10.5px;color:#aaa;background:#F9F9F9;border:1px solid #EBEBEB;border-radius:6px;padding:6px 10px;display:flex;align-items:center;gap:5px">
+      ⏸ <span>Dispatch tracking unlocks after warehouse actuals are logged.</span>
+    </div>` : '';
+  const dispatchSection = `
+    <hr class="wf-divider" style="margin:10px 0">
+    <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#999;margin-bottom:8px">5B — Dispatch &amp; Receiving</div>
+    ${dispatchBanner}
+    <div style="${dispatchUnlocked?'':'opacity:.4;pointer-events:none'}">
+      <div class="timeline" style="margin-bottom:10px">${tl}</div>
+      <div class="det-meta" style="border-top:none;padding-top:0">
+        <div class="dm"><div class="dml">Boxes</div><div class="dmv">${esc(r.boxes||'—')}</div></div>
+        <div class="dm"><div class="dml">Truck / Plate</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.truck||'—')}</div></div>
+        <div class="dm"><div class="dml">CAS No.</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.cas||'—')}</div></div>
+        <div class="dm"><div class="dml">Transit Days</div><div class="dmv" style="${isOverdue(r)?'color:#C0392B;font-weight:700':''}">${td!==null?td+' days':'—'}</div></div>
+        ${r.remarks?`<div class="dm"><div class="dml">Remarks</div><div class="dmv">${esc(r.remarks)}</div></div>`:''}
+        ${r.updatedBy?`<div class="dm"><div class="dml">Last Updated By</div><div class="dmv">${esc(r.updatedBy)}</div></div>`:''}
       </div>
-      <div class="wf-panel-bd">
-        ${fulfSt?`<div class="wf-meta-row">
-          ${r.sentToWhsBy?`<div class="wf-meta"><div class="wf-ml">Sent to WHS by</div><div class="wf-mv">${esc(r.sentToWhsBy)}</div></div>`:''}
-          ${r.sentToWhsAt?`<div class="wf-meta"><div class="wf-ml">Sent Date</div><div class="wf-mv">${fmtD(r.sentToWhsAt.slice(0,10))}</div></div>`:''}
-        </div>`:''}
-        ${(fulfSt==='Actuals Logged'||fulfSt==='Partial')?`<div class="wf-meta-row" style="margin-top:6px">
-          ${r.boxes?`<div class="wf-meta"><div class="wf-ml">Ordered</div><div class="wf-mv">${esc(r.boxes)}</div></div>`:''}
-          ${r.actualBoxes?`<div class="wf-meta"><div class="wf-ml">Actual Shipped</div><div class="wf-mv" style="${r.actualBoxes!==r.boxes?'color:var(--red);font-weight:700':'color:var(--teal);font-weight:700'}">${esc(r.actualBoxes)}</div></div>`:''}
-          ${r.reasonCode?`<div class="wf-meta"><div class="wf-ml">Reason Code</div><div class="wf-mv" style="color:var(--red)">${esc(r.reasonCode)}</div></div>`:''}
-          ${r.fulfillBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.fulfillBy)}</div></div>`:''}
-        </div>`:''}
-        ${sendBtn}${logActualsBtn}
+    </div>`;
+  const panelP5 = `
+    <div class="ph-panel ${autoOpen==='p5'?'open':''}" data-phase="p5">
+      <div class="wf-panel" style="${locked5?'opacity:.55;pointer-events:none':''}">
+        <div class="wf-panel-hd">
+          <span class="wf-phase-num" style="background:var(--teal)">5</span>
+          <span class="wf-panel-title">Fulfillment &amp; Dispatch</span>
+          <span class="wf-status-badge ${locked5?'wfs-pending':fulfBadge}">${locked5?'Locked — awaiting store approval':(fulfSt||'Not yet sent to warehouse')}</span>
+        </div>
+        <div class="wf-panel-bd">
+          <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#999;margin-bottom:4px">5A — Warehouse Preparation</div>
+          ${fulfMeta}${sendBtn}${logActualsBtn}
+          ${dispatchSection}
+        </div>
       </div>
     </div>`;
 
+  // ── Actions row ───────────────────────────────────────────────────────────
+  const actionsRow = `
+    <div style="display:flex;gap:7px;justify-content:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid var(--blue-mid)">
+      ${canEdit?`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${uid}">✏ Edit</button>`:''}
+      ${canDelete?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>`:''}
+    </div>`;
+
   return `<tr class="det-tr"><td colspan="12"><div class="det-inner">
-    ${(()=>{
-      const f=r.fulfillStatus||'';
-      const p6locked=!['Actuals Logged','Partial'].includes(f);
-      return p6locked?`<div style="font-size:10.5px;color:#aaa;background:#F9F9F9;border:1px solid #EBEBEB;border-radius:6px;padding:7px 11px;margin-bottom:10px;display:flex;align-items:center;gap:6px">⏸ <span><strong>Phase 6 dispatch tracking</strong> is locked until warehouse actuals are logged in Phase 5.</span></div>`:'';
-    })()}
-    <div class="timeline" style="${(()=>{const f=r.fulfillStatus||'';return!['Actuals Logged','Partial'].includes(f)?'opacity:.45;pointer-events:none':''})()}">${tl}</div>
-    <div class="det-meta">
-      <div class="dm"><div class="dml">Boxes</div><div class="dmv">${esc(r.boxes||'—')}</div></div>
-      <div class="dm"><div class="dml">Truck / Plate</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.truck||'—')}</div></div>
-      <div class="dm"><div class="dml">CAS No.</div><div class="dmv" style="font-family:'DM Mono',monospace">${esc(r.cas||'—')}</div></div>
-      <div class="dm"><div class="dml">Transit Days</div><div class="dmv" style="${isOverdue(r)?'color:#C0392B;font-weight:700':''}">${td!==null?td+' days':'—'}</div></div>
-      ${r.remarks?`<div class="dm"><div class="dml">Remarks</div><div class="dmv">${esc(r.remarks)}</div></div>`:''}
-      ${r.updatedBy?`<div class="dm"><div class="dml">Last Updated By</div><div class="dmv">${esc(r.updatedBy)}</div></div>`:''}
-      <div class="det-actions">
-        ${canEdit?`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${uid}">✏ Edit</button>`:''}
-        ${canDelete?`<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>`:''}
-      </div>
-    </div>
-    <div class="wf-panels">${p3}${p4}${p5}</div>
+    ${stepper}
+    ${panelP3}
+    ${panelP4}
+    ${panelP5}
+    ${actionsRow}
   </div></td></tr>`;
 }
 
