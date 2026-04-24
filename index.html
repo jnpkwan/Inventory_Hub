@@ -267,17 +267,12 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 
 /* ── LOGIN FIELDS ── */
 .login-field-wrap{position:relative;margin-bottom:14px}
-.login-field-wrap .lf-icon{
-  position:absolute;left:13px;top:50%;transform:translateY(-50%);
-  font-size:14px;color:#C0C0C0;pointer-events:none;transition:color .18s;z-index:1;
-}
 .login-field-wrap input{
-  padding-left:40px;padding-top:13px;padding-bottom:13px;
+  padding-left:14px;padding-top:13px;padding-bottom:13px;
   font-size:13.5px;border-radius:10px;
   background:#F7F8FA;border:1.5px solid #E4E6EA;
 }
 .login-field-wrap input:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px rgba(34,167,73,.13)}
-.login-field-wrap:focus-within .lf-icon{color:var(--green)}
 .status-opts{display:flex;gap:6px;flex-wrap:wrap}
 .sopt-in{display:none}
 .sopt-lb{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:5px 11px;border-radius:20px;border:1.5px solid transparent;cursor:pointer;transition:all .12s;user-select:none}
@@ -426,11 +421,9 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
     <div class="login-title">Dispatching &amp; Receiving Dashboard</div>
     <div id="login-err" class="alert alert-err" style="display:none"></div>
     <div class="login-field-wrap">
-      <span class="lf-icon">👤</span>
       <input type="text" id="lu" placeholder="Username" autocomplete="username">
     </div>
     <div class="login-field-wrap" style="margin-bottom:20px">
-      <span class="lf-icon">🔑</span>
       <input type="password" id="lp" placeholder="Password" autocomplete="current-password">
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:13.5px;border-radius:10px;letter-spacing:.3px" id="login-btn" onclick="doLogin()">Sign In</button>
