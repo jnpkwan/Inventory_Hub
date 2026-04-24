@@ -551,7 +551,8 @@ const S = {
   idleTimer:    null,
   hideReceived: false,
   _attnIds:     new Set(),
-  _wfCache:     {}    // preserves workflow fields across Sheet reloads
+  _wfCache:     {},   // preserves workflow fields across Sheet reloads
+  stores:       []    // loaded from Stores sheet on login
 };
 
 const STATUS_META = {
@@ -815,6 +816,13 @@ async function loadData() {
     // Fall back to offline data
     S.records = OFFLINE_DATA.filter(r => r.month === S.month);
     renderAll();
+  }
+  // Fetch stores list if not yet loaded (non-critical, runs once)
+  if(!S.stores.length && !CFG.offline && CFG.apiUrl) {
+    try {
+      const sr = await gasGet('getStores', {});
+      S.stores = (sr||[]).map(s => s.storeName||s.storeCode||'').filter(Boolean).sort();
+    } catch(e) { /* stores load is non-critical */ }
   }
 }
 
@@ -1383,7 +1391,8 @@ function buildForm(r) {
       <input type="text" id="f-cdf" value="${esc(r.cdf||'')}" placeholder="CDF3390-335">
     </div><div class="fg">
       <label>Store Name <span class="req">*</span></label>
-      <input type="text" id="f-store" value="${esc(r.store||'')}" placeholder="BUHANGIN">
+      <input type="text" id="f-store" value="${esc(r.store||'')}" placeholder="Type to search branch..." autocomplete="off" list="branch-list">
+      <datalist id="branch-list">${(S.stores||[]).map(s=>`<option value="${s}"></option>`).join('')}</datalist>
     </div></div>
 
     <div class="frow three"><div class="fg">
