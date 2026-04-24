@@ -106,7 +106,7 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .sc{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:10px 12px;box-shadow:var(--sh);cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative;overflow:hidden}
 .sc::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
 .sc.c-recv::before{background:var(--green)}
-.sc.c-tr::before{background:var(--blue)}.sc.c-pd::before{background:var(--amber)}.sc.c-prep::before{background:#9C27B0}
+.sc.c-tr::before{background:var(--blue)}.sc.c-pd::before{background:var(--amber)}.sc.c-prep::before{background:var(--amber)}
 .sc.c-hold::before{background:var(--grey)}.sc.c-done::before{background:var(--teal)}.sc.c-attn::before{background:var(--red)}.sc.c-attn .sn{color:var(--red)}.sc.c-attn.active{border-color:var(--red);background:var(--red-pale)}
 .sc:hover{box-shadow:var(--shm)}.sc.active{border-color:var(--green);box-shadow:0 0 0 2px var(--green-mid)}
 .sn{font-family:"Montserrat",sans-serif;font-weight:800;font-size:20px;line-height:1;color:var(--carbon)}
@@ -962,11 +962,11 @@ function renderSummary(rows) {
     const storeChg  = all.filter(r=>r.storeStatus==='Changes Requested').length;
     subHTML = '<div class="sub-summary">'
       +'<div class="sub-label">Phase 3 — Approvals breakdown</div>'
-      +mkSub('p3_await', '🔍','Awaiting SM Review',     smAwait,   '#7B1FA2')
-      +mkSub('p3_chg',   '📝','SM Changes Requested',   smChg,     '#F9A825')
-      +mkSub('p3_pdf',   '📄','PDF Pending',            pdfPend,   '#1B4DA0')
-      +mkSub('p3_coord', '📤','Awaiting Coordinator',   coordAwait,'#F9A825')
-      +mkSub('p3_stchg', '🏪','Store Changes Requested',storeChg,  '#C0392B')
+      +mkSub('p3_await', '🔍','Awaiting SM Review',     smAwait,   '#F9A825')  // amber — action needed
+      +mkSub('p3_chg',   '📝','SM Changes Requested',   smChg,     '#C0392B')  // red — blocked
+      +mkSub('p3_pdf',   '📄','PDF Pending',            pdfPend,   '#F9A825')  // amber — action needed
+      +mkSub('p3_coord', '📤','Awaiting Coordinator',   coordAwait,'#F9A825')  // amber — action needed
+      +mkSub('p3_stchg', '🏪','Store Changes Requested',storeChg,  '#C0392B')  // red — blocked
       +'</div>';
   } else if(pf==='p4') {
     const pendWhs  = all.filter(r=>r.storeStatus==='Approved'&&!(r.fulfillStatus)).length;
@@ -976,13 +976,13 @@ function renderSummary(rows) {
     const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
     subHTML = '<div class="sub-summary">'
       +'<div class="sub-label">Phase 4 — Fulfillment &amp; Dispatch breakdown</div>'
-      +mkSub('p4_whs',  '🏭','WHS Prepare Order',    pendWhs,               '#00695C')
-      +mkSub('p4_act',  '📋','Awaiting Actual Count', awaitAct,              '#7B1FA2')
-      +mkSub('p4_pd',   '📬','Pending Dispatch',      cnt['Pending Dispatch'],'#F9A825')
-      +mkSub('p4_tr',   '🚚','In Transit',            cnt['In Transit'],      '#1B4DA0')
-      +mkSub('p4_hold', '⏸', 'On Hold',              cnt['On Hold'],         '#78909C')
-      +mkSub('p4_attn', '🚨','Needs Attention',       attn,                  '#C0392B')
-      +mkSub('p4_recv', '✅','Received',              cnt['Received'],        '#22A749')
+      +mkSub('p4_whs',  '🏭','WHS Prepare Order',    pendWhs,               '#F9A825')  // amber — action needed
+      +mkSub('p4_act',  '📋','Awaiting Actual Count', awaitAct,              '#F9A825')  // amber — action needed
+      +mkSub('p4_pd',   '📬','Pending Dispatch',      cnt['Pending Dispatch'],'#F9A825')  // amber — action needed
+      +mkSub('p4_tr',   '🚚','In Transit',            cnt['In Transit'],      '#1B4DA0')  // blue — moving
+      +mkSub('p4_hold', '⏸', 'On Hold',              cnt['On Hold'],         '#78909C')  // grey — paused
+      +mkSub('p4_attn', '🚨','Needs Attention',       attn,                  '#C0392B')  // red — blocked
+      +mkSub('p4_recv', '✅','Received',              cnt['Received'],        '#22A749')  // green — done
       +'</div>';
   }
 
@@ -1038,11 +1038,11 @@ function getWorkflowStatus(r) {
   const fl = r.fulfillStatus||'';
   const pdf= r.pdfStatus||'';
   // Phase 3 — SM Approval
-  if(sm==='')                    return {label:'🔍 Awaiting SM Review',   cls:'wb-await'};
+  if(sm==='')                    return {label:'🔍 Awaiting SM Review',   cls:'wb-action'};
   if(sm==='Changes Requested')   return {label:'📝 SM Changes Requested', cls:'wb-change'};
   if(sm==='Approved'&&pdf!=='Generated') return {label:'📄 PDF Pending',  cls:'wb-action'};
   // Phase 3 — Store Approval
-  if(st==='')                    return {label:'📤 Awaiting Coordinator', cls:'wb-await'};
+  if(st==='')                    return {label:'📤 Awaiting Coordinator', cls:'wb-action'};
   if(st==='Changes Requested')   return {label:'🏪 Store Changes Requested',cls:'wb-change'};
   // Phase 4 — Fulfillment
   if(fl==='')                    return {label:'🏭 WHS Prepare Order',     cls:'wb-action'};
@@ -1310,6 +1310,15 @@ function buildDetail(r) {
     <div class="wf-actions">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markSentToWHS('${uid}')">📦 Mark as Sent to Warehouse</button>
     </div>` : '';
+  const holdBtn = !locked5 && canFulfill && dispatchUnlocked ? (
+    r.status==='On Hold'
+      ? `<div class="wf-actions" style="margin-top:4px">
+           <button class="btn btn-outline btn-sm" style="color:var(--teal);border-color:var(--teal)" onclick="event.stopPropagation();clearHold('${uid}')">▶ Resume — Clear Hold</button>
+         </div>`
+      : `<div class="wf-actions" style="margin-top:4px">
+           <button class="btn btn-changes" onclick="event.stopPropagation();markOnHold('${uid}')">⏸ Put on Hold</button>
+         </div>`
+  ) : '';
   const logActualsBtn = !locked5 && canFulfill && fulfSt==='Sent to WHS' ? `
     <div class="wf-actions" style="margin-top:4px">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markActualsLogged('${uid}')">📋 Confirm Actuals Received &amp; Logged</button>
@@ -1347,7 +1356,7 @@ function buildDetail(r) {
           <span class="wf-status-badge ${locked5?'wfs-pending':fulfBadge}">${locked5?'Locked — awaiting store approval':(fulfSt||'Not yet sent to warehouse')}</span>
         </div>
         <div class="wf-panel-bd">
-          ${fulfMeta}${sendBtn}${logActualsBtn}
+          ${fulfMeta}${sendBtn}${logActualsBtn}${holdBtn}
           ${dispatchSection}
         </div>
       </div>
@@ -1391,8 +1400,10 @@ function buildForm(r) {
       <input type="text" id="f-cdf" value="${esc(r.cdf||'')}" placeholder="CDF3390-335">
     </div><div class="fg">
       <label>Store Name <span class="req">*</span></label>
-      <input type="text" id="f-store" value="${esc(r.store||'')}" placeholder="Type to search branch..." autocomplete="off" list="branch-list">
-      <datalist id="branch-list">${(S.stores||[]).map(s=>`<option value="${s}"></option>`).join('')}</datalist>
+      <select id="f-store" class="ms">
+        <option value="">— Select store —</option>
+        ${(S.stores.length ? S.stores : []).map(s=>`<option value="${s}" ${(r.store||'')=== s?'selected':''}>${s}</option>`).join('')}
+      </select>
     </div></div>
 
     <div class="frow three"><div class="fg">
@@ -1447,13 +1458,7 @@ function buildForm(r) {
       <textarea id="f-remarks" placeholder="e.g. 12 + 1 Curtain Rods bundle, partial delivery…">${esc(r.remarks||'')}</textarea>
     </div></div>
 
-    ${(S.user.role==='EXECUTIVE'||S.user.role==='IS') ? `
-    <div class="frow full"><div class="fg" style="flex-direction:row;align-items:center;gap:10px;padding:10px 0 2px">
-      <input type="checkbox" id="f-onhold" style="width:16px;height:16px;accent-color:var(--grey);cursor:pointer;flex-shrink:0" ${r.status==='On Hold'?'checked':''}>
-      <label for="f-onhold" style="text-transform:none;font-size:12.5px;font-weight:600;color:var(--carbon);cursor:pointer;letter-spacing:0">
-        Put on Hold <span style="font-size:10px;color:#999;font-weight:400">— overrides status until unchecked</span>
-      </label>
-    </div></div>` : ''}
+    /* On Hold is now a workflow action in the Phase 4 panel */
   `;
 }
 
@@ -1540,13 +1545,11 @@ function getFormVals() {
   const hub2  = document.getElementById('f-hub2').value;
   return {
     cdf:     document.getElementById('f-cdf').value.trim(),
-    store:   document.getElementById('f-store').value.trim().toUpperCase(),
+    store:   document.getElementById('f-store').value.trim(),
     month:   document.getElementById('f-month').value,
     type:    document.getElementById('f-type-m').value,
     route,
     status: (function(){
-      const onHold = document.getElementById('f-onhold')?.checked;
-      if (onHold) return 'On Hold';
       // Dispatch status only applies in Phase 4 after actuals confirmed.
       const editingRec = S.editingId ? S.records.find(r=>(r.id||r.cdf)===S.editingId) : null;
       const dispatchActive = editingRec && ['Actuals Logged','Partial'].includes(editingRec.fulfillStatus||'');
@@ -1723,6 +1726,21 @@ async function generatePDF(uid) {
   toast('PDF status marked as Generated');
 }
 
+/* ══════════════════ ON HOLD (Phase 4) ══════════════════ */
+async function markOnHold(uid) {
+  await apiUpdateCDF(uid, {status:'On Hold'});
+  S.expandedId = uid; renderAll(); toast('CDF put On Hold');
+}
+async function clearHold(uid) {
+  // Restore correct status from dates
+  const r = S.records.find(x=>(x.id||x.cdf)===uid);
+  const wf = getWorkflowStatus({...r, status:'Pending Dispatch'}); // recalc without hold
+  const toStore = r ? (r.dSdc2||r.dCdc2||r.dDirect||'') : '';
+  const status = r?.dRecv ? 'Received' : toStore ? 'In Transit' : 'Pending Dispatch';
+  await apiUpdateCDF(uid, {status});
+  S.expandedId = uid; renderAll(); toast('Hold cleared');
+}
+
 /* ══════════════════ MARK SENT TO WAREHOUSE (Phase 4 — IS only) ══════════════════ */
 async function markSentToWHS(uid) {
   const patch = {
@@ -1779,6 +1797,9 @@ async function saveRecord() {
   if(dHub1 && dHub2 && dHub2 < dHub1) { toast('Hub → Store date cannot be before WHS → Hub date','err'); return; }
   if(dHub2 && dRecv && dRecv < dHub2) { toast('Received date cannot be before Hub → Store date','err'); return; }
   if(!dHub2 && dHub1 && dRecv && dRecv < dHub1) { toast('Received date cannot be before dispatch date','err'); return; }
+  // Received date requires prior leg dates
+  if(dRecv && !dHub1) { toast('Please fill in the dispatch date before marking as Received','err'); return; }
+  if(dRecv && vals.route!=='Direct' && !dHub2) { toast('Please fill in the Hub → Store date before marking as Received','err'); return; }
   // Boxes, Truck and CAS required when package is heading to store
   const toStoreFilled = vals.route==='Direct' ? !!vals.dDirect : !!(vals.dSdc2||vals.dCdc2);
   if(toStoreFilled) {
