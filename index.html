@@ -722,6 +722,13 @@ function startApp() {
 
   loadData();
 
+  // Fetch stores once at login (non-blocking)
+  if(!CFG.offline && CFG.apiUrl) {
+    gasGet('getStores', {}).then(sr => {
+      S.stores = (sr||[]).map(s => s.storeName||s.storeCode||'').filter(Boolean).sort();
+    }).catch(() => {});
+  }
+
   // Poll every 30s if connected
   if (!CFG.offline && CFG.apiUrl) {
     S.pollTimer = setInterval(loadData, 30000);
@@ -816,13 +823,6 @@ async function loadData() {
     // Fall back to offline data
     S.records = OFFLINE_DATA.filter(r => r.month === S.month);
     renderAll();
-  }
-  // Fetch stores list if not yet loaded (non-critical, runs once)
-  if(!S.stores.length && !CFG.offline && CFG.apiUrl) {
-    try {
-      const sr = await gasGet('getStores', {});
-      S.stores = (sr||[]).map(s => s.storeName||s.storeCode||'').filter(Boolean).sort();
-    } catch(e) { /* stores load is non-critical */ }
   }
 }
 
