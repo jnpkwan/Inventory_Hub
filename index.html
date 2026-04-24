@@ -1201,11 +1201,13 @@ function buildDetail(r) {
   let lastDone=-1;
   steps.forEach((s,i)=>{if(s.d) lastDone=i;});
   const allDone = lastDone===steps.length-1;
-  const isInTransit = r.status==='In Transit';
+  // Derive movement state from dates — ignore stored status (could be On Hold)
+  const toStore = r.dSdc2||r.dCdc2||r.dDirect||'';
+  const isMovingToStore = !!toStore && !r.dRecv;  // has store-bound date, not yet received
   const tl = steps.map((s,i)=>{
     let st;
     if(i<=lastDone) st='done';
-    else if(!allDone && i===lastDone+1 && i!==steps.length-1) st=isInTransit?'active':'active-pending';
+    else if(!allDone && i===lastDone+1 && i!==steps.length-1) st=isMovingToStore?'active':'active-pending';
     else st='pending';
     return `<div class="ts ${st}"><div class="tc">${s.i}</div><div class="tl">${s.l}</div><div class="td2">${s.d?fmtD(s.d):'—'}</div></div>`;
   }).join('');
@@ -1310,15 +1312,16 @@ function buildDetail(r) {
     <div class="wf-actions">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markSentToWHS('${uid}')">📦 Mark as Sent to Warehouse</button>
     </div>` : '';
-  const holdBtn = !locked5 && canFulfill && dispatchUnlocked ? (
-    r.status==='On Hold'
-      ? `<div class="wf-actions" style="margin-top:4px">
-           <button class="btn btn-outline btn-sm" style="color:var(--teal);border-color:var(--teal)" onclick="event.stopPropagation();clearHold('${uid}')">▶ Resume — Clear Hold</button>
-         </div>`
-      : `<div class="wf-actions" style="margin-top:4px">
-           <button class="btn btn-changes" onclick="event.stopPropagation();markOnHold('${uid}')">⏸ Put on Hold</button>
-         </div>`
-  ) : '';
+  const holdBtn = !locked5 && canFulfill && dispatchUnlocked ? `
+    <div class="wf-actions" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--silver)">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:12px;font-weight:600;color:${r.status==='On Hold'?'#78909C':'#1a1a2e'}">
+        <input type="checkbox" ${r.status==='On Hold'?'checked':''} 
+          style="width:15px;height:15px;accent-color:#78909C;cursor:pointer;flex-shrink:0"
+          onclick="event.stopPropagation();toggleHold('${uid}',this.checked)">
+        <span>⏸ On Hold</span>
+        <span style="font-size:10px;font-weight:400;color:#aaa">— pauses dispatch tracking</span>
+      </label>
+    </div>` : '';
   const logActualsBtn = !locked5 && canFulfill && fulfSt==='Sent to WHS' ? `
     <div class="wf-actions" style="margin-top:4px">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markActualsLogged('${uid}')">📋 Confirm Actuals Received &amp; Logged</button>
@@ -1726,19 +1729,20 @@ async function generatePDF(uid) {
   toast('PDF status marked as Generated');
 }
 
-/* ══════════════════ ON HOLD (Phase 4) ══════════════════ */
-async function markOnHold(uid) {
-  await apiUpdateCDF(uid, {status:'On Hold'});
-  S.expandedId = uid; renderAll(); toast('CDF put On Hold');
-}
-async function clearHold(uid) {
-  // Restore correct status from dates
+/* ══════════════════ ON HOLD TOGGLE (Phase 4) ══════════════════ */
+async function toggleHold(uid, checked) {
   const r = S.records.find(x=>(x.id||x.cdf)===uid);
-  const wf = getWorkflowStatus({...r, status:'Pending Dispatch'}); // recalc without hold
-  const toStore = r ? (r.dSdc2||r.dCdc2||r.dDirect||'') : '';
-  const status = r?.dRecv ? 'Received' : toStore ? 'In Transit' : 'Pending Dispatch';
+  let status;
+  if(checked) {
+    status = 'On Hold';
+  } else {
+    // Restore correct status from dates
+    const toStore = r ? (r.dSdc2||r.dCdc2||r.dDirect||'') : '';
+    status = r?.dRecv ? 'Received' : toStore ? 'In Transit' : 'Pending Dispatch';
+  }
   await apiUpdateCDF(uid, {status});
-  S.expandedId = uid; renderAll(); toast('Hold cleared');
+  S.expandedId = uid; renderAll();
+  toast(checked ? 'CDF put On Hold' : 'Hold cleared — status restored');
 }
 
 /* ══════════════════ MARK SENT TO WAREHOUSE (Phase 4 — IS only) ══════════════════ */
