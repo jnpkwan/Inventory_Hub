@@ -1507,7 +1507,7 @@ function buildForm(r) {
       <input type="date" id="f-hub2" value="${r.dSdc2||r.dCdc2||''}" oninput="syncDateLocks()">
     </div><div class="fg">
       <label>Received in Store</label>
-      <input type="date" id="f-dRecv" value="${r.dRecv||''}">
+      <input type="date" id="f-dRecv" value="${r.dRecv||''}" oninput="syncDateLocks()" onfocus="syncDateLocks()">
     </div></div>
 
     <div class="section-label">Shipment Details</div>
@@ -1572,9 +1572,13 @@ function syncDateLocks() {
       fRecv.disabled = !hub1;
       if (hub1) fRecv.min = hub1;
     } else {
-      const hub2val = hub2El?.value || '';
-      fRecv.disabled = !hub2val;
+      // For SDC/CDC: must have BOTH hub1 (WHS→Hub) AND hub2 (Hub→Store) before Received
+      const hub2cell = document.getElementById('hub2-cell');
+      const hub2visible = !hub2cell || hub2cell.style.display !== 'none';
+      const hub2val = (hub2El && hub2visible) ? (hub2El.value || '') : '';
+      fRecv.disabled = !hub1 || !hub2val;
       if (hub2val) fRecv.min = hub2val;
+      else if (hub1) fRecv.min = hub1;
     }
   }
 }
