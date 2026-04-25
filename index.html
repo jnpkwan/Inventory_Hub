@@ -776,6 +776,10 @@ function startApp() {
     S.pollTimer = setInterval(loadData, 30000);
   }
 
+  // Set sticky sub-card offset once — recalculate only on resize
+  setTimeout(updateSubTop, 100);
+  window.addEventListener('resize', updateSubTop);
+
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 
   // Start idle auto-logout timer
@@ -881,11 +885,12 @@ function renderAll() {
   if (rc) rc.textContent = filtered.length < total ? filtered.length + ' shown' : '';
   document.getElementById('tcard-title').textContent =
     S.month.charAt(0) + S.month.slice(1).toLowerCase() + ' — CDF Records';
-  requestAnimationFrame(() => {
-    const hdr = document.querySelector('header');
-    const bar = document.querySelector('.sticky-bar');
-    if(hdr && bar) document.documentElement.style.setProperty('--sub-top', (hdr.offsetHeight + bar.offsetHeight) + 'px');
-  });
+}
+
+function updateSubTop() {
+  const hdr = document.querySelector('header');
+  const bar = document.querySelector('.sticky-bar');
+  if(hdr && bar) document.documentElement.style.setProperty('--sub-top', (hdr.offsetHeight + bar.offsetHeight) + 'px');
 }
 
 function toggleHideReceived() {
