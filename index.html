@@ -95,7 +95,8 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .phc.phc-4.active{box-shadow:0 0 0 2px #80CBC4;border-color:var(--teal)}
 .phc.phc-1,.phc.phc-2{cursor:default}
 /* Sub-card row */
-.sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:0;padding:10px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
+.sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px;padding:10px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
+#sub-sticky{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;padding:8px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
 .sub-label{font-family:"Montserrat",sans-serif;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#999;margin-bottom:6px;grid-column:1/-1}
 .ssc{background:var(--white);border:1.5px solid var(--silver);border-radius:8px;padding:8px 11px;cursor:pointer;transition:all .12s;position:relative;overflow:hidden}
 .ssc::before{content:"";position:absolute;top:0;left:0;right:0;height:2px}
@@ -535,9 +536,10 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
     </div>
   </div>
 
-  <div id="sub-summary"></div>
+  <div id="sub-sticky"></div>
   </div><!-- /sticky-bar -->
   <div class="ph-summary" id="ph-summary"></div>
+  <div id="sub-summary"></div>
 
   <div class="tcard">
     <div class="tcard-header">
@@ -1042,12 +1044,25 @@ function renderSummary(rows) {
       +'<span onclick="clearPhaseFilter()" style="font-size:10px;color:#bbb;cursor:pointer;user-select:none">✕ Clear filter</span>'
       +'</div>';
   }
+
+  // Render in page flow (below phase cards) — the source of truth
   subEl.innerHTML = subHTML;
   subEl.onclick = function(e) {
     const card = e.target.closest('[data-sf]');
     if(card) setSubFilter(card.dataset.sf);
   };
-  // Toggle sticky-bar styling based on whether sub-cards are visible
+
+  // Sticky copy — identical content, shows in the toolbar when scrolled past page-flow sub-cards
+  const subSticky = document.getElementById('sub-sticky');
+  if(subSticky) {
+    subSticky.innerHTML = subHTML;
+    subSticky.onclick = function(e) {
+      const card = e.target.closest('[data-sf]');
+      if(card) setSubFilter(card.dataset.sf);
+    };
+  }
+
+  // Toggle sticky-bar border/padding only when sub-cards are visible
   const stickyBar = document.querySelector('.sticky-bar');
   if(stickyBar) stickyBar.classList.toggle('has-subcards', !!subHTML);
 }
