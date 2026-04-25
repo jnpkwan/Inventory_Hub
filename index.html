@@ -52,7 +52,7 @@ header{background:var(--white);border-bottom:3px solid var(--green);box-shadow:v
 
 /* ── MAIN ── */
 main{max-width:1400px;margin:0 auto;padding:0 24px 48px}
-.sticky-bar{position:sticky;top:0;z-index:200;background:var(--fog);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:12px 0 5px;margin-bottom:6px;border-bottom:1px solid var(--silver)}
+.sticky-bar{position:sticky;top:0;z-index:200;background:var(--fog);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:12px 0 0;margin-bottom:12px;border-bottom:1px solid var(--silver)}
 
 /* ── CONTROLS ── */
 .controls{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:13px 16px;margin-bottom:14px;box-shadow:var(--sh)}
@@ -94,7 +94,8 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .phc.phc-4.active{box-shadow:0 0 0 2px #80CBC4;border-color:var(--teal)}
 .phc.phc-1,.phc.phc-2{cursor:default}
 /* Sub-card row */
-.sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:10px;padding:10px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
+.sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;padding:10px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
+#sub-summary:empty{display:none;margin:0}
 .sub-sticky:not(:empty){position:sticky;top:var(--toolbar-bottom,60px);z-index:195;background:var(--white);padding-bottom:8px;margin-bottom:4px}
 .sub-label{font-family:"Montserrat",sans-serif;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#999;margin-bottom:6px;grid-column:1/-1}
 .ssc{background:var(--white);border:1.5px solid var(--silver);border-radius:8px;padding:8px 11px;cursor:pointer;transition:all .12s;position:relative;overflow:hidden}
