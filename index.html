@@ -165,32 +165,68 @@ td{padding:9px 12px;vertical-align:middle}
 /* ── DETAIL EXPAND ── */
 .det-tr td{padding:0!important;background:#E8EFFE;border-bottom:3px solid #b3c6f0!important}
 .det-inner{padding:10px 16px 12px}
-.timeline{display:flex;align-items:flex-start;gap:0;margin-bottom:16px;overflow-x:auto;padding:22px 0 8px}
+.timeline-wrap{border-radius:10px;padding:12px 16px 6px;margin-bottom:10px;transition:background .2s}
+.timeline{display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding:22px 0 8px}
 .ts{display:flex;flex-direction:column;align-items:center;min-width:120px;flex:1;position:relative}
 .ts:not(:last-child)::after{content:"";position:absolute;top:22px;left:50%;width:100%;height:3px;background:var(--silver);z-index:0;border-radius:2px}
+
+/* ── Default step states ── */
 .ts.done::after{background:var(--green)}
-.ts.active::after{background:linear-gradient(to right,var(--green) 40%,var(--silver))}
-.ts.active-pending::after{background:linear-gradient(to right,var(--amber) 40%,var(--silver))}
-/* Icon circle */
+.ts.active::after{background:linear-gradient(to right,var(--green) 30%,#1b4da060 70%,var(--silver))}
+.ts.active-pending::after{background:linear-gradient(to right,var(--green) 30%,#F9A82560 70%,var(--silver))}
 .tc{width:44px;height:44px;border-radius:50%;border:2.5px solid var(--silver);background:var(--white);display:flex;align-items:center;justify-content:center;font-size:20px;position:relative;z-index:1;flex-shrink:0;transition:all .2s}
 .ts.done .tc{border-color:var(--green);background:var(--green-pale);box-shadow:0 0 0 4px #22a74920}
-.ts.active .tc{border-color:var(--blue);background:var(--blue-pale);box-shadow:0 0 0 5px #1b4da025,0 0 0 9px #1b4da010;animation:pulse-ring 2s ease-out infinite}
-.ts.active-pending .tc{border-color:var(--amber);background:var(--amber-pale);opacity:.75}
-.ts.pending .tc{opacity:.3;filter:grayscale(1)}
-@keyframes pulse-ring{0%{box-shadow:0 0 0 4px #1b4da030,0 0 0 8px #1b4da015}70%{box-shadow:0 0 0 8px #1b4da010,0 0 0 14px #1b4da005}100%{box-shadow:0 0 0 4px #1b4da030,0 0 0 8px #1b4da015}}
-/* Labels */
+.ts.active .tc{border-color:var(--blue);background:var(--blue-pale);box-shadow:0 0 0 5px #1b4da030,0 0 0 10px #1b4da015;animation:pulse-blue 2s ease-out infinite}
+.ts.active-pending .tc{border-color:var(--amber);background:var(--amber-pale);box-shadow:0 0 0 4px #F9A82525}
+.ts.pending .tc{opacity:.25;filter:grayscale(1)}
+@keyframes pulse-blue{0%{box-shadow:0 0 0 4px #1b4da035,0 0 0 9px #1b4da018}60%{box-shadow:0 0 0 9px #1b4da010,0 0 0 16px #1b4da005}100%{box-shadow:0 0 0 4px #1b4da035,0 0 0 9px #1b4da018}}
+@keyframes pulse-amber{0%{box-shadow:0 0 0 4px #F9A82535,0 0 0 9px #F9A82518}60%{box-shadow:0 0 0 9px #F9A82510,0 0 0 16px #F9A82505}100%{box-shadow:0 0 0 4px #F9A82535,0 0 0 9px #F9A82518}}
 .tl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-top:8px;text-align:center;color:#999}
 .ts.done .tl{color:var(--green)}
-.ts.active .tl{color:var(--blue);font-size:9.5px}
-.ts.active-pending .tl{color:#9a6700;font-size:9px}
-.ts.pending .tl{color:#bbb}
-/* Date */
+.ts.active .tl{color:var(--blue);font-weight:800}
+.ts.active-pending .tl{color:#c47a00}
+.ts.pending .tl{color:#ccc}
 .td2{font-family:"DM Mono",monospace;font-size:10.5px;margin-top:3px;text-align:center;color:#aaa}
 .ts.done .td2{color:var(--carbon);font-weight:500}
-.ts.active .td2{color:var(--blue);font-weight:600}
-.ts.active-pending .td2{color:#aaa}
-.ts.active::before{content:"NOW";position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:800;letter-spacing:1px;color:var(--white);background:var(--blue);padding:2px 6px;border-radius:10px;z-index:2}
-.ts.active-pending::before{content:"NEXT";position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:800;letter-spacing:1px;color:var(--white);background:var(--amber);padding:2px 6px;border-radius:10px;z-index:2}
+.ts.active .td2{color:var(--blue);font-weight:700}
+.ts.active-pending .td2{color:#c47a00}
+.ts.active::before{content:"IN TRANSIT";position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:7.5px;font-weight:800;letter-spacing:.8px;color:var(--white);background:var(--blue);padding:2px 7px;border-radius:10px;z-index:2;white-space:nowrap}
+.ts.active-pending::before{content:"NEXT";position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:7.5px;font-weight:800;letter-spacing:.8px;color:var(--white);background:var(--amber);padding:2px 7px;border-radius:10px;z-index:2}
+
+/* ── Whole-timeline states ── */
+/* Received — full green wash */
+.tl-received{background:linear-gradient(135deg,#E8F8EE 0%,#F0FFF5 100%);border:1px solid #b7e4c7}
+.tl-received .ts.done::after{background:var(--green)}
+.tl-received .ts.pending .tc{border-color:var(--green);background:var(--green-pale);opacity:1;filter:none}
+.tl-received .ts.pending .tl{color:var(--green)}
+
+/* In Transit — blue wash, pulse on active node */
+.tl-transit{background:linear-gradient(135deg,#EAF1FF 0%,#F0F5FF 100%);border:1px solid #b3caf5}
+.tl-transit .ts.active .tc{animation:pulse-blue 1.6s ease-out infinite}
+
+/* Pending Dispatch — amber wash */
+.tl-pending{background:linear-gradient(135deg,#FFFBEB 0%,#FFFDF5 100%);border:1px solid #FFE082}
+.tl-pending .ts.active-pending .tc{animation:pulse-amber 2s ease-out infinite}
+
+/* On Hold — full grey wash, everything desaturated */
+.tl-hold{background:linear-gradient(135deg,#F5F5F5 0%,#FAFAFA 100%);border:1px solid #D0D0D0}
+.tl-hold .ts.done .tc{border-color:#9E9E9E;background:#F5F5F5;box-shadow:none}
+.tl-hold .ts.done::after{background:#BDBDBD}
+.tl-hold .ts.active .tc,.tl-hold .ts.active-pending .tc{border-color:#9E9E9E;background:#F0F0F0;box-shadow:none;animation:none}
+.tl-hold .ts.active::after,.tl-hold .ts.active-pending::after{background:linear-gradient(to right,#BDBDBD 40%,#E0E0E0)}
+.tl-hold .ts.done .tl,.tl-hold .ts.active .tl,.tl-hold .ts.active-pending .tl{color:#9E9E9E}
+.tl-hold .ts.done .td2,.tl-hold .ts.active .td2,.tl-hold .ts.active-pending .td2{color:#BDBDBD}
+.tl-hold .ts.active::before,.tl-hold .ts.active-pending::before{background:#9E9E9E;content:"ON HOLD"}
+
+/* Needs Attention — red wash */
+.tl-attn{background:linear-gradient(135deg,#FFF5F5 0%,#FFF8F8 100%);border:1px solid #FFCDD2}
+.tl-attn .ts.done .tc{border-color:#E53935;background:#FFEBEE;box-shadow:0 0 0 4px #E5393520}
+.tl-attn .ts.done::after{background:#E53935}
+.tl-attn .ts.active .tc,.tl-attn .ts.active-pending .tc{border-color:#E53935;background:#FFEBEE;animation:none;box-shadow:0 0 0 4px #E5393525}
+.tl-attn .ts.active::after,.tl-attn .ts.active-pending::after{background:linear-gradient(to right,#E53935 30%,#FF8A8060)}
+.tl-attn .ts.done .tl,.tl-attn .ts.active .tl,.tl-attn .ts.active-pending .tl{color:#C62828}
+.tl-attn .ts.done .td2,.tl-attn .ts.active .td2,.tl-attn .ts.active-pending .td2{color:#C62828;font-weight:700}
+.tl-attn .ts.active::before,.tl-attn .ts.active-pending::before{background:#C62828;content:"OVERDUE"}
 .det-meta{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;padding-top:10px;border-top:1px solid var(--blue-mid)}
 .dm{display:flex;flex-direction:column;gap:1px}
 .dml{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#999;font-weight:700}
@@ -794,7 +830,8 @@ async function loadData() {
       'storeStatus','storeNotes','coordNotes','storeUpdatedBy','storeUpdatedAt',
       'pdfStatus','pdfGeneratedBy','pdfGeneratedAt',
       'fulfillStatus','actualBoxes','reasonCode','fulfillNotes',
-      'fulfillBy','fulfillAt','sentToWhsBy','sentToWhsAt'
+      'fulfillBy','fulfillAt','sentToWhsBy','sentToWhsAt',
+      'status'  // preserve dispatch status (On Hold, In Transit etc.) across polls
     ];
     if(S._wfCache) {
       S.records = S.records.map(r => {
@@ -1203,7 +1240,17 @@ function buildDetail(r) {
   const allDone = lastDone===steps.length-1;
   // Derive movement state from dates — ignore stored status (could be On Hold)
   const toStore = r.dSdc2||r.dCdc2||r.dDirect||'';
-  const isMovingToStore = !!toStore && !r.dRecv;  // has store-bound date, not yet received
+  const isMovingToStore = !!toStore && !r.dRecv;
+
+  // Determine whole-timeline semantic state
+  const isOverdueFlag = isOverdue(r);
+  let tlState = 'default';
+  if(r.status==='On Hold')   tlState = 'hold';
+  else if(r.dRecv)           tlState = 'received';
+  else if(isOverdueFlag)     tlState = 'attn';
+  else if(isMovingToStore)   tlState = 'transit';
+  else if(lastDone>=0)       tlState = 'pending';
+
   const tl = steps.map((s,i)=>{
     let st;
     if(i<=lastDone) st='done';
@@ -1347,8 +1394,11 @@ function buildDetail(r) {
     <hr class="wf-divider" style="margin:6px 0 8px">
     ${dispatchBanner}
     <div style="${dispatchUnlocked?'':'opacity:.4;pointer-events:none'}">
-      <div class="timeline" style="margin-bottom:8px">${tl}</div>
-      ${r.remarks?`<div style="font-size:11px;color:#888;margin-top:4px"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;color:#aaa">Remarks</span> ${esc(r.remarks)}</div>`:''}
+      <div class="timeline-wrap tl-${tlState}">
+        <div class="timeline" style="margin-bottom:2px">${tl}</div>
+      </div>
+      ${r.remarks?`<div style="font-size:11px;color:#888;margin-top:4px;padding:0 4px"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;color:#aaa">Remarks</span> ${esc(r.remarks)}</div>`:''}
+    </div>
     </div>`;
   const panelP5 = `
     <div class="ph-panel open" data-phase="p5">
@@ -1461,7 +1511,6 @@ function buildForm(r) {
       <textarea id="f-remarks" placeholder="e.g. 12 + 1 Curtain Rods bundle, partial delivery…">${esc(r.remarks||'')}</textarea>
     </div></div>
 
-    /* On Hold is now a workflow action in the Phase 4 panel */
   `;
 }
 
