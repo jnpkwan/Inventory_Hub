@@ -51,7 +51,8 @@ header{background:var(--white);border-bottom:3px solid var(--green);box-shadow:v
 .user-av{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
 
 /* ── MAIN ── */
-main{max-width:1400px;margin:0 auto;padding:18px 24px 48px}
+main{max-width:1400px;margin:0 auto;padding:0 24px 48px}
+.sticky-bar{position:sticky;top:0;z-index:200;background:var(--fog);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:12px 0 10px;margin-bottom:12px;border-bottom:1px solid var(--silver)}
 
 /* ── CONTROLS ── */
 .controls{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:13px 16px;margin-bottom:14px;box-shadow:var(--sh)}
@@ -61,6 +62,16 @@ main{max-width:1400px;margin:0 auto;padding:18px 24px 48px}
 .mtab:hover{border-color:#aaa;color:var(--carbon)}
 .mtab.active{background:var(--blue);border-color:var(--blue);color:#fff}
 .sep{width:1px;height:22px;background:var(--silver);margin:0 2px}
+/* Phase 4 scoreboard in toolbar */
+.p4-board{display:flex;align-items:center;gap:4px;margin-left:auto;flex-wrap:nowrap}
+.p4-chip{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:3px 7px;border-radius:20px;border:1.5px solid transparent;white-space:nowrap;cursor:pointer;transition:all .12s}
+.p4-chip:hover{filter:brightness(.95)}
+.p4-chip.pcc-amber{background:var(--amber-pale);color:#7a5500;border-color:#FFD54F}
+.p4-chip.pcc-blue{background:var(--blue-pale);color:var(--blue);border-color:var(--blue-mid)}
+.p4-chip.pcc-grey{background:#F5F5F5;color:#666;border-color:#DDD}
+.p4-chip.pcc-red{background:var(--red-pale);color:var(--red);border-color:var(--red-mid)}
+.p4-chip.pcc-green{background:var(--green-pale);color:#1a7a38;border-color:var(--green-mid)}
+.p4-chip.active{box-shadow:0 0 0 2px currentColor}
 .sw{position:relative;flex:1;min-width:180px;max-width:260px}
 .sw input{width:100%;background:#FAFAFA;border:1.5px solid #E8E8E8;border-radius:8px;font-family:"DM Sans",sans-serif;font-size:12.5px;padding:7px 10px 7px 30px;outline:none;transition:border-color .18s,background .18s,box-shadow .18s}
 .sw input:focus{border-color:var(--green);background:var(--white);box-shadow:0 0 0 3px rgba(34,167,73,.10)}
@@ -365,7 +376,8 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
   #export-btn-lbl{display:none}
 
   /* ── MAIN ── */
-  main{padding:12px 12px 60px}
+  main{padding:0 12px 60px}
+  .sticky-bar{padding:10px 0 8px}
 
   /* ── CONTROLS ── */
   .controls{padding:10px 12px;border-radius:8px}
@@ -504,6 +516,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 </header>
 
 <main>
+  <div class="sticky-bar">
   <div class="controls">
     <div class="crow">
       <select class="fs" id="month-sel" onchange="setMonth(this.value)" style="font-weight:600;min-width:130px"></select>
@@ -528,10 +541,14 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
       </button>
       <div class="sep"></div>
       <div class="sync-info" id="sync-info"></div>
+      <div class="sep"></div>
+      <div class="p4-board" id="p4-board"></div>
     </div>
   </div>
 
   <div class="ph-summary" id="ph-summary"></div>
+  <div id="sub-summary"></div>
+  </div><!-- /sticky-bar -->
 
   <div class="tcard">
     <div class="tcard-header">
@@ -928,6 +945,49 @@ function getFiltered() {
 
 /* ── Summary cards ── */
 /* ── Phase pipeline summary (top of page) ── */
+/* ── Phase 4 scoreboard in toolbar ── */
+function renderScoreboard(all) {
+  const el = document.getElementById('p4-board');
+  if(!el) return;
+  // Only show for Phase 4 CDFs (store approved)
+  const p4 = all.filter(r => (r.storeStatus||'')==='Approved');
+  if(!p4.length) { el.innerHTML=''; return; }
+
+  const cnt = {};
+  ['Preparing Order','Pending Dispatch','In Transit','On Hold','Received'].forEach(k=>cnt[k]=0);
+  p4.forEach(r => { if(cnt[r.status]!==undefined) cnt[r.status]++; });
+
+  const whs     = p4.filter(r=>!(r.fulfillStatus)).length;
+  const actuals = p4.filter(r=>r.fulfillStatus==='Sent to WHS').length;
+  const needsAttn = p4.filter(r=>S._attnIds&&S._attnIds.has(r.id||r.cdf)).length;
+  const active  = whs + actuals + cnt['Preparing Order'] + cnt['Pending Dispatch'];
+  const pf = S.phaseFilter;
+  const sf = S.subFilter;
+
+  const chip = (key, subKey, icon, label, n, cls) => {
+    if(!n) return '';
+    const isActive = (pf==='p4'&&sf===subKey)||'';
+    return `<span class="p4-chip ${cls}${isActive?' active':''}" `
+      + `data-ph="p4" data-sf="${subKey}" title="Filter: ${label}">`
+      + `${icon} ${n} ${label}</span>`;
+  };
+
+  el.innerHTML =
+    chip('active',  '',        '📦', 'Active',         active,           'pcc-amber') +
+    chip('transit', 'p4_tr',  '🚚', 'In Transit',     cnt['In Transit'], 'pcc-blue')  +
+    chip('hold',    'p4_hold','⏸',  'On Hold',        cnt['On Hold'],    'pcc-grey')  +
+    chip('attn',    'p4_attn','🚨', 'Needs Attention', needsAttn,        'pcc-red')   +
+    chip('recv',    'p4_recv','✅', 'Received',        cnt['Received'],   'pcc-green');
+
+  // Wire click handlers
+  el.onclick = function(e) {
+    const c = e.target.closest('.p4-chip');
+    if(!c) return;
+    setPhaseFilter('p4');
+    if(c.dataset.sf) setSubFilter(c.dataset.sf);
+  };
+}
+
 function renderSummary(rows) {
   const all = S.records;
 
@@ -943,6 +1003,7 @@ function renderSummary(rows) {
   });
   S._attnIds = new Set(needsAttn.map(r=>r.id||r.cdf));
   S._dispatchCards = buildDispatchCards(all, needsAttn);
+  renderScoreboard(all);
 
   // ── Phase counts ──────────────────────────────────────────────────────────
   // Phase 3 = combined approvals (any CDF not yet store-approved)
