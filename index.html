@@ -52,8 +52,7 @@ header{background:var(--white);border-bottom:3px solid var(--green);box-shadow:v
 
 /* ── MAIN ── */
 main{max-width:1400px;margin:0 auto;padding:0 24px 48px}
-.sticky-bar{position:sticky;top:0;z-index:200;background:var(--fog);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:12px 0 0;margin-bottom:0;border-bottom:none;transition:border-color .2s,padding .2s}
-.sticky-bar.has-subcards{padding-bottom:10px;margin-bottom:12px;border-bottom:2px solid var(--silver)}
+.sticky-bar{position:sticky;top:0;z-index:200;background:var(--fog);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:12px 0 10px;margin-bottom:12px;border-bottom:1px solid var(--silver)}
 
 /* ── CONTROLS ── */
 .controls{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);padding:13px 16px;margin-bottom:14px;box-shadow:var(--sh)}
@@ -95,8 +94,8 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .phc.phc-4.active{box-shadow:0 0 0 2px #80CBC4;border-color:var(--teal)}
 .phc.phc-1,.phc.phc-2{cursor:default}
 /* Sub-card row */
-.sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px;padding:10px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
-#sub-sticky{position:sticky;z-index:190;background:var(--fog);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:2px solid var(--silver);padding:8px 0}
+.sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px;padding:10px 12px;background:var(--mist);border-radius:0 0 var(--rl) var(--rl);border:1px solid var(--silver)}
+.sub-summary-sticky:not(:empty){position:sticky;top:var(--sub-top,120px);z-index:180;background:var(--fog);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding-bottom:4px;margin-bottom:8px}
 .sub-label{font-family:"Montserrat",sans-serif;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#999;margin-bottom:6px;grid-column:1/-1}
 .ssc{background:var(--white);border:1.5px solid var(--silver);border-radius:8px;padding:8px 11px;cursor:pointer;transition:all .12s;position:relative;overflow:hidden}
 .ssc::before{content:"";position:absolute;top:0;left:0;right:0;height:2px}
@@ -537,9 +536,8 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
   </div>
 
   </div><!-- /sticky-bar -->
-  <div id="sub-sticky" style="display:none"></div>
   <div class="ph-summary" id="ph-summary"></div>
-  <div id="sub-summary"></div>
+  <div id="sub-summary" class="sub-summary-sticky"></div>
 
   <div class="tcard">
     <div class="tcard-header">
@@ -883,11 +881,10 @@ function renderAll() {
   if (rc) rc.textContent = filtered.length < total ? filtered.length + ' shown' : '';
   document.getElementById('tcard-title').textContent =
     S.month.charAt(0) + S.month.slice(1).toLowerCase() + ' — CDF Records';
-  // Set sub-sticky top to match sticky-bar height
   requestAnimationFrame(() => {
+    const hdr = document.querySelector('header');
     const bar = document.querySelector('.sticky-bar');
-    const sticky = document.getElementById('sub-sticky');
-    if(bar && sticky) sticky.style.top = bar.offsetHeight + 'px';
+    if(hdr && bar) document.documentElement.style.setProperty('--sub-top', (hdr.offsetHeight + bar.offsetHeight) + 'px');
   });
 }
 
@@ -1051,36 +1048,11 @@ function renderSummary(rows) {
       +'</div>';
   }
 
-  // Render in page flow (below phase cards) — single source of truth
   subEl.innerHTML = subHTML;
   subEl.onclick = function(e) {
     const card = e.target.closest('[data-sf]');
     if(card) setSubFilter(card.dataset.sf);
   };
-
-  // Sync sticky copy content (hidden/shown by IntersectionObserver)
-  const subSticky = document.getElementById('sub-sticky');
-  if(subSticky) {
-    subSticky.innerHTML = subHTML;
-    subSticky.onclick = function(e) {
-      const card = e.target.closest('[data-sf]');
-      if(card) setSubFilter(card.dataset.sf);
-    };
-    // Only show sticky copy when page-flow sub-summary is out of view
-    if(!window._subObserver) {
-      window._subObserver = new IntersectionObserver(([entry]) => {
-        const sticky = document.getElementById('sub-sticky');
-        if(sticky) sticky.style.display = (!entry.isIntersecting && sticky.innerHTML.trim()) ? 'block' : 'none';
-      }, {threshold: 0, rootMargin: '-1px 0px 0px 0px'});
-    }
-    window._subObserver.disconnect();
-    if(subHTML) window._subObserver.observe(subEl);
-    else subSticky.style.display = 'none';
-  }
-
-  // Toggle sticky-bar border/padding only when sub-cards are visible
-  const stickyBar = document.querySelector('.sticky-bar');
-  if(stickyBar) stickyBar.classList.toggle('has-subcards', false); // border now handled by sub-sticky
 }
 
 /* ── Dispatch status cards (Phase 4) ── */
