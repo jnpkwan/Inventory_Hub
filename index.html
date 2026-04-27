@@ -1434,7 +1434,7 @@ function buildDetail(r) {
   // ── Actions row ───────────────────────────────────────────────────────────
   const actionsRow = canDelete ? `
     <div style="display:flex;gap:7px;justify-content:flex-end;margin-top:8px;padding-top:8px;border-top:1px solid var(--silver)">
-      <button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-mid)" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>
+      <button class="btn btn-sm" style="background:var(--red);color:#fff;border:none" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>
     </div>` : '';
 
   // Progressive reveal — only show panels the CDF has actually reached
