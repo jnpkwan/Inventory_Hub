@@ -92,7 +92,7 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .phc.active{box-shadow:0 0 0 2px var(--blue-mid);border-color:var(--blue)}
 .phc.phc-3.active{box-shadow:0 0 0 2px #CE93D8;border-color:#7B1FA2}
 .phc.phc-4.active{box-shadow:0 0 0 2px #80CBC4;border-color:var(--teal)}
-.phc.phc-1,.phc.phc-2{cursor:default}
+.phc.phc-2{cursor:default}
 /* Sub-card row */
 .sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;padding:10px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
 #sub-summary:empty{display:none;margin:0}
@@ -437,6 +437,95 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
   #user-nm{display:none}
   .user-av{width:24px;height:24px}
 }
+
+/* ── PHASE 1 WORKSPACE ── */
+#p1-workspace{display:none}
+#p1-workspace.show{display:block}
+.p1-grid{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
+@media(max-width:980px){.p1-grid{grid-template-columns:1fr}}
+
+.p1-card{background:var(--white);border:1px solid var(--silver);border-radius:var(--rl);box-shadow:var(--sh);overflow:hidden}
+.p1-card-h{padding:11px 16px;border-bottom:1px solid var(--silver);background:var(--mist);display:flex;align-items:center;gap:10px}
+.p1-card-t{font-family:"Montserrat",sans-serif;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:#888}
+.p1-card-b{padding:18px 20px}
+
+.p1-step{border:2px solid var(--silver);border-radius:10px;padding:18px 18px 14px;margin-bottom:14px;transition:border-color .18s}
+.p1-step.done{border-color:var(--green);background:#FAFFF7}
+.p1-step.active{border-color:var(--blue);box-shadow:0 4px 18px rgba(27,77,160,.08)}
+.p1-step-lbl{display:inline-flex;align-items:center;gap:8px;font-family:"Montserrat",sans-serif;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--blue);margin-bottom:8px}
+.p1-step-num{width:20px;height:20px;border-radius:50%;background:var(--blue);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800}
+.p1-step.done .p1-step-num{background:var(--green)}
+.p1-step h3{font-size:15px;font-weight:700;color:var(--carbon);margin-bottom:4px}
+.p1-step .p1-desc{font-size:12px;color:#666;line-height:1.5;margin-bottom:12px}
+
+.p1-drop{border:2px dashed var(--silver);border-radius:10px;padding:22px 18px;text-align:center;cursor:pointer;transition:all .15s;background:var(--mist)}
+.p1-drop:hover,.p1-drop.drag-over{border-color:var(--blue);background:var(--sky);transform:translateY(-1px)}
+.p1-drop.has-files{border-color:var(--green);border-style:solid;background:#F4FBF6}
+.p1-drop-icon{font-size:30px;margin-bottom:6px;line-height:1}
+.p1-drop h4{font-size:13px;font-weight:700;color:var(--carbon);margin-bottom:3px}
+.p1-drop p{font-size:11px;color:#888;margin-bottom:10px}
+.p1-drop .btn-browse{background:var(--blue);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-family:"Montserrat",sans-serif;font-weight:700;font-size:11px;letter-spacing:.5px;cursor:pointer;text-transform:uppercase}
+.p1-drop .btn-browse:hover{background:#163E83}
+
+.p1-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.p1-pill{display:inline-flex;align-items:center;gap:6px;background:#F4FBF6;border:1px solid #B8E5C4;color:#1A7A38;padding:5px 10px;border-radius:18px;font-size:11px;font-weight:600}
+.p1-pill.blue{background:var(--sky);border-color:#B8CBED;color:var(--blue)}
+.p1-pill .x{cursor:pointer;margin-left:4px;opacity:.6;font-weight:700}
+.p1-pill .x:hover{opacity:1;color:var(--red)}
+
+.p1-tip{background:#FFFBEA;border-left:3px solid var(--amber);padding:8px 12px;margin-top:10px;font-size:11.5px;color:#7A5A00;border-radius:0 6px 6px 0}
+
+.p1-generate{width:100%;background:var(--green);color:#fff;border:0;border-radius:10px;padding:14px;font-family:"Montserrat",sans-serif;font-weight:700;font-size:13px;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;transition:all .15s;margin-top:4px}
+.p1-generate:hover:not(:disabled){background:var(--green-d, #1a8a3a);transform:translateY(-1px);box-shadow:0 4px 14px rgba(34,167,73,.3)}
+.p1-generate:disabled{background:#CCC;cursor:not-allowed}
+
+.p1-progress{display:none;background:var(--white);border:1px solid var(--silver);border-radius:10px;padding:16px 18px;margin-top:12px}
+.p1-progress.show{display:block}
+.p1-progress-h{font-family:"Montserrat",sans-serif;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--blue);margin-bottom:6px}
+.p1-progress-sub{font-size:11.5px;color:#666;margin-bottom:10px}
+.p1-bar-wrap{width:100%;height:6px;background:var(--silver);border-radius:3px;overflow:hidden;margin-bottom:10px}
+.p1-bar{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));width:0;transition:width .25s}
+.p1-log{font-family:"DM Mono",monospace,Consolas,monospace;font-size:10.5px;background:#0F1923;color:#A8E6B0;padding:8px 10px;border-radius:6px;max-height:140px;overflow-y:auto;line-height:1.6}
+.p1-log .log-ok{color:#A8E6B0}.p1-log .log-info{color:#9CC6FF}.p1-log .log-warn{color:#FFD78F}.p1-log .log-err{color:#FF9B9B}
+
+.p1-results{display:none;background:var(--white);border:2px solid var(--green);border-radius:12px;padding:18px;margin-top:12px}
+.p1-results.show{display:block}
+.p1-results-t{font-family:"Montserrat",sans-serif;font-weight:800;font-size:14px;color:var(--green);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.p1-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.p1-stat{padding:12px 8px;border-radius:8px;text-align:center;border:1.5px solid}
+.p1-stat.red{background:#FFF0F0;border-color:#FFB8B8}.p1-stat.red .p1-stat-n{color:var(--red)}
+.p1-stat.yel{background:#FFFBEA;border-color:#F5D78F}.p1-stat.yel .p1-stat-n{color:#B8830A}
+.p1-stat.grn{background:#F4FBF6;border-color:#B8E5C4}.p1-stat.grn .p1-stat-n{color:#1A7A38}
+.p1-stat-n{font-family:"Montserrat",sans-serif;font-weight:800;font-size:22px;line-height:1}
+.p1-stat-l{font-size:10.5px;color:#666;margin-top:3px;font-weight:600}
+.p1-store-list{max-height:140px;overflow-y:auto;border:1px solid var(--silver);border-radius:6px;background:var(--mist);margin-bottom:12px}
+.p1-store-row{display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid #E8E8E8;font-size:11.5px}
+.p1-store-row:last-child{border-bottom:0}
+.p1-store-row .p1-store-name{font-weight:700;flex:1;color:var(--carbon)}
+.p1-badge{font-size:9.5px;padding:2px 7px;border-radius:10px;font-weight:700}
+.p1-badge.red{background:#FFE0E0;color:var(--red)}.p1-badge.yel{background:#FFEFC2;color:#8A5A00}.p1-badge.grn{background:#D9EAD3;color:#1A7A38}
+
+.p1-actions-row{display:flex;gap:8px}
+.p1-btn-dl{flex:1;background:var(--green);color:#fff;border:0;border-radius:8px;padding:11px;font-family:"Montserrat",sans-serif;font-weight:700;font-size:11.5px;letter-spacing:.5px;text-transform:uppercase;cursor:pointer}
+.p1-btn-dl:hover{background:var(--green-d,#1a8a3a)}
+.p1-btn-reset{background:var(--white);color:#666;border:1.5px solid var(--silver);border-radius:8px;padding:11px 14px;font-family:"Montserrat",sans-serif;font-weight:700;font-size:11.5px;letter-spacing:.5px;text-transform:uppercase;cursor:pointer}
+.p1-btn-reset:hover{border-color:#999;color:var(--carbon)}
+
+/* History panel */
+.p1-hist{max-height:560px;overflow-y:auto}
+.p1-hist-row{padding:11px 14px;border-bottom:1px solid var(--silver);cursor:default}
+.p1-hist-row:last-child{border-bottom:0}
+.p1-hist-when{font-size:10.5px;color:#999;font-family:"Montserrat",sans-serif;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.p1-hist-who{font-size:11.5px;color:var(--carbon);font-weight:700;margin-top:2px}
+.p1-hist-counts{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.p1-hist-empty{padding:24px 16px;text-align:center;color:#999;font-size:12px}
+
+/* Read-only banner for COORDINATOR */
+.p1-readonly-banner{background:#FFFBEA;border:1.5px solid var(--amber);color:#7A5A00;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:12px;display:flex;align-items:center;gap:8px}
+
+/* Override "dim" treatment on phase-1 card now that it's active */
+.phc.phc-1.active{box-shadow:0 0 0 2px #80CBC4;border-color:var(--teal)}
+.phc.phc-1{cursor:pointer}
 </style>
 </head>
 <body>
@@ -539,6 +628,106 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
   <div class="ph-summary" id="ph-summary"></div>
   <div id="sub-summary" class="sub-sticky"></div>
 
+  <!-- ════════ PHASE 1 WORKSPACE ════════ -->
+  <div id="p1-workspace">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span style="font-family:'Montserrat',sans-serif;font-weight:800;font-size:11px;letter-spacing:.8px;color:#666;text-transform:uppercase">Phase 1 — Inventory Assessment</span>
+      <span style="font-size:11px;color:#aaa">·</span>
+      <span style="font-size:11px;color:#888">Reconcile manual counts vs. system stock</span>
+      <span onclick="clearPhaseFilter()" style="margin-left:auto;font-size:11px;color:#888;cursor:pointer;user-select:none;font-weight:600">← Back to Dispatch view</span>
+    </div>
+    <div id="p1-readonly-banner" class="p1-readonly-banner" style="display:none">
+      <span>👁️</span><span><strong>Read-only view.</strong> Ito ang mga reconciliation runs para sa stores mo. Only the assigned Inventory Associate can run new reconciliations.</span>
+    </div>
+
+    <div class="p1-grid">
+      <!-- LEFT: Workspace -->
+      <div>
+        <div class="p1-card">
+          <div class="p1-card-h">
+            <span class="p1-card-t">Reconciliation Workspace</span>
+            <span style="margin-left:auto;font-size:11px;color:#888">Step 2 of Phase 1 — Discrepancy Flagging</span>
+          </div>
+          <div class="p1-card-b" id="p1-workspace-body">
+
+            <!-- STEP 1 -->
+            <div class="p1-step" id="p1-card-1">
+              <div class="p1-step-lbl"><span class="p1-step-num">1</span> Step 1 of 2</div>
+              <h3>Upload the Stock Summary 📊</h3>
+              <p class="p1-desc">Ito yung Excel export galing sa <strong>Acacia system</strong>. Filename dapat nagsisimula sa: <strong>StockSummary_AllTime_…</strong></p>
+              <div class="p1-drop" id="p1-dz-stock" ondrop="p1DropFile(event,'stock')" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)">
+                <input type="file" id="p1-file-stock" accept=".xlsx,.xls" onchange="p1PickStock(this)" style="display:none">
+                <div class="p1-drop-icon">📋</div>
+                <h4>Drag the Stock Summary here</h4>
+                <p>or click below to browse</p>
+                <button class="btn-browse" onclick="document.getElementById('p1-file-stock').click()">📂 Choose File</button>
+              </div>
+              <div id="p1-stock-pills" class="p1-pills"></div>
+              <div class="p1-tip">💡 <strong>Tip:</strong> Export ito sa Acacia System → Inventory → Stock Summary with Date → All Time. Save as Excel.</div>
+            </div>
+
+            <!-- STEP 2 -->
+            <div class="p1-step" id="p1-card-2">
+              <div class="p1-step-lbl"><span class="p1-step-num">2</span> Step 2 of 2</div>
+              <h3>Upload the IC Files for your stores 🏪</h3>
+              <p class="p1-desc">Select <strong>one or more IC files</strong> — isa per store na hawak mo. Lahat ng IC files na i-upload mo ay kasama sa report. <strong>No IC = no tab in the report.</strong></p>
+              <div class="p1-drop" id="p1-dz-ic" ondrop="p1DropFile(event,'ic')" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)">
+                <input type="file" id="p1-file-ic" accept=".xlsx,.xls" multiple onchange="p1PickIC(this)" style="display:none">
+                <div class="p1-drop-icon">🏪</div>
+                <h4>Drag all your IC files here</h4>
+                <p>Pwedeng marami — select all your stores at once</p>
+                <button class="btn-browse" onclick="document.getElementById('p1-file-ic').click()">📂 Choose IC Files</button>
+              </div>
+              <div id="p1-ic-pills" class="p1-pills"></div>
+              <div class="p1-tip">💡 <strong>Tip:</strong> The IC files start with <strong>IC_STORENAME_DATE.xlsx</strong>. Kunin ito sa merchandiser of every store.</div>
+            </div>
+
+            <button class="p1-generate" id="p1-btn-generate" onclick="p1Generate()" disabled>
+              🚀 Generate Reconciliation Report
+            </button>
+
+            <!-- PROGRESS -->
+            <div class="p1-progress" id="p1-progress">
+              <div class="p1-progress-h">⏳ Processing…</div>
+              <div class="p1-progress-sub">Sandali lang, hintayin lang.</div>
+              <div class="p1-bar-wrap"><div class="p1-bar" id="p1-bar"></div></div>
+              <div class="p1-log" id="p1-log"></div>
+            </div>
+
+            <!-- RESULTS -->
+            <div class="p1-results" id="p1-results">
+              <div class="p1-results-t">✅ Tapos na ang Report!</div>
+              <div class="p1-stats">
+                <div class="p1-stat red"><div class="p1-stat-n" id="p1-res-red">0</div><div class="p1-stat-l">🔴 Red Flags</div></div>
+                <div class="p1-stat yel"><div class="p1-stat-n" id="p1-res-yel">0</div><div class="p1-stat-l">🟡 Yellow Flags</div></div>
+                <div class="p1-stat grn"><div class="p1-stat-n" id="p1-res-grn">0</div><div class="p1-stat-l">🟢 Matches</div></div>
+              </div>
+              <div class="p1-store-list" id="p1-store-list"></div>
+              <div class="p1-actions-row">
+                <button class="p1-btn-dl" onclick="p1Download()">⬇️ Download Report (.xlsx)</button>
+                <button class="p1-btn-reset" onclick="p1Reset()">🔄 New Report</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: History panel -->
+      <div>
+        <div class="p1-card">
+          <div class="p1-card-h">
+            <span class="p1-card-t">Reconciliation History</span>
+            <span id="p1-hist-count" style="margin-left:auto;font-size:11px;color:#888"></span>
+          </div>
+          <div class="p1-hist" id="p1-hist-list">
+            <div class="p1-hist-empty">Loading history…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="tcard">
     <div class="tcard-header">
       <span class="tcard-title" id="tcard-title">CDF Records</span>
@@ -566,6 +755,9 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 </div>
 
 <div id="toasts"></div>
+
+<!-- SheetJS — used by Phase 1 reconciliation workspace -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 
 <script>
 /* ══════════════════ CONFIG ══════════════════ */
@@ -771,6 +963,9 @@ function startApp() {
     }).catch(() => {});
   }
 
+  // Fetch reconciliation history once at login (non-blocking — phase 1 card sub-label)
+  p1LoadHistory();
+
   // Poll every 30s if connected
   if (!CFG.offline && CFG.apiUrl) {
     S.pollTimer = setInterval(loadData, 30000);
@@ -879,6 +1074,25 @@ async function loadData() {
 
 /* ══════════════════ RENDER ══════════════════ */
 function renderAll() {
+  // ── Phase 1 workspace toggle ───────────────────────────────────────────────
+  // When Phase 1 is active, hide the CDF table + sub-summary and show the
+  // reconciliation workspace instead.
+  const ws  = document.getElementById('p1-workspace');
+  const sub = document.getElementById('sub-summary');
+  const tcd = document.querySelector('.tcard');
+  if (S.phaseFilter === 'p1') {
+    if (ws)  ws.classList.add('show');
+    if (sub) sub.style.display = 'none';
+    if (tcd) tcd.style.display = 'none';
+    renderSummary(S.records);     // still render phase-card row at top
+    p1RenderWorkspace();           // populate workspace + history
+    return;
+  } else {
+    if (ws)  ws.classList.remove('show');
+    if (sub) sub.style.display = '';
+    if (tcd) tcd.style.display = '';
+  }
+
   const filtered = getFiltered();
   renderSummary(S.records);
   renderTable(filtered);
@@ -969,8 +1183,13 @@ function renderSummary(rows) {
   const p4cnt     = all.filter(r=>(r.storeStatus||'')==='Approved').length;
 
   const pf = S.phaseFilter;
+  const p1Hist = S._reconHistory || [];
+  const lastRun = p1Hist[0] || null;
+  const p1Sub = lastRun
+    ? `${p1AgoLabel(lastRun.runAt)} · ${lastRun.redFlags||0} 🔴 / ${lastRun.yellowFlags||0} 🟡`
+    : 'No runs yet';
   const phCards = [
-    {id:'p1', cls:'phc-1', count:null,  label:'Inventory Assessment', sub:'Replenishment engine soon', dim:true,  disabled:true},
+    {id:'p1', cls:'phc-1', count:p1Hist.length, label:'Inventory Assessment', sub:p1Sub, dim:false, disabled:false},
     {id:'p2', cls:'phc-2', count:null,  label:'Order Generation',     sub:'Replenishment engine soon', dim:true,  disabled:true},
     {id:'p3', cls:'phc-3', count:p3cnt, label:'Approvals',             sub:p3cnt>0?p3cnt+' pending approval':'All approved', dim:false, disabled:false},
     {id:'p4', cls:'phc-4', count:p4cnt, label:'Fulfillment & Dispatch', sub:`${p4active} active · ${p4transit} in transit · ${p4done} received`, dim:false, disabled:false},
@@ -2111,6 +2330,499 @@ function setConn(state, label) {
   if(lbl) lbl.textContent=label;
   const si=document.getElementById('sync-info');
   if(si) si.innerHTML=state==='syncing'?'<div class="spinner"></div> Syncing…':'';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PHASE 1 — INVENTORY RECONCILIATION WORKSPACE
+   - Lifted from reconciliation_tool.html, restyled to Hub tokens.
+   - IA & EXECUTIVE: full upload/run/download access.
+   - COORDINATOR: read-only — sees history filtered to assigned stores only.
+   - Generate logs metadata to Reconciliation_History tab; Excel downloads
+     to user's desktop (not stored in Hub).
+══════════════════════════════════════════════════════════════════════════ */
+
+const P1 = {
+  stockFile: null,
+  icFiles: [],
+  reportWB: null,
+  resultsCache: null,  // {totalRed,totalYellow,totalGreen,stores:[{storeName,red,yellow,green}]}
+};
+
+const P1_COLORS = {
+  RED_BG: 'FFCCCC', YELLOW_BG: 'FFF2CC', GREEN_BG: 'D9EAD3',
+  HEADER_BG: '1B4DA0', SUBHDR: 'D9E1F2', LIGHT: 'F5F5F5',
+  WHITE: 'FFFFFF', RED_TXT: 'CC0000', GREEN_TXT: '1A7A38',
+  GREY_TXT: '666666', DARK: '1A1A2E',
+};
+const P1_YELLOW_UNIT  = 2;
+const P1_YELLOW_VALUE = 500;
+
+/* ── Role helpers ────────────────────────────────────────────────────────── */
+function p1CanEdit()      { return S.user && (S.user.role === 'IS' || S.user.role === 'EXECUTIVE'); }
+function p1AssignedSet()  {
+  // Returns Set of uppercase store names this user is assigned to, or null = all
+  if (!S.user) return null;
+  if (S.user.role === 'EXECUTIVE') return null;
+  const raw = (S.user.assignedStores || '').trim();
+  if (!raw || raw === '*') return null;
+  return new Set(raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
+}
+
+/* ── Workspace render — main entry from renderAll ────────────────────────── */
+function p1RenderWorkspace() {
+  const banner   = document.getElementById('p1-readonly-banner');
+  const body     = document.getElementById('p1-workspace-body');
+  if (!body) return;
+  if (p1CanEdit()) {
+    if (banner) banner.style.display = 'none';
+    body.style.display = '';
+  } else {
+    if (banner) banner.style.display = '';
+    body.style.display = 'none';  // COORDINATOR sees history only
+  }
+  p1RenderHistory();
+}
+
+/* ── History list (right-side panel) ─────────────────────────────────────── */
+function p1RenderHistory() {
+  const listEl  = document.getElementById('p1-hist-list');
+  const countEl = document.getElementById('p1-hist-count');
+  if (!listEl) return;
+
+  const all = S._reconHistory || [];
+  const assigned = p1AssignedSet();
+  const filtered = !assigned ? all : all.filter(h => {
+    const storesInRun = (h.stores || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    return storesInRun.some(s => assigned.has(s));
+  });
+
+  if (countEl) countEl.textContent = filtered.length ? filtered.length + ' run' + (filtered.length>1?'s':'') : '';
+
+  if (!filtered.length) {
+    listEl.innerHTML = '<div class="p1-hist-empty">No reconciliation runs yet.</div>';
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(h => {
+    const when = p1FormatDate(h.runAt);
+    const r = +h.redFlags||0, y = +h.yellowFlags||0, g = +h.greenFlags||0;
+    const sc = +h.storeCount||0;
+    const storeList = (h.stores || '').split(',').map(s=>s.trim()).filter(Boolean);
+    const visibleStores = !assigned ? storeList : storeList.filter(s => assigned.has(s.toUpperCase()));
+    const storesLabel = visibleStores.length ? visibleStores.slice(0,3).join(', ') + (visibleStores.length>3?` +${visibleStores.length-3} more`:'') : '—';
+    return `<div class="p1-hist-row">
+      <div class="p1-hist-when">${when} · by ${esc(h.runBy||'—')}</div>
+      <div class="p1-hist-who">${sc} store${sc!==1?'s':''} — ${esc(storesLabel)}</div>
+      <div class="p1-hist-counts">
+        ${r?`<span class="p1-badge red">🔴 ${r}</span>`:''}
+        ${y?`<span class="p1-badge yel">🟡 ${y}</span>`:''}
+        <span class="p1-badge grn">🟢 ${g}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function p1FormatDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${hh}:${mm}`;
+}
+
+function p1AgoLabel(iso) {
+  if (!iso) return 'No runs yet';
+  const d = new Date(iso);
+  if (isNaN(d)) return 'Recent';
+  const sec = Math.floor((Date.now() - d.getTime())/1000);
+  if (sec < 60)        return 'Just now';
+  if (sec < 3600)      return Math.floor(sec/60)+'m ago';
+  if (sec < 86400)     return Math.floor(sec/3600)+'h ago';
+  const days = Math.floor(sec/86400);
+  if (days < 30)       return days + 'd ago';
+  return p1FormatDate(iso).split(' ').slice(0,3).join(' ');
+}
+
+/* ── History fetch — pulls from Apps Script ──────────────────────────────── */
+async function p1LoadHistory() {
+  try {
+    if (CFG.offline || !CFG.apiUrl) {
+      S._reconHistory = S._reconHistory || [];
+    } else {
+      const hist = await gasGet('getReconciliationHistory', { username: S.user.username });
+      // Newest first; expect each row: {id,runAt,runBy,storeCount,redFlags,yellowFlags,greenFlags,stores,notes}
+      S._reconHistory = (hist || []).sort((a,b) => (b.runAt||'').localeCompare(a.runAt||''));
+    }
+  } catch (e) {
+    console.warn('Reconciliation history load failed:', e);
+    S._reconHistory = S._reconHistory || [];
+  }
+  // Re-render phase cards (P1 sub-label depends on history) + workspace if open
+  if (S.user) {
+    renderSummary(S.records || []);
+    if (S.phaseFilter === 'p1') p1RenderHistory();
+  }
+}
+
+/* ── File handling ───────────────────────────────────────────────────────── */
+function p1DragOver(e)  { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+function p1DragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+function p1DropFile(e, type) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const files = Array.from(e.dataTransfer.files).filter(f => f.name.match(/\.xlsx?$/i));
+  if (!files.length) return;
+  if (type === 'stock') p1SetStock(files[0]);
+  else                  p1AddIC(files);
+}
+function p1PickStock(input) { if (input.files[0]) p1SetStock(input.files[0]); }
+function p1PickIC(input)    { if (input.files.length) p1AddIC(Array.from(input.files)); input.value=''; }
+
+function p1SetStock(file) {
+  P1.stockFile = file;
+  document.getElementById('p1-dz-stock').classList.add('has-files');
+  document.getElementById('p1-stock-pills').innerHTML =
+    `<div class="p1-pill"><span>📋</span>${esc(file.name)}</div>`;
+  document.getElementById('p1-card-1').classList.add('done');
+  p1CheckReady();
+}
+
+function p1AddIC(files) {
+  files.forEach(f => {
+    if (!P1.icFiles.find(x => x.name === f.name)) P1.icFiles.push(f);
+  });
+  p1RenderICPills();
+  document.getElementById('p1-dz-ic').classList.toggle('has-files', P1.icFiles.length > 0);
+  document.getElementById('p1-card-2').classList.toggle('done', P1.icFiles.length > 0);
+  p1CheckReady();
+}
+
+function p1RemoveIC(name) {
+  P1.icFiles = P1.icFiles.filter(f => f.name !== name);
+  p1RenderICPills();
+  document.getElementById('p1-dz-ic').classList.toggle('has-files', P1.icFiles.length > 0);
+  document.getElementById('p1-card-2').classList.toggle('done', P1.icFiles.length > 0);
+  p1CheckReady();
+}
+
+function p1RenderICPills() {
+  document.getElementById('p1-ic-pills').innerHTML = P1.icFiles.map(f =>
+    `<div class="p1-pill blue"><span>🏪</span>${esc(f.name)}<span class="x" onclick="p1RemoveIC('${esc(f.name)}')">✕</span></div>`
+  ).join('');
+}
+
+function p1CheckReady() {
+  const ready = P1.stockFile && P1.icFiles.length > 0;
+  document.getElementById('p1-btn-generate').disabled = !ready;
+}
+
+function p1Log(msg, cls='log-info') {
+  const el = document.getElementById('p1-log');
+  el.innerHTML += `<div class="${cls}">${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function p1SetProgress(pct) {
+  document.getElementById('p1-bar').style.width = pct + '%';
+}
+
+function p1Reset() {
+  P1.stockFile = null; P1.icFiles = []; P1.reportWB = null; P1.resultsCache = null;
+  document.getElementById('p1-stock-pills').innerHTML = '';
+  document.getElementById('p1-ic-pills').innerHTML = '';
+  document.getElementById('p1-dz-stock').classList.remove('has-files');
+  document.getElementById('p1-dz-ic').classList.remove('has-files');
+  document.getElementById('p1-card-1').classList.remove('done');
+  document.getElementById('p1-card-2').classList.remove('done');
+  document.getElementById('p1-progress').classList.remove('show');
+  document.getElementById('p1-results').classList.remove('show');
+  document.getElementById('p1-log').innerHTML = '';
+  document.getElementById('p1-btn-generate').disabled = true;
+}
+
+/* ── File parsing (lifted from reconciliation_tool.html) ──────────────────── */
+function p1ReadAB(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result);
+    r.onerror = rej;
+    r.readAsArrayBuffer(file);
+  });
+}
+
+async function p1ParseStockSummary(file) {
+  const ab = await p1ReadAB(file);
+  const wb = XLSX.read(ab, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+  let hdrIdx = -1;
+  for (let i=0;i<rows.length;i++) {
+    if (rows[i].some(v => String(v).toLowerCase().includes('branch'))) { hdrIdx=i; break; }
+  }
+  if (hdrIdx < 0) throw new Error('Hindi mahanap ang header row sa Stock Summary.');
+  const headers = rows[hdrIdx].map(h => String(h).trim());
+  const data = [];
+  for (let i=hdrIdx+1;i<rows.length;i++) {
+    const r = rows[i];
+    if (!r[0]) continue;
+    const obj = {};
+    headers.forEach((h,j) => obj[h] = r[j] ?? '');
+    obj['Branch']        = String(obj['Branch'] || '').trim().toUpperCase();
+    obj['Product Code']  = String(obj['Product Code'] || '').trim();
+    obj['Product Name']  = String(obj['Product Name'] || '').trim();
+    obj['Stock On Hand'] = parseFloat(obj['Stock On Hand']) || 0;
+    obj['Sale Price']    = parseFloat(obj['Sale Price'])    || 0;
+    data.push(obj);
+  }
+  return data;
+}
+
+function p1InferStoreName(filename) {
+  let n = filename.toUpperCase().replace(/\.XLSX?$/i,'');
+  if (n.startsWith('IC_')) n = n.slice(3);
+  n = n.replace(/_\d{2}[A-Z]{3}\d{4}.*/,'');
+  n = n.replace(/_\d{8}.*/,'');
+  return n.trim();
+}
+
+async function p1ParseICFile(file) {
+  const storeName = p1InferStoreName(file.name);
+  const ab = await p1ReadAB(file);
+  const wb = XLSX.read(ab, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+  let hdrIdx = -1;
+  for (let i=0;i<rows.length;i++) {
+    if (rows[i].some(v => String(v).toLowerCase().includes('barcode') || String(v).toLowerCase() === 'sku')) {
+      hdrIdx = i; break;
+    }
+  }
+  if (hdrIdx < 0) hdrIdx = Math.min(6, rows.length-1);
+  const headers = rows[hdrIdx].map(h => String(h).trim().toLowerCase());
+  const barcodeCol = (() => {
+    let idx = headers.findIndex(h => h.includes('barcode'));
+    if (idx < 0) idx = headers.findIndex(h => h === 'sku');
+    if (idx < 0) idx = headers.findIndex(h => h.includes('sku'));
+    return idx >= 0 ? idx : 0;
+  })();
+  const qtyCol = (() => {
+    let idx = headers.findIndex(h => h.includes('qty') || h.includes('count') || h.includes('quantity'));
+    return idx >= 0 ? idx : headers.length - 1;
+  })();
+  const physical = {};
+  for (let i=hdrIdx+1;i<rows.length;i++) {
+    const r = rows[i];
+    const bc = String(r[barcodeCol] || '').trim();
+    if (!/^\d{8,}$/.test(bc)) continue;
+    const qty = parseFloat(r[qtyCol]) || 0;
+    physical[bc] = qty;
+  }
+  return { storeName, physical };
+}
+
+function p1Reconcile(storeName, stockData, physical) {
+  const sysRows = stockData.filter(r => r['Branch'] === storeName);
+  const allBarcodes = new Set([
+    ...sysRows.map(r => r['Product Code']),
+    ...Object.keys(physical)
+  ]);
+  const results = [];
+  allBarcodes.forEach(bc => {
+    const sysRow = sysRows.find(r => r['Product Code'] === bc);
+    const sysQty = sysRow ? sysRow['Stock On Hand'] : 0;
+    const counted = physical[bc] !== undefined;
+    const physQty = counted ? physical[bc] : null;
+    const price = sysRow ? sysRow['Sale Price'] : 0;
+    const name = sysRow ? sysRow['Product Name'] : 'Unknown Product';
+    const variance = counted ? (physQty - sysQty) : null;
+    const absVariance = counted ? Math.abs(variance) : 0;
+    const valueGap = counted ? (absVariance * price) : 0;
+    let flag;
+    if (sysQty < 0) flag = 'RED';
+    else if (!counted) flag = 'GREEN';
+    else if (absVariance > P1_YELLOW_UNIT || valueGap > P1_YELLOW_VALUE) flag = 'YELLOW';
+    else flag = 'GREEN';
+    let suggestedAction, adjType, adjQty;
+    if (!counted) { adjType='N/A'; adjQty=0; suggestedAction='Skipped — not part of this batch count'; }
+    else if (variance > 0) { adjType='Adj In';  adjQty=variance;  suggestedAction=`Adj In ${variance} units (system undercounts)`; }
+    else if (variance < 0) { adjType='Adj Out'; adjQty=-variance; suggestedAction=`Adj Out ${-variance} units (system overcounts)`; }
+    else { adjType='Match'; adjQty=0; suggestedAction='No adjustment needed'; }
+    results.push({ bc, name, sysQty, physQty, counted, variance, absVariance, valueGap, flag, suggestedAction, adjType, adjQty, price });
+  });
+  const order = {RED:0, YELLOW:1, GREEN:2};
+  results.sort((a,b) => order[a.flag]-order[b.flag] || a.name.localeCompare(b.name));
+  return results;
+}
+
+/* ── Excel report builder ────────────────────────────────────────────────── */
+function p1CellStyle(bg, bold=false, color='1A1A2E', sz=9, halign='left') {
+  return {
+    fill: { fgColor: { rgb: bg } },
+    font: { name: 'Calibri', sz, bold, color: { rgb: color } },
+    alignment: { horizontal: halign, vertical: 'center', wrapText: true },
+    border: {
+      top:    { style: 'thin', color: { rgb: 'CCCCCC' } },
+      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      left:   { style: 'thin', color: { rgb: 'CCCCCC' } },
+      right:  { style: 'thin', color: { rgb: 'CCCCCC' } },
+    },
+  };
+}
+
+function p1BuildExcel(allResults) {
+  const wb = XLSX.utils.book_new();
+  const C = P1_COLORS;
+
+  // Summary sheet
+  const summaryData = [];
+  summaryData.push(['ACACIA HBC — RECONCILIATION REPORT']);
+  summaryData.push([`Generated: ${p1FormatDate(new Date().toISOString())}`]);
+  summaryData.push([`Run by: ${S.user?.name || S.user?.username || '—'}`]);
+  summaryData.push([]);
+  summaryData.push(['Store', 'Total SKUs', 'Red Flags', 'Yellow Flags', 'Green', '% Issues']);
+  allResults.forEach(({storeName, rows}) => {
+    const r = rows.filter(x => x.flag === 'RED').length;
+    const y = rows.filter(x => x.flag === 'YELLOW').length;
+    const g = rows.filter(x => x.flag === 'GREEN').length;
+    const pct = rows.length ? Math.round(((r+y)/rows.length)*100) : 0;
+    summaryData.push([storeName, rows.length, r, y, g, pct + '%']);
+  });
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+  wsSummary['!cols'] = [{wch:30},{wch:12},{wch:12},{wch:14},{wch:10},{wch:10}];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+  // One sheet per store
+  allResults.forEach(({storeName, rows}) => {
+    const aoa = [];
+    aoa.push([`STORE: ${storeName}`]);
+    aoa.push([]);
+    aoa.push(['Barcode','Product Name','System Qty','Physical Qty','Variance','Value Gap (₱)','Flag','Suggested Action','Adj Type','Adj Qty']);
+    rows.forEach(r => {
+      aoa.push([
+        r.bc, r.name, r.sysQty, r.counted ? r.physQty : '—',
+        r.counted ? r.variance : '—', r.counted ? Number(r.valueGap.toFixed(2)) : '—',
+        r.flag, r.suggestedAction, r.adjType, r.adjQty
+      ]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:16},{wch:40},{wch:11},{wch:12},{wch:10},{wch:13},{wch:8},{wch:42},{wch:10},{wch:9}];
+    XLSX.utils.book_append_sheet(wb, ws, storeName.substring(0,31));
+  });
+
+  return wb;
+}
+
+/* ── Generate (main orchestrator) ────────────────────────────────────────── */
+async function p1Generate() {
+  if (!p1CanEdit()) { toast('Only Inventory Associates can run reconciliations.', 'err'); return; }
+  if (!P1.stockFile || !P1.icFiles.length) return;
+
+  document.getElementById('p1-btn-generate').disabled = true;
+  document.getElementById('p1-progress').classList.add('show');
+  document.getElementById('p1-results').classList.remove('show');
+  document.getElementById('p1-log').innerHTML = '';
+  p1SetProgress(5);
+
+  try {
+    p1Log('📋 Loading Stock Summary…', 'log-info');
+    const stockData = await p1ParseStockSummary(P1.stockFile);
+    p1Log(`✓ Loaded: ${stockData.length.toLocaleString()} rows`, 'log-ok');
+    p1SetProgress(20);
+
+    const allResults = [];
+    let totalRed=0, totalYellow=0, totalGreen=0;
+    for (let i=0;i<P1.icFiles.length;i++) {
+      const f = P1.icFiles[i];
+      p1Log(`🏪 Processing: ${f.name}…`, 'log-info');
+      p1SetProgress(20 + Math.round((i/P1.icFiles.length)*60));
+      try {
+        const {storeName, physical} = await p1ParseICFile(f);
+        const rows = p1Reconcile(storeName, stockData, physical);
+        const red    = rows.filter(r => r.flag === 'RED').length;
+        const yellow = rows.filter(r => r.flag === 'YELLOW').length;
+        const green  = rows.filter(r => r.flag === 'GREEN').length;
+        totalRed+=red; totalYellow+=yellow; totalGreen+=green;
+        allResults.push({storeName, rows});
+        p1Log(`✓ ${storeName}: ${rows.length} SKUs | 🔴 ${red} | 🟡 ${yellow} | 🟢 ${green}`, 'log-ok');
+      } catch (e) {
+        p1Log(`⚠ Error sa ${f.name}: ${e.message}`, 'log-warn');
+      }
+    }
+
+    p1SetProgress(85);
+    p1Log('📊 Building Excel report…', 'log-info');
+    P1.reportWB = p1BuildExcel(allResults);
+    P1.resultsCache = {
+      totalRed, totalYellow, totalGreen,
+      stores: allResults.map(({storeName, rows}) => ({
+        storeName,
+        red:    rows.filter(r => r.flag === 'RED').length,
+        yellow: rows.filter(r => r.flag === 'YELLOW').length,
+        green:  rows.filter(r => r.flag === 'GREEN').length,
+      })),
+    };
+    p1SetProgress(95);
+
+    // Log run to Apps Script (best-effort; failure does not block download)
+    p1Log('📝 Logging run to Hub…', 'log-info');
+    try {
+      const payload = {
+        runAt:       new Date().toISOString(),
+        runBy:       S.user?.username || '',
+        runByName:   S.user?.name || '',
+        storeCount:  P1.resultsCache.stores.length,
+        redFlags:    totalRed,
+        yellowFlags: totalYellow,
+        greenFlags:  totalGreen,
+        stores:      P1.resultsCache.stores.map(s => s.storeName).join(','),
+        notes:       '',
+      };
+      if (!CFG.offline && CFG.apiUrl) {
+        await gasPost('logReconciliation', payload);
+        // Refresh history so the run appears in the panel + card sub-label
+        await p1LoadHistory();
+        p1Log('✓ Logged to Reconciliation_History', 'log-ok');
+      } else {
+        // Offline: stash locally so the UI updates
+        const localEntry = { id: 'local-'+Date.now(), ...payload };
+        S._reconHistory = [localEntry, ...(S._reconHistory||[])];
+        renderSummary(S.records || []);
+        p1RenderHistory();
+        p1Log('⚠ Offline — saved locally only', 'log-warn');
+      }
+    } catch (logErr) {
+      p1Log(`⚠ Logging failed: ${logErr.message} (report still downloadable)`, 'log-warn');
+    }
+
+    p1SetProgress(100);
+    p1Log('✅ Done!', 'log-ok');
+
+    // Populate results
+    document.getElementById('p1-res-red').textContent = totalRed;
+    document.getElementById('p1-res-yel').textContent = totalYellow;
+    document.getElementById('p1-res-grn').textContent = totalGreen;
+    document.getElementById('p1-store-list').innerHTML = P1.resultsCache.stores.map(s =>
+      `<div class="p1-store-row">
+        <span class="p1-store-name">🏪 ${esc(s.storeName)}</span>
+        ${s.red?`<span class="p1-badge red">🔴 ${s.red}</span>`:''}
+        ${s.yellow?`<span class="p1-badge yel">🟡 ${s.yellow}</span>`:''}
+        <span class="p1-badge grn">🟢 ${s.green}</span>
+      </div>`
+    ).join('');
+    document.getElementById('p1-results').classList.add('show');
+
+  } catch (e) {
+    p1Log(`❌ Error: ${e.message}`, 'log-err');
+    document.getElementById('p1-btn-generate').disabled = false;
+  }
+}
+
+function p1Download() {
+  if (!P1.reportWB) return;
+  const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(P1.reportWB, `Reconciliation_Report_${dateStr}.xlsx`);
 }
 
 /* ── Keyboard ── */
