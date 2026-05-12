@@ -92,7 +92,8 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .phc.active{box-shadow:0 0 0 2px var(--blue-mid);border-color:var(--blue)}
 .phc.phc-3.active{box-shadow:0 0 0 2px #CE93D8;border-color:#7B1FA2}
 .phc.phc-4.active{box-shadow:0 0 0 2px #80CBC4;border-color:var(--teal)}
-.phc.phc-2{cursor:default}
+/* Phase 2 has its own active style — green theme to distinguish from Phase 1 teal */
+.phc.phc-2.active{box-shadow:0 0 0 2px #B8D5BA;border-color:var(--green)}
 /* Sub-card row */
 .sub-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px;padding:10px 12px;background:var(--mist);border-radius:var(--rl);border:1px solid var(--silver)}
 #sub-summary:empty{display:none;margin:0}
@@ -442,6 +443,10 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 #p1-workspace{display:none}
 #p1-workspace.show{display:block}
 
+/* ── PHASE 2 WORKSPACE ── (mirrors Phase 1 — uses .p1-* shared classes) */
+#p2-workspace{display:none}
+#p2-workspace.show{display:block}
+
 /* CDF-specific controls (search/route/type/flag/hide-received) — hidden in Phase 1 & 2 */
 .cdf-ctrls{display:contents}
 .cdf-ctrls.hidden{display:none}
@@ -735,6 +740,125 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
     </div>
   </div>
 
+  <!-- ════════ PHASE 2 WORKSPACE ════════ -->
+  <div id="p2-workspace">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span style="font-family:'Montserrat',sans-serif;font-weight:800;font-size:11px;letter-spacing:.8px;color:#666;text-transform:uppercase">Phase 2 — Order Generation</span>
+      <span style="font-size:11px;color:#aaa">·</span>
+      <span style="font-size:11px;color:#888">Generate replenishment order quantities per store × SKU</span>
+      <span onclick="clearPhaseFilter()" style="margin-left:auto;font-size:11px;color:#888;cursor:pointer;user-select:none;font-weight:600">← Back to Dispatch view</span>
+    </div>
+
+    <div id="p2-readonly-banner" class="p1-readonly-banner" style="display:none">
+      <span>👁️</span><span><strong>Read-only view.</strong> Ito ang mga order-generation runs para sa stores mo. Only the assigned Inventory Associate can generate new orders.</span>
+    </div>
+
+    <div class="p1-grid">
+      <!-- LEFT: Workspace -->
+      <div>
+        <div class="p1-card">
+          <div class="p1-card-h">
+            <span class="p1-card-t">Order Generation Workspace</span>
+            <span style="margin-left:auto;font-size:11px;color:#888">Step 3 of Phase 2 — Calculate Order Quantities</span>
+          </div>
+          <div class="p1-card-b" id="p2-workspace-body">
+
+            <!-- IN-TRANSIT NOTICE -->
+            <div style="background:#FFFBEA;border-left:3px solid var(--amber);padding:9px 12px;margin-bottom:14px;font-size:11.5px;color:#7A5A00;border-radius:0 6px 6px 0">
+              ℹ️ <strong>In-Transit assumed 0 for this build.</strong> Acacia's per-SKU in-transit export is still being built. Pending CDFs may cause slight over-ordering — i-adjust manually kung kailangan. Magagawa natin proper integration once available.
+            </div>
+
+            <!-- STEP 1: Stock Summary -->
+            <div class="p1-step" id="p2-card-1">
+              <div class="p1-step-lbl"><span class="p1-step-num">1</span> Step 1 of 3</div>
+              <h3>Upload the Stock Summary 📊</h3>
+              <p class="p1-desc">Same file as Phase 1 — galing sa Acacia system. Filename: <strong>StockSummary_AllTime_…</strong></p>
+              <div class="p1-drop" id="p2-dz-stock" ondrop="p2DropFile(event,'stock')" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)">
+                <input type="file" id="p2-file-stock" accept=".xlsx,.xls" onchange="p2PickFile(this,'stock')" style="display:none">
+                <div class="p1-drop-icon">📋</div>
+                <h4>Drag the Stock Summary here</h4>
+                <p>Validated store inventory counts</p>
+                <button class="btn-browse" onclick="document.getElementById('p2-file-stock').click()">📂 Choose File</button>
+              </div>
+              <div id="p2-stock-pills" class="p1-pills"></div>
+            </div>
+
+            <!-- STEP 2: Warehouse Inventory -->
+            <div class="p1-step" id="p2-card-2">
+              <div class="p1-step-lbl"><span class="p1-step-num">2</span> Step 2 of 3</div>
+              <h3>Upload the Warehouse Inventory 🏭</h3>
+              <p class="p1-desc">Galing sa Acacia system. Filename: <strong>WarehouseInventory_AllTime_…</strong></p>
+              <div class="p1-drop" id="p2-dz-whs" ondrop="p2DropFile(event,'whs')" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)">
+                <input type="file" id="p2-file-whs" accept=".xlsx,.xls" onchange="p2PickFile(this,'whs')" style="display:none">
+                <div class="p1-drop-icon">🏭</div>
+                <h4>Drag the Warehouse Inventory here</h4>
+                <p>Current warehouse stock per SKU</p>
+                <button class="btn-browse" onclick="document.getElementById('p2-file-whs').click()">📂 Choose File</button>
+              </div>
+              <div id="p2-whs-pills" class="p1-pills"></div>
+            </div>
+
+            <!-- STEP 3: Min/Max Bible -->
+            <div class="p1-step" id="p2-card-3">
+              <div class="p1-step-lbl"><span class="p1-step-num">3</span> Step 3 of 3</div>
+              <h3>Upload the Min/Max Bible 📕</h3>
+              <p class="p1-desc">Per-store max stocking, CDF increment, brand, category — IA-maintained. Filename: <strong>MinMax_Bible_…</strong></p>
+              <div class="p1-drop" id="p2-dz-bible" ondrop="p2DropFile(event,'bible')" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)">
+                <input type="file" id="p2-file-bible" accept=".xlsx,.xls" onchange="p2PickFile(this,'bible')" style="display:none">
+                <div class="p1-drop-icon">📕</div>
+                <h4>Drag the Min/Max Bible here</h4>
+                <p>Includes STORES tab + per-store SKU tabs</p>
+                <button class="btn-browse" onclick="document.getElementById('p2-file-bible').click()">📂 Choose File</button>
+              </div>
+              <div id="p2-bible-pills" class="p1-pills"></div>
+            </div>
+
+            <button class="p1-generate" id="p2-btn-generate" onclick="p2Generate()" disabled>
+              🧮 Generate Replenishment Order
+            </button>
+
+            <!-- PROGRESS -->
+            <div class="p1-progress" id="p2-progress">
+              <div class="p1-progress-h">⏳ Processing…</div>
+              <div class="p1-progress-sub">Computing gaps, warehouse cross-check, allocations…</div>
+              <div class="p1-bar-wrap"><div class="p1-bar" id="p2-bar"></div></div>
+              <div class="p1-log" id="p2-log"></div>
+            </div>
+
+            <!-- RESULTS -->
+            <div class="p1-results" id="p2-results">
+              <div class="p1-results-t">✅ Replenishment Order Ready!</div>
+              <div class="p1-stats">
+                <div class="p1-stat grn"><div class="p1-stat-n" id="p2-res-units">0</div><div class="p1-stat-l">📦 Total Units</div></div>
+                <div class="p1-stat yel"><div class="p1-stat-n" id="p2-res-skus">0</div><div class="p1-stat-l">🔢 Lines</div></div>
+                <div class="p1-stat red"><div class="p1-stat-n" id="p2-res-stockouts">0</div><div class="p1-stat-l">🚫 Stockouts</div></div>
+              </div>
+              <div class="p1-store-list" id="p2-store-list"></div>
+              <div class="p1-actions-row">
+                <button class="p1-btn-dl" onclick="p2Download()">⬇️ Download Order (.xlsx)</button>
+                <button class="p1-btn-reset" onclick="p2Reset()">🔄 New Order</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: History panel -->
+      <div>
+        <div class="p1-card">
+          <div class="p1-card-h">
+            <span class="p1-card-t">Order Generation History</span>
+            <span id="p2-hist-count" style="margin-left:auto;font-size:11px;color:#888"></span>
+          </div>
+          <div class="p1-hist" id="p2-hist-list">
+            <div class="p1-hist-empty">Loading history…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="tcard">
     <div class="tcard-header">
       <span class="tcard-title" id="tcard-title">CDF Records</span>
@@ -973,6 +1097,7 @@ function startApp() {
 
   // Fetch reconciliation history once at login (non-blocking — phase 1 card sub-label)
   p1LoadHistory();
+  p2LoadHistory();
 
   // Poll every 30s if connected
   if (!CFG.offline && CFG.apiUrl) {
@@ -1089,24 +1214,36 @@ function renderAll() {
   if (cdfCtrls) cdfCtrls.classList.toggle('hidden', hideCtrls);
   if (sep1)     sep1.style.display = hideCtrls ? 'none' : '';
 
-  // ── Phase 1 workspace toggle ───────────────────────────────────────────────
-  // When Phase 1 is active, hide the CDF table + sub-summary and show the
-  // reconciliation workspace instead.
-  const ws  = document.getElementById('p1-workspace');
+  // ── Workspace toggle for Phase 1 and Phase 2 ───────────────────────────────
+  const ws1 = document.getElementById('p1-workspace');
+  const ws2 = document.getElementById('p2-workspace');
   const sub = document.getElementById('sub-summary');
   const tcd = document.querySelector('.tcard');
+
   if (S.phaseFilter === 'p1') {
-    if (ws)  ws.classList.add('show');
+    if (ws1) ws1.classList.add('show');
+    if (ws2) ws2.classList.remove('show');
     if (sub) sub.style.display = 'none';
     if (tcd) tcd.style.display = 'none';
-    renderSummary(S.records);     // still render phase-card row at top
-    p1RenderWorkspace();           // populate workspace + history
+    renderSummary(S.records);
+    p1RenderWorkspace();
     return;
-  } else {
-    if (ws)  ws.classList.remove('show');
-    if (sub) sub.style.display = '';
-    if (tcd) tcd.style.display = '';
   }
+  if (S.phaseFilter === 'p2') {
+    if (ws1) ws1.classList.remove('show');
+    if (ws2) ws2.classList.add('show');
+    if (sub) sub.style.display = 'none';
+    if (tcd) tcd.style.display = 'none';
+    renderSummary(S.records);
+    p2RenderWorkspace();
+    return;
+  }
+
+  // Default: show CDF table, hide both workspaces
+  if (ws1) ws1.classList.remove('show');
+  if (ws2) ws2.classList.remove('show');
+  if (sub) sub.style.display = '';
+  if (tcd) tcd.style.display = '';
 
   const filtered = getFiltered();
   renderSummary(S.records);
@@ -1203,9 +1340,14 @@ function renderSummary(rows) {
   const p1Sub = lastRun
     ? `${p1AgoLabel(lastRun.runAt)} · ${lastRun.redFlags||0} 🔴 / ${lastRun.yellowFlags||0} 🟡`
     : 'No runs yet';
+  const p2Hist = S._phase2History || [];
+  const p2LastRun = p2Hist[0] || null;
+  const p2Sub = p2LastRun
+    ? `${p1AgoLabel(p2LastRun.runAt)} · ${p2LastRun.totalUnits||0} units · ${p2LastRun.stockouts||0} stockouts`
+    : 'No runs yet';
   const phCards = [
     {id:'p1', cls:'phc-1', count:p1Hist.length, label:'Inventory Assessment', sub:p1Sub, dim:false, disabled:false},
-    {id:'p2', cls:'phc-2', count:null,  label:'Order Generation',     sub:'Replenishment engine soon', dim:true,  disabled:true},
+    {id:'p2', cls:'phc-2', count:p2Hist.length, label:'Order Generation',     sub:p2Sub, dim:false, disabled:false},
     {id:'p3', cls:'phc-3', count:p3cnt, label:'Approvals',             sub:p3cnt>0?p3cnt+' pending approval':'All approved', dim:false, disabled:false},
     {id:'p4', cls:'phc-4', count:p4cnt, label:'Fulfillment & Dispatch', sub:`${p4active} active · ${p4transit} in transit · ${p4done} received`, dim:false, disabled:false},
   ];
@@ -3048,6 +3190,731 @@ function p1Download() {
   const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
   XLSX.writeFile(P1.reportWB, `Reconciliation_Report_${dateStr}.xlsx`);
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PHASE 2 — ORDER GENERATION WORKSPACE
+   Inputs: Stock Summary + Warehouse Inventory + Min/Max Bible
+   In-Transit = 0 (Acacia export not ready)
+   Algorithm: per store × SKU → Gap = MaxStocking − StoreInv
+              → Need = max(0, Gap)
+              → Ideal_Order = floor(Need / CDF_Increment) × CDF_Increment
+              Then warehouse cross-check + size-weighted shortfall allocation.
+══════════════════════════════════════════════════════════════════════════ */
+
+const P2 = {
+  stockFile: null,
+  whsFile:   null,
+  bibleFile: null,
+  reportWB:  null,
+  results:   null,   // {totalUnits, totalLines, stockouts, shortfalls, stores:[{store, lines, units, stockouts}]}
+};
+
+// Store size → priority weight (fallback "Medium" 1.2× when Bible doesn't carry Size yet)
+const P2_SIZE_WEIGHTS = { 'XB':2.0, 'Large':1.5, 'B':1.5, 'Medium':1.2, 'Small':1.0 };
+
+/* ── Role helpers ────────────────────────────────────────────────────────── */
+function p2CanEdit() { return p1CanEdit(); /* same rule: IA or EXEC */ }
+
+/* ── Workspace entry from renderAll ──────────────────────────────────────── */
+function p2RenderWorkspace() {
+  const banner = document.getElementById('p2-readonly-banner');
+  const body   = document.getElementById('p2-workspace-body');
+  if (!body) return;
+  if (p2CanEdit()) {
+    if (banner) banner.style.display = 'none';
+    body.style.display = '';
+  } else {
+    if (banner) banner.style.display = '';
+    body.style.display = 'none';
+  }
+  p2RenderHistory();
+}
+
+/* ── History (right panel) ───────────────────────────────────────────────── */
+function p2RenderHistory() {
+  const listEl  = document.getElementById('p2-hist-list');
+  const countEl = document.getElementById('p2-hist-count');
+  if (!listEl) return;
+
+  const all = S._phase2History || [];
+  const assigned = p1AssignedSet();
+  const filtered = !assigned ? all : all.filter(h => {
+    const storesInRun = (h.stores || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    return storesInRun.some(s => assigned.has(s));
+  });
+
+  if (countEl) countEl.textContent = filtered.length ? filtered.length + ' run' + (filtered.length>1?'s':'') : '';
+
+  if (!filtered.length) {
+    listEl.innerHTML = '<div class="p1-hist-empty">No order-generation runs yet.</div>';
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(h => {
+    const when    = p1FormatDate(h.runAt);
+    const sc      = +h.storeCount || 0;
+    const lines   = +h.skuCount || 0;
+    const units   = +h.totalUnits || 0;
+    const stockouts = +h.stockouts || 0;
+    const shortfalls = +h.shortfalls || 0;
+    const storeList = (h.stores || '').split(',').map(s=>s.trim()).filter(Boolean);
+    const visible = !assigned ? storeList : storeList.filter(s => assigned.has(s.toUpperCase()));
+    const storesLabel = visible.length ? visible.slice(0,3).join(', ') + (visible.length>3?` +${visible.length-3} more`:'') : '—';
+    return `<div class="p1-hist-row">
+      <div class="p1-hist-when">${when} · by ${esc(h.runBy||'—')}</div>
+      <div class="p1-hist-who">${sc} store${sc!==1?'s':''} · ${lines} lines · ${units} units</div>
+      <div class="p1-hist-who" style="font-weight:400;color:#666">${esc(storesLabel)}</div>
+      <div class="p1-hist-counts">
+        ${stockouts>0?`<span class="p1-badge red">🚫 ${stockouts} stockouts</span>`:''}
+        ${shortfalls>0?`<span class="p1-badge yel">⚠ ${shortfalls} shortfalls</span>`:''}
+        ${(stockouts===0 && shortfalls===0)?`<span class="p1-badge grn">✓ All clear</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function p2LoadHistory() {
+  try {
+    if (CFG.offline || !CFG.apiUrl) {
+      S._phase2History = S._phase2History || [];
+    } else {
+      const hist = await gasGet('getPhase2History', { username: S.user.username });
+      S._phase2History = (hist || []).sort((a,b) => (b.runAt||'').localeCompare(a.runAt||''));
+    }
+  } catch (e) {
+    console.warn('Phase 2 history load failed:', e);
+    S._phase2History = S._phase2History || [];
+  }
+  if (S.user) {
+    renderSummary(S.records || []);
+    if (S.phaseFilter === 'p2') p2RenderHistory();
+  }
+}
+
+/* ── File pickers ────────────────────────────────────────────────────────── */
+function p2DropFile(e, kind) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const files = Array.from(e.dataTransfer.files).filter(f => f.name.match(/\.xlsx?$/i));
+  if (!files.length) return;
+  p2SetFile(kind, files[0]);
+}
+function p2PickFile(input, kind) { if (input.files[0]) p2SetFile(kind, input.files[0]); input.value=''; }
+
+function p2SetFile(kind, file) {
+  const map = {
+    stock: { state:'stockFile', dz:'p2-dz-stock', pills:'p2-stock-pills', card:'p2-card-1', icon:'📋' },
+    whs:   { state:'whsFile',   dz:'p2-dz-whs',   pills:'p2-whs-pills',   card:'p2-card-2', icon:'🏭' },
+    bible: { state:'bibleFile', dz:'p2-dz-bible', pills:'p2-bible-pills', card:'p2-card-3', icon:'📕' },
+  }[kind];
+  if (!map) return;
+  P2[map.state] = file;
+  document.getElementById(map.dz).classList.add('has-files');
+  document.getElementById(map.pills).innerHTML =
+    `<div class="p1-pill"><span>${map.icon}</span>${esc(file.name)}</div>`;
+  document.getElementById(map.card).classList.add('done');
+  p2CheckReady();
+}
+
+function p2CheckReady() {
+  const ready = P2.stockFile && P2.whsFile && P2.bibleFile;
+  document.getElementById('p2-btn-generate').disabled = !ready;
+}
+
+function p2Log(msg, cls='log-info') {
+  const el = document.getElementById('p2-log');
+  el.innerHTML += `<div class="${cls}">${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+function p2SetProgress(pct) { document.getElementById('p2-bar').style.width = pct + '%'; }
+
+function p2Reset() {
+  P2.stockFile = null; P2.whsFile = null; P2.bibleFile = null; P2.reportWB = null; P2.results = null;
+  ['p2-stock-pills','p2-whs-pills','p2-bible-pills'].forEach(id => document.getElementById(id).innerHTML = '');
+  ['p2-dz-stock','p2-dz-whs','p2-dz-bible'].forEach(id => document.getElementById(id).classList.remove('has-files'));
+  ['p2-card-1','p2-card-2','p2-card-3'].forEach(id => document.getElementById(id).classList.remove('done'));
+  document.getElementById('p2-progress').classList.remove('show');
+  document.getElementById('p2-results').classList.remove('show');
+  document.getElementById('p2-log').innerHTML = '';
+  document.getElementById('p2-btn-generate').disabled = true;
+}
+
+/* ── PARSERS ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Warehouse Inventory:
+ *   Title row, 3 blank rows, header at row 5:
+ *   Category | ProductCode | Product | PurchasePrice | SalePrice | WarehouseStockLeft
+ * Returns: { barcode: qty }
+ */
+async function p2ParseWarehouse(file) {
+  const ab = await p1ReadAB(file);
+  const wb = XLSX.read(ab, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+
+  // Find header row — must contain 'productcode' or 'product code'
+  let hdrIdx = -1;
+  for (let i=0;i<rows.length;i++) {
+    const joined = rows[i].map(v => String(v).toLowerCase().replace(/\s+/g,'')).join('|');
+    if (joined.includes('productcode')) { hdrIdx = i; break; }
+  }
+  if (hdrIdx < 0) throw new Error('Hindi mahanap ang ProductCode header sa Warehouse Inventory.');
+
+  const headers = rows[hdrIdx].map(h => String(h).trim().toLowerCase());
+  const bcCol  = headers.findIndex(h => h.replace(/\s+/g,'') === 'productcode');
+  const qtyCol = headers.findIndex(h => h.replace(/\s+/g,'') === 'warehousestockleft');
+  if (bcCol < 0 || qtyCol < 0) throw new Error('Warehouse Inventory missing required columns.');
+
+  const out = {};
+  for (let i=hdrIdx+1;i<rows.length;i++) {
+    const r = rows[i];
+    const bc = String(r[bcCol] || '').trim();
+    if (!/^\d{8,}$/.test(bc)) continue;
+    const qty = parseFloat(r[qtyCol]) || 0;
+    out[bc] = (out[bc] || 0) + qty;  // sum dupes
+  }
+  return out;
+}
+
+/**
+ * Min/Max Bible:
+ *   - STORES tab: row 4 header — Store | Region | Tier | Default Lead Time | Override Lead Time | (optional Size)
+ *   - One tab per store: row 4 header — Barcode | Product Name | Brand | Category | CDF Increment | … | IA Approved Max | …
+ *
+ * Returns: {
+ *   stores: { STORE_NAME: { region, tier, leadTime, size } },
+ *   products: { STORE_NAME: { barcode: { name, brand, category, cdfIncrement, max } } }
+ * }
+ */
+async function p2ParseBible(file) {
+  const ab = await p1ReadAB(file);
+  const wb = XLSX.read(ab, {type:'array'});
+
+  // ── STORES tab ────────────────────────────────────────────────────────
+  const storesObj = {};
+  const storesWS = wb.Sheets['STORES'] || wb.Sheets['Stores'] || wb.Sheets['stores'];
+  if (storesWS) {
+    const rows = XLSX.utils.sheet_to_json(storesWS, {header:1, defval:''});
+    let hdrIdx = -1;
+    for (let i=0;i<rows.length;i++) {
+      const joined = rows[i].map(v => String(v).toLowerCase()).join('|');
+      if (joined.includes('store') && joined.includes('tier')) { hdrIdx = i; break; }
+    }
+    if (hdrIdx >= 0) {
+      const headers = rows[hdrIdx].map(h => String(h).trim().toLowerCase());
+      const idx = name => headers.findIndex(h => h.includes(name));
+      const cStore   = idx('store');
+      const cRegion  = idx('region');
+      const cTier    = idx('tier');
+      const cDefault = headers.findIndex(h => h.includes('default') && h.includes('lead'));
+      const cOverr   = headers.findIndex(h => h.includes('override') && h.includes('lead'));
+      const cSize    = idx('size');
+      for (let i=hdrIdx+1;i<rows.length;i++) {
+        const r = rows[i];
+        const name = String(r[cStore] || '').trim().toUpperCase();
+        if (!name) continue;
+        const def = parseFloat(r[cDefault]) || 0;
+        const ov  = parseFloat(r[cOverr]) || 0;
+        storesObj[name] = {
+          region:   String(r[cRegion] || '').trim(),
+          tier:     String(r[cTier] || '').trim(),
+          leadTime: ov > 0 ? ov : def,
+          size:     cSize >= 0 ? String(r[cSize] || '').trim() || 'Medium' : 'Medium',
+        };
+      }
+    }
+  }
+
+  // ── Per-store product tabs ────────────────────────────────────────────
+  const productsObj = {};
+  const skipNames = new Set(['STORES','STORE SIZE','LEGEND','README','INSTRUCTIONS']);
+  for (const sheetName of wb.SheetNames) {
+    if (skipNames.has(sheetName.toUpperCase())) continue;
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+
+    let hdrIdx = -1;
+    for (let i=0;i<rows.length;i++) {
+      const joined = rows[i].map(v => String(v).toLowerCase()).join('|');
+      if (joined.includes('barcode') && joined.includes('product name')) { hdrIdx = i; break; }
+    }
+    if (hdrIdx < 0) continue;
+
+    const headers = rows[hdrIdx].map(h => String(h).trim().toLowerCase());
+    const cBC      = headers.findIndex(h => h.includes('barcode'));
+    const cName    = headers.findIndex(h => h.includes('product name'));
+    const cBrand   = headers.findIndex(h => h === 'brand' || h.includes('brand'));
+    const cCat     = headers.findIndex(h => h.includes('category'));
+    const cCDF     = headers.findIndex(h => h.includes('cdf') && h.includes('increment'));
+    // Prefer IA Approved Max over Suggested Max
+    let cMax = headers.findIndex(h => h.includes('ia') && h.includes('max'));
+    if (cMax < 0) cMax = headers.findIndex(h => h.includes('approved') && h.includes('max'));
+    if (cMax < 0) cMax = headers.findIndex(h => h.includes('suggested') && h.includes('max'));
+    if (cMax < 0) cMax = headers.findIndex(h => h === 'max' || h.includes('max stocking'));
+
+    if (cBC < 0 || cMax < 0) continue;
+
+    const storeKey = sheetName.toUpperCase();
+    productsObj[storeKey] = {};
+    for (let i=hdrIdx+1;i<rows.length;i++) {
+      const r = rows[i];
+      const bc = String(r[cBC] || '').trim();
+      if (!/^\d{8,}$/.test(bc)) continue;
+      const max = parseFloat(r[cMax]) || 0;
+      if (max <= 0) continue;  // skip SKUs with no max set
+      const cdfRaw = parseFloat(r[cCDF]);
+      productsObj[storeKey][bc] = {
+        name:         String(r[cName]  || '').trim(),
+        brand:        cBrand >= 0 ? String(r[cBrand] || '').trim() : '',
+        category:     cCat >= 0   ? String(r[cCat]   || '').trim() : '',
+        cdfIncrement: (isFinite(cdfRaw) && cdfRaw > 0) ? cdfRaw : 1,
+        cdfDefaulted: !(isFinite(cdfRaw) && cdfRaw > 0),  // flag for output
+        max:          max,
+      };
+    }
+  }
+
+  return { stores: storesObj, products: productsObj };
+}
+
+/* ── ALGORITHM ───────────────────────────────────────────────────────────── */
+
+function p2FloorCDF(value, cdf) {
+  if (cdf <= 0 || value <= 0) return 0;
+  return Math.floor(value / cdf) * cdf;
+}
+
+/**
+ * Computes the full replenishment plan.
+ * @param stockMap    {Branch: {Barcode: qty}}   from Stock Summary
+ * @param whsMap      {Barcode: qty}             from Warehouse Inventory
+ * @param bible       {stores, products}         from Min/Max Bible
+ * @param scopeStores Set<UPPERCASE store name>  filter (IA's assigned stores)
+ * @returns Array of row objects + summary stats
+ */
+function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
+  // Determine which stores to process — intersection of Bible products and scope
+  const bibleStores = Object.keys(bible.products);
+  const stores = bibleStores.filter(s => !scopeStores || scopeStores.has(s));
+
+  // Step 1: per store × SKU compute Need + Ideal Order
+  const rows = [];
+  for (const store of stores) {
+    const storeMeta = bible.stores[store] || { size:'Medium', leadTime:7, tier:'', region:'' };
+    const sizeWt = P2_SIZE_WEIGHTS[storeMeta.size] || 1.2;
+    const storeStock = stockMap[store] || {};
+    const products   = bible.products[store];
+
+    for (const bc in products) {
+      const p = products[bc];
+      const storeInv = storeStock[bc] || 0;
+      const inTransit = 0;  // assumed 0 for Build 1
+      const effective = storeInv + inTransit;
+      const gap   = p.max - effective;
+      const need  = Math.max(0, gap);
+      const ideal = p2FloorCDF(need, p.cdfIncrement);
+
+      // Compute fill % for WARNING detection
+      const fillPct = p.max > 0 ? Math.round((effective / p.max) * 100) : 100;
+
+      // Categorize flag pre-warehouse:
+      //   OVERSTOCK = effective > max
+      //   WARNING   = ideal = 0 but fill < 20% (CDF increment too big relative to gap)
+      //   (CLEAR/SHORTFALL/STOCKOUT will be set after warehouse check)
+      let earlyFlag = '';
+      if (effective > p.max)                      earlyFlag = 'OVERSTOCK';
+      else if (ideal === 0 && fillPct < 20)       earlyFlag = 'WARNING';
+
+      // Only include rows that need stock OR are overstock/warning (overstock is informational)
+      if (ideal === 0 && earlyFlag === '') continue;
+
+      rows.push({
+        store, barcode: bc,
+        productName:  p.name,
+        brand:        p.brand,
+        category:     p.category,
+        cdfIncrement: p.cdfIncrement,
+        cdfDefaulted: p.cdfDefaulted,
+        max:          p.max,
+        storeInv,
+        inTransit,
+        effective,
+        fillPct,
+        need,
+        ideal,
+        allocated:    ideal,    // default; warehouse step may reduce
+        warehouseSufficient: true,
+        allocationNote: '',
+        flag: earlyFlag,        // may be updated
+        sizeWt,
+        storeSize: storeMeta.size,
+        storeTier: storeMeta.tier,
+      });
+    }
+  }
+
+  // Step 2: per-SKU warehouse cross-check + shortfall allocation
+  const byBarcode = {};
+  for (const r of rows) {
+    if (!byBarcode[r.barcode]) byBarcode[r.barcode] = [];
+    byBarcode[r.barcode].push(r);
+  }
+
+  for (const bc in byBarcode) {
+    const group = byBarcode[bc].filter(r => r.ideal > 0);  // only rows that want stock
+    if (!group.length) continue;
+    const whs = whsMap[bc] !== undefined ? whsMap[bc] : null;
+    const totalIdeal = group.reduce((s,r) => s + r.ideal, 0);
+
+    if (whs === null) {
+      // Warehouse data not present for this SKU — leave as full order
+      group.forEach(r => { r.flag = r.flag || 'CLEAR'; r.allocationNote = 'Warehouse data not available'; });
+    } else if (whs === 0) {
+      // STOCKOUT
+      group.forEach(r => {
+        r.allocated = 0;
+        r.warehouseSufficient = false;
+        r.allocationNote = 'STOCKOUT — no warehouse stock';
+        r.flag = 'STOCKOUT';
+      });
+    } else if (whs >= totalIdeal) {
+      group.forEach(r => { r.flag = r.flag || 'CLEAR'; r.allocationNote = 'Full order'; });
+    } else {
+      // SHORTFALL — allocate proportionally by Need × SizeWeight, floored to CDF
+      const weighted = group.map(r => r.need * r.sizeWt);
+      const totalWeight = weighted.reduce((a,b) => a+b, 0);
+      if (totalWeight === 0) {
+        group.forEach(r => {
+          r.allocated = 0;
+          r.warehouseSufficient = false;
+          r.allocationNote = 'Insufficient WH stock (weight=0)';
+          r.flag = 'STOCKOUT';
+        });
+      } else {
+        group.forEach((r, i) => {
+          const share = (weighted[i] / totalWeight) * whs;
+          r.allocated = p2FloorCDF(share, r.cdfIncrement);
+          r.warehouseSufficient = false;
+          r.allocationNote = `Partial — WH has ${whs} (need ${totalIdeal})`;
+          r.flag = 'SHORTFALL';
+        });
+      }
+    }
+  }
+
+  // Sort: store ASC, then product name ASC
+  rows.sort((a,b) => (a.store || '').localeCompare(b.store) || (a.productName || '').localeCompare(b.productName));
+
+  // Stats
+  const stockouts  = rows.filter(r => r.flag === 'STOCKOUT').length;
+  const shortfalls = rows.filter(r => r.flag === 'SHORTFALL').length;
+  const totalUnits = rows.reduce((s,r) => s + (r.allocated || 0), 0);
+  const totalLines = rows.filter(r => r.allocated > 0).length;
+  const storesTouched = [...new Set(rows.filter(r => r.allocated > 0).map(r => r.store))];
+
+  // Per-store stats
+  const perStore = {};
+  for (const r of rows) {
+    if (!perStore[r.store]) perStore[r.store] = { store:r.store, lines:0, units:0, stockouts:0, shortfalls:0 };
+    if (r.allocated > 0) { perStore[r.store].lines++; perStore[r.store].units += r.allocated; }
+    if (r.flag === 'STOCKOUT')  perStore[r.store].stockouts++;
+    if (r.flag === 'SHORTFALL') perStore[r.store].shortfalls++;
+  }
+
+  return {
+    rows,
+    totalUnits, totalLines, stockouts, shortfalls,
+    storesTouched,
+    perStore: Object.values(perStore).sort((a,b) => a.store.localeCompare(b.store)),
+  };
+}
+
+/* ── EXCEL BUILDER ───────────────────────────────────────────────────────── */
+
+function p2BuildExcel(plan) {
+  const wb = XLSX.utils.book_new();
+  const C  = P1_COLORS;
+
+  // ── SHEET 1: Replenishment Order ──────────────────────────────────────
+  // Required columns first (CDF generator contract): Store / Location, Brand,
+  // Category, Product Name, Barcode, Allocated Order. Extras follow.
+  const aoa = [];
+  aoa.push(['ACACIA HBC — WAREHOUSE REPLENISHMENT ORDER', ...Array(15).fill('')]);
+  aoa.push([`Generated: ${p1FormatDate(new Date().toISOString())}   |   ${plan.storesTouched.length} stores   |   ${plan.totalLines} lines   |   ${plan.totalUnits} units   |   In-Transit assumed 0`, ...Array(15).fill('')]);
+  aoa.push([]);
+
+  const headers = [
+    '#','Store / Location','Brand','Category','Product Name','Barcode','Allocated Order',
+    'Max Stocking','CDF Increment','Store Inventory','In Transit','Effective Stock','Stock Fill %',
+    'Need (Gap)','Ideal Order','Allocation Note',
+  ];
+  aoa.push(headers);
+
+  // Only include rows with allocated > 0, OR rows flagged as STOCKOUT (so IA sees what couldn't ship)
+  const reportRows = plan.rows.filter(r => r.allocated > 0 || r.flag === 'STOCKOUT' || r.flag === 'OVERSTOCK' || r.flag === 'WARNING');
+  reportRows.forEach((r, i) => {
+    aoa.push([
+      i + 1,
+      r.store,
+      r.brand || '',
+      r.category || '',
+      r.productName,
+      r.barcode,
+      r.allocated,
+      r.max,
+      r.cdfIncrement + (r.cdfDefaulted ? ' (default)' : ''),
+      r.storeInv,
+      r.inTransit,
+      r.effective,
+      `${r.fillPct}%`,
+      r.need,
+      r.ideal,
+      r.allocationNote || (r.flag || ''),
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [
+    {s:{r:0,c:0}, e:{r:0,c:headers.length-1}},
+    {s:{r:1,c:0}, e:{r:1,c:headers.length-1}},
+  ];
+  ws['!cols'] = [
+    {wch:5},{wch:16},{wch:12},{wch:16},{wch:42},{wch:16},{wch:13},
+    {wch:11},{wch:14},{wch:12},{wch:10},{wch:13},{wch:11},
+    {wch:10},{wch:11},{wch:30},
+  ];
+  ws['!freeze'] = { xSplit:0, ySplit:4 };
+
+  // Style — title, sub, header
+  for (let c=0;c<headers.length;c++) {
+    let ref = XLSX.utils.encode_cell({r:0,c});
+    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+    ws[ref].s = p1CellStyle('1A2B4A', true, 'FFFFFF', 13, 'center');
+    ref = XLSX.utils.encode_cell({r:1,c});
+    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+    ws[ref].s = p1CellStyle('2E6DB4', false, 'FFFFFF', 9, 'center');
+    ref = XLSX.utils.encode_cell({r:3,c});
+    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+    ws[ref].s = p1CellStyle('2E6DB4', true, 'FFFFFF', 9, 'center');
+  }
+
+  // Data row styling — color by flag
+  reportRows.forEach((r, i) => {
+    const rIdx = 4 + i;
+    const bg =
+      r.flag === 'STOCKOUT'  ? 'FFCCCC' :
+      r.flag === 'SHORTFALL' ? 'FFF2CC' :
+      r.flag === 'OVERSTOCK' ? 'E1E8F5' :
+      r.flag === 'WARNING'   ? 'FFE8CC' :
+      (i % 2 === 0 ? 'F4F6F9' : 'FFFFFF');
+    for (let c=0;c<headers.length;c++) {
+      const ref = XLSX.utils.encode_cell({r:rIdx, c});
+      if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+      const halign = (c >= 6 && c <= 14) ? 'center' : (c === 4 ? 'left' : 'left');
+      ws[ref].s = p1CellStyle(bg, c === 6, '1A1A2E', 9, halign);
+    }
+    // Highlight allocated order column
+    const allocRef = XLSX.utils.encode_cell({r:rIdx, c:6});
+    if (r.allocated > 0) {
+      ws[allocRef].s = p1CellStyle(bg, true, '1E7E34', 10, 'center');
+    } else {
+      ws[allocRef].s = p1CellStyle(bg, true, 'C0392B', 10, 'center');
+    }
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Replenishment Order');
+
+  // ── SHEET 2: Summary by Store ─────────────────────────────────────────
+  const sumAoa = [];
+  sumAoa.push(['SUMMARY BY STORE', '', '', '', '']);
+  sumAoa.push([]);
+  sumAoa.push(['Store', 'Lines', 'Total Units', 'Stockouts', 'Shortfalls']);
+  plan.perStore.forEach(s => sumAoa.push([s.store, s.lines, s.units, s.stockouts, s.shortfalls]));
+  const sumWS = XLSX.utils.aoa_to_sheet(sumAoa);
+  sumWS['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:4}}];
+  sumWS['!cols'] = [{wch:24},{wch:10},{wch:13},{wch:12},{wch:12}];
+  for (let c=0;c<5;c++) {
+    let ref = XLSX.utils.encode_cell({r:0,c});
+    if (!sumWS[ref]) sumWS[ref] = {v:'', t:'s'};
+    sumWS[ref].s = p1CellStyle('1A2B4A', true, 'FFFFFF', 13, 'center');
+    ref = XLSX.utils.encode_cell({r:2,c});
+    if (!sumWS[ref]) sumWS[ref] = {v:'', t:'s'};
+    sumWS[ref].s = p1CellStyle('2E6DB4', true, 'FFFFFF', 9, 'center');
+  }
+  plan.perStore.forEach((s, i) => {
+    const rIdx = 3 + i;
+    const bg = i % 2 === 0 ? 'F4F6F9' : 'FFFFFF';
+    for (let c=0;c<5;c++) {
+      const ref = XLSX.utils.encode_cell({r:rIdx, c});
+      if (!sumWS[ref]) sumWS[ref] = {v:'', t:'s'};
+      ws[ref] = ws[ref] || {v:'', t:'s'};
+      sumWS[ref].s = p1CellStyle(bg, c===0, '1A1A2E', 9, c===0 ? 'left' : 'center');
+    }
+  });
+  XLSX.utils.book_append_sheet(wb, sumWS, 'Summary by Store');
+
+  // ── SHEET 3: Summary by Product ───────────────────────────────────────
+  const byBC = {};
+  plan.rows.forEach(r => {
+    if (r.allocated <= 0 && r.flag !== 'STOCKOUT') return;
+    if (!byBC[r.barcode]) byBC[r.barcode] = { barcode: r.barcode, name: r.productName, brand: r.brand, category: r.category, stores: 0, units: 0, stockouts: 0 };
+    byBC[r.barcode].stores++;
+    byBC[r.barcode].units += r.allocated;
+    if (r.flag === 'STOCKOUT') byBC[r.barcode].stockouts++;
+  });
+  const prodSummary = Object.values(byBC).sort((a,b) => b.units - a.units);
+
+  const prodAoa = [];
+  prodAoa.push(['SUMMARY BY PRODUCT', '', '', '', '', '', '']);
+  prodAoa.push([]);
+  prodAoa.push(['Barcode','Product Name','Brand','Category','Stores','Total Units','Stockouts']);
+  prodSummary.forEach(p => prodAoa.push([p.barcode, p.name, p.brand, p.category, p.stores, p.units, p.stockouts]));
+  const prodWS = XLSX.utils.aoa_to_sheet(prodAoa);
+  prodWS['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:6}}];
+  prodWS['!cols'] = [{wch:16},{wch:42},{wch:12},{wch:16},{wch:9},{wch:13},{wch:11}];
+  for (let c=0;c<7;c++) {
+    let ref = XLSX.utils.encode_cell({r:0,c});
+    if (!prodWS[ref]) prodWS[ref] = {v:'', t:'s'};
+    prodWS[ref].s = p1CellStyle('1A2B4A', true, 'FFFFFF', 13, 'center');
+    ref = XLSX.utils.encode_cell({r:2,c});
+    if (!prodWS[ref]) prodWS[ref] = {v:'', t:'s'};
+    prodWS[ref].s = p1CellStyle('2E6DB4', true, 'FFFFFF', 9, 'center');
+  }
+  prodSummary.forEach((p, i) => {
+    const rIdx = 3 + i;
+    const bg = p.stockouts > 0 ? 'FFCCCC' : (i % 2 === 0 ? 'F4F6F9' : 'FFFFFF');
+    for (let c=0;c<7;c++) {
+      const ref = XLSX.utils.encode_cell({r:rIdx, c});
+      if (!prodWS[ref]) prodWS[ref] = {v:'', t:'s'};
+      prodWS[ref].s = p1CellStyle(bg, false, '1A1A2E', 9, c === 1 ? 'left' : 'center');
+    }
+  });
+  XLSX.utils.book_append_sheet(wb, prodWS, 'Summary by Product');
+
+  return wb;
+}
+
+/* ── STOCK SUMMARY → { Branch: { Barcode: qty } } ───────────────────────── */
+function p2StockToMap(stockData) {
+  const map = {};
+  for (const r of stockData) {
+    const br = r['Branch'];
+    if (!br) continue;
+    if (!map[br]) map[br] = {};
+    map[br][r['Product Code']] = r['Stock On Hand'];
+  }
+  return map;
+}
+
+/* ── Main orchestrator ───────────────────────────────────────────────────── */
+async function p2Generate() {
+  if (!p2CanEdit()) { toast('Only Inventory Associates can generate orders.', 'err'); return; }
+  if (!P2.stockFile || !P2.whsFile || !P2.bibleFile) return;
+
+  document.getElementById('p2-btn-generate').disabled = true;
+  document.getElementById('p2-progress').classList.add('show');
+  document.getElementById('p2-results').classList.remove('show');
+  document.getElementById('p2-log').innerHTML = '';
+  p2SetProgress(5);
+
+  try {
+    p2Log('📋 Loading Stock Summary…', 'log-info');
+    const stockData = await p1ParseStockSummary(P2.stockFile);
+    const stockMap  = p2StockToMap(stockData);
+    p2Log(`✓ Loaded: ${stockData.length.toLocaleString()} stock rows across ${Object.keys(stockMap).length} branches`, 'log-ok');
+    p2SetProgress(25);
+
+    p2Log('🏭 Loading Warehouse Inventory…', 'log-info');
+    const whsMap = await p2ParseWarehouse(P2.whsFile);
+    p2Log(`✓ Loaded: ${Object.keys(whsMap).length} warehouse SKUs`, 'log-ok');
+    p2SetProgress(45);
+
+    p2Log('📕 Loading Min/Max Bible…', 'log-info');
+    const bible = await p2ParseBible(P2.bibleFile);
+    const storeCnt = Object.keys(bible.products).length;
+    const skuCnt = Object.values(bible.products).reduce((s,o) => s + Object.keys(o).length, 0);
+    p2Log(`✓ Loaded: ${storeCnt} stores · ${skuCnt} SKU/store pairs`, 'log-ok');
+    p2SetProgress(60);
+
+    // Scope: filter to IA's assigned stores (EXEC = no filter)
+    const scopeStores = p1AssignedSet();   // Set or null
+    if (scopeStores) {
+      p2Log(`🔒 Scope: ${scopeStores.size} assigned store${scopeStores.size!==1?'s':''}`, 'log-info');
+    } else {
+      p2Log(`🌐 Scope: all stores (executive view)`, 'log-info');
+    }
+
+    p2Log('🧮 Computing replenishment plan…', 'log-info');
+    const plan = p2ComputePlan(stockMap, whsMap, bible, scopeStores);
+    p2Log(`✓ Plan: ${plan.totalLines} lines · ${plan.totalUnits} units · ${plan.stockouts} stockouts · ${plan.shortfalls} shortfalls`, 'log-ok');
+    p2SetProgress(80);
+
+    P2.results = plan;
+    P2.reportWB = p2BuildExcel(plan);
+    p2SetProgress(92);
+
+    // Log run to Apps Script
+    p2Log('📝 Logging run to Hub…', 'log-info');
+    try {
+      const payload = {
+        runAt:       new Date().toISOString(),
+        runBy:       S.user?.username || '',
+        runByName:   S.user?.name || '',
+        storeCount:  plan.storesTouched.length,
+        skuCount:    plan.totalLines,
+        totalUnits:  plan.totalUnits,
+        stockouts:   plan.stockouts,
+        shortfalls:  plan.shortfalls,
+        stores:      plan.storesTouched.join(','),
+        notes:       'In-Transit=0 (Build 1)',
+      };
+      if (!CFG.offline && CFG.apiUrl) {
+        await gasPost('logPhase2Run', payload);
+        await p2LoadHistory();
+        p2Log('✓ Logged to Phase2_History', 'log-ok');
+      } else {
+        const localEntry = { id: 'local-'+Date.now(), ...payload };
+        S._phase2History = [localEntry, ...(S._phase2History||[])];
+        renderSummary(S.records || []);
+        p2RenderHistory();
+        p2Log('⚠ Offline — saved locally only', 'log-warn');
+      }
+    } catch (logErr) {
+      p2Log(`⚠ Logging failed: ${logErr.message} (report still downloadable)`, 'log-warn');
+    }
+
+    p2SetProgress(100);
+    p2Log('✅ Done!', 'log-ok');
+
+    // Results UI
+    document.getElementById('p2-res-units').textContent     = plan.totalUnits.toLocaleString();
+    document.getElementById('p2-res-skus').textContent      = plan.totalLines.toLocaleString();
+    document.getElementById('p2-res-stockouts').textContent = plan.stockouts.toLocaleString();
+    document.getElementById('p2-store-list').innerHTML = plan.perStore.filter(s => s.lines > 0 || s.stockouts > 0).map(s =>
+      `<div class="p1-store-row">
+        <span class="p1-store-name">🏪 ${esc(s.store)}</span>
+        <span style="font-size:11px;color:#666">${s.lines} lines · ${s.units} units</span>
+        ${s.stockouts>0?`<span class="p1-badge red">🚫 ${s.stockouts}</span>`:''}
+        ${s.shortfalls>0?`<span class="p1-badge yel">⚠ ${s.shortfalls}</span>`:''}
+      </div>`
+    ).join('');
+    document.getElementById('p2-results').classList.add('show');
+
+  } catch (e) {
+    p2Log(`❌ Error: ${e.message}`, 'log-err');
+    document.getElementById('p2-btn-generate').disabled = false;
+  }
+}
+
+function p2Download() {
+  if (!P2.reportWB) return;
+  const d = new Date();
+  const ts = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
+  XLSX.writeFile(P2.reportWB, `Replenishment_Order_${ts}.xlsx`);
+}
+
 
 /* ── Keyboard ── */
 document.addEventListener('keydown', e=>{
