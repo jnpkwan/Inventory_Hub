@@ -2606,42 +2606,85 @@ async function p1ParseICFile(file) {
   const storeName = p1InferStoreName(file.name);
   const ab = await p1ReadAB(file);
   const wb = XLSX.read(ab, {type:'array'});
-  const ws = wb.Sheets[wb.SheetNames[0]];
+
+  // Sheet 1 — Inventory Count (always present)
+  const physical = p1ParseQtySheet(wb.Sheets[wb.SheetNames[0]], 'qty');
+
+  // Sheet 2 — Damages Report (optional; empty {} if missing or has no rows)
+  const damages = (wb.SheetNames.length > 1)
+    ? p1ParseQtySheet(wb.Sheets[wb.SheetNames[1]], 'damaged')
+    : {};
+
+  return { storeName, physical, damages };
+}
+
+/**
+ * Generic parser for IC-style sheets (Inventory Count + Damages Report).
+ * Both have identical structure: metadata rows 1–5, header row 6, data row 7+.
+ * Returns { barcode: number } map.
+ *
+ * @param ws         — XLSX worksheet object
+ * @param qtyHint    — 'qty' or 'damaged' to bias which numeric column to pick
+ */
+function p1ParseQtySheet(ws, qtyHint='qty') {
+  if (!ws) return {};
   const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+  if (!rows.length) return {};
+
+  // Find header row — must contain 'barcode' or 'sku'
   let hdrIdx = -1;
   for (let i=0;i<rows.length;i++) {
-    if (rows[i].some(v => String(v).toLowerCase().includes('barcode') || String(v).toLowerCase() === 'sku')) {
-      hdrIdx = i; break;
-    }
+    if (rows[i].some(v =>
+      String(v).toLowerCase().includes('barcode') ||
+      String(v).toLowerCase() === 'sku'
+    )) { hdrIdx = i; break; }
   }
   if (hdrIdx < 0) hdrIdx = Math.min(6, rows.length-1);
+
   const headers = rows[hdrIdx].map(h => String(h).trim().toLowerCase());
+
+  // Barcode column — prefer 'barcode' over 'sku'
   const barcodeCol = (() => {
     let idx = headers.findIndex(h => h.includes('barcode'));
     if (idx < 0) idx = headers.findIndex(h => h === 'sku');
     if (idx < 0) idx = headers.findIndex(h => h.includes('sku'));
     return idx >= 0 ? idx : 0;
   })();
+
+  // Qty column — for damages we specifically want "damaged"; for inventory "qty/count/quantity"
   const qtyCol = (() => {
-    let idx = headers.findIndex(h => h.includes('qty') || h.includes('count') || h.includes('quantity'));
+    let idx;
+    if (qtyHint === 'damaged') {
+      idx = headers.findIndex(h => h.includes('damaged') || h.includes('damage'));
+      // Fall back to generic qty if no damaged column found
+      if (idx < 0) idx = headers.findIndex(h => h.includes('qty') || h.includes('count') || h.includes('quantity'));
+    } else {
+      idx = headers.findIndex(h => h.includes('qty') || h.includes('count') || h.includes('quantity'));
+    }
     return idx >= 0 ? idx : headers.length - 1;
   })();
-  const physical = {};
+
+  const out = {};
   for (let i=hdrIdx+1;i<rows.length;i++) {
     const r = rows[i];
     const bc = String(r[barcodeCol] || '').trim();
+    // Valid barcodes are long numeric strings (≥8 digits) — skips totals/footers
     if (!/^\d{8,}$/.test(bc)) continue;
     const qty = parseFloat(r[qtyCol]) || 0;
-    physical[bc] = qty;
+    if (qty === 0 && qtyHint === 'damaged') continue;  // skip zero-damage rows
+    // If the same barcode appears multiple times (damages: multiple entries per SKU),
+    // sum them — gives total damaged qty per barcode
+    out[bc] = (out[bc] || 0) + qty;
   }
-  return { storeName, physical };
+  return out;
 }
 
-function p1Reconcile(storeName, stockData, physical) {
+function p1Reconcile(storeName, stockData, physical, damages={}) {
   const sysRows = stockData.filter(r => r['Branch'] === storeName);
   const allBarcodes = new Set([
     ...sysRows.map(r => r['Product Code']),
-    ...Object.keys(physical)
+    ...Object.keys(physical),
+    ...Object.keys(damages),  // include damage-only SKUs (rare but possible)
   ]);
   const results = [];
   allBarcodes.forEach(bc => {
@@ -2649,6 +2692,7 @@ function p1Reconcile(storeName, stockData, physical) {
     const sysQty = sysRow ? sysRow['Stock On Hand'] : 0;
     const counted = physical[bc] !== undefined;
     const physQty = counted ? physical[bc] : null;
+    const damagedQty = damages[bc] || 0;
     const price = sysRow ? sysRow['Sale Price'] : 0;
     const name = sysRow ? sysRow['Product Name'] : 'Unknown Product';
     const variance = counted ? (physQty - sysQty) : null;
@@ -2664,7 +2708,7 @@ function p1Reconcile(storeName, stockData, physical) {
     else if (variance > 0) { adjType='Adj In';  adjQty=variance;  suggestedAction=`Adj In ${variance} units (system undercounts)`; }
     else if (variance < 0) { adjType='Adj Out'; adjQty=-variance; suggestedAction=`Adj Out ${-variance} units (system overcounts)`; }
     else { adjType='Match'; adjQty=0; suggestedAction='No adjustment needed'; }
-    results.push({ bc, name, sysQty, physQty, counted, variance, absVariance, valueGap, flag, suggestedAction, adjType, adjQty, price });
+    results.push({ bc, name, sysQty, physQty, counted, damagedQty, variance, absVariance, valueGap, flag, suggestedAction, adjType, adjQty, price });
   });
   const order = {RED:0, YELLOW:1, GREEN:2};
   results.sort((a,b) => order[a.flag]-order[b.flag] || a.name.localeCompare(b.name));
@@ -2763,39 +2807,46 @@ function p1BuildExcel(allResults) {
   XLSX.utils.book_append_sheet(wb, sumWS, 'SUMMARY');
 
   // ── PER-STORE SHEETS ───────────────────────────────────────────────────
+  // 12 columns: Damaged Qty added at index 5 (between Physical Qty and Variance).
+  // IA action zone is now columns 8–11 (was 7–10).
   const COL_HEADERS = [
     'Flag','Product Code','Product Name',
-    'System Qty','Physical Qty','Variance','Suggested Action',
+    'System Qty','Physical Qty','Damaged Qty','Variance','Suggested Action',
     'Confirmed Adj Qty','Reason Code','IA Notes','Status'
   ];
-  const COL_WIDTHS = [7,20,40,12,13,10,34,18,28,34,18];
+  const COL_WIDTHS = [7, 20, 40, 12, 13, 12, 10, 34, 18, 28, 34, 18];
+  const NUM_COLS   = 12;       // total columns
+  const IA_ZONE    = 8;        // first column of IA action zone
   const REASON_NOTE = 'Reason Code: Missing Receipt/Delivery Not Entered | Unrecorded Sale | Damage/Loss Not Recorded | Transfer Error | Data Entry Error | Return Not Recorded | Count Error | Other';
 
   allResults.forEach(({storeName, rows}) => {
     const sheetRows = [];
     const merges = [];
 
-    // Title
-    sheetRows.push([`${storeName} — Inventory Reconciliation`, ...Array(11).fill('')]);
-    merges.push({s:{r:0,c:0}, e:{r:0,c:11}});
+    // Title — spans all 12 columns
+    sheetRows.push([`${storeName} — Inventory Reconciliation`, ...Array(NUM_COLS-1).fill('')]);
+    merges.push({s:{r:0,c:0}, e:{r:0,c:NUM_COLS-1}});
 
     // Counts row
-    const red    = rows.filter(r=>r.flag==='RED').length;
-    const yellow = rows.filter(r=>r.flag==='YELLOW').length;
-    const green  = rows.filter(r=>r.flag==='GREEN').length;
-    sheetRows.push([`🔴 ${red} Red  |  🟡 ${yellow} Yellow  |  🟢 ${green} Green  |  Total SKUs: ${rows.length}`, ...Array(10).fill('')]);
-    merges.push({s:{r:1,c:0}, e:{r:1,c:11}});
+    const red       = rows.filter(r=>r.flag==='RED').length;
+    const yellow    = rows.filter(r=>r.flag==='YELLOW').length;
+    const green     = rows.filter(r=>r.flag==='GREEN').length;
+    const dmgSKUs   = rows.filter(r=>r.damagedQty > 0).length;
+    const dmgUnits  = rows.reduce((s,r)=>s+(r.damagedQty||0), 0);
+    const dmgLabel  = dmgUnits > 0 ? `  |  ⚠ ${dmgUnits} damaged units across ${dmgSKUs} SKUs` : '';
+    sheetRows.push([`🔴 ${red} Red  |  🟡 ${yellow} Yellow  |  🟢 ${green} Green  |  Total SKUs: ${rows.length}${dmgLabel}`, ...Array(NUM_COLS-2).fill('')]);
+    merges.push({s:{r:1,c:0}, e:{r:1,c:NUM_COLS-1}});
 
     // Instructions
-    sheetRows.push(['INSTRUCTIONS: I-investigate lahat ng RED at YELLOW. Punan ang Confirmed Adj Qty (pwedeng baguhin), Reason Code, IA Notes. Pagkatapos i-enter sa Acacia, palitan ang Status ng "Entered in Acacia".', ...Array(11).fill('')]);
-    merges.push({s:{r:2,c:0}, e:{r:2,c:11}});
+    sheetRows.push(['INSTRUCTIONS: I-investigate lahat ng RED at YELLOW. Tingnan ang Damaged Qty para sa context — kung ang variance ay dahil sa damages, ilagay sa Reason Code. Punan ang Confirmed Adj Qty (pwedeng baguhin), Reason Code, IA Notes. Pagkatapos i-enter sa Acacia, palitan ang Status ng "Entered in Acacia".', ...Array(NUM_COLS-1).fill('')]);
+    merges.push({s:{r:2,c:0}, e:{r:2,c:NUM_COLS-1}});
 
     sheetRows.push([]);  // blank
 
     // Column headers
     sheetRows.push(COL_HEADERS);
 
-    // Data
+    // Data rows
     rows.forEach(row => {
       const flagEmoji = row.flag==='RED' ? '🔴' : row.flag==='YELLOW' ? '🟡' : '🟢';
       sheetRows.push([
@@ -2804,6 +2855,7 @@ function p1BuildExcel(allResults) {
         row.name,
         row.sysQty,
         row.counted ? row.physQty : 'Skip Batch',
+        row.damagedQty > 0 ? row.damagedQty : '',     // ← NEW: Damaged Qty
         row.counted ? row.variance : 'Skip Batch',
         row.suggestedAction,
         (row.flag !== 'GREEN' && row.counted) ? row.adjQty : 0,
@@ -2815,8 +2867,8 @@ function p1BuildExcel(allResults) {
 
     // Reason note at bottom
     sheetRows.push([]);
-    sheetRows.push([REASON_NOTE, ...Array(11).fill('')]);
-    merges.push({s:{r:sheetRows.length-1, c:0}, e:{r:sheetRows.length-1, c:10}});
+    sheetRows.push([REASON_NOTE, ...Array(NUM_COLS-1).fill('')]);
+    merges.push({s:{r:sheetRows.length-1, c:0}, e:{r:sheetRows.length-1, c:NUM_COLS-1}});
 
     const ws = XLSX.utils.aoa_to_sheet(sheetRows);
     ws['!merges'] = merges;
@@ -2826,50 +2878,55 @@ function p1BuildExcel(allResults) {
     const dataStart = 5;  // row index where data begins
 
     // Title
-    for (let c=0;c<12;c++) {
+    for (let c=0;c<NUM_COLS;c++) {
       const ref = XLSX.utils.encode_cell({r:0,c});
       if (!ws[ref]) ws[ref] = {v:'', t:'s'};
       ws[ref].s = p1CellStyle(C.HEADER_BG, true, 'FFFFFF', 12, 'center');
     }
     // Counts row
-    for (let c=0;c<12;c++) {
+    for (let c=0;c<NUM_COLS;c++) {
       const ref = XLSX.utils.encode_cell({r:1,c});
       if (!ws[ref]) ws[ref] = {v:'', t:'s'};
       ws[ref].s = p1CellStyle(C.LIGHT, false, C.GREY_TXT, 9, 'left');
     }
     // Instructions
-    for (let c=0;c<12;c++) {
+    for (let c=0;c<NUM_COLS;c++) {
       const ref = XLSX.utils.encode_cell({r:2,c});
       if (!ws[ref]) ws[ref] = {v:'', t:'s'};
       ws[ref].s = p1CellStyle('FFF2CC', true, '7A3C00', 9, 'left');
     }
     // Column headers (row 4)
-    for (let c=0;c<12;c++) {
+    for (let c=0;c<NUM_COLS;c++) {
       const ref = XLSX.utils.encode_cell({r:4,c});
       if (!ws[ref]) ws[ref] = {v:'', t:'s'};
-      // Columns 8–10 are the IA-action zone — slightly darker header
-      ws[ref].s = p1CellStyle(c>=8 ? '2E4057' : C.HEADER_BG, true, 'FFFFFF', 9, 'center');
+      // IA action zone (cols 8–11) — slightly darker header
+      ws[ref].s = p1CellStyle(c >= IA_ZONE ? '2E4057' : C.HEADER_BG, true, 'FFFFFF', 9, 'center');
     }
-    // Data rows — color by flag, with lighter tint for IA action zone (cols 7–10)
+    // Data rows — color by flag, with lighter tint for IA action zone (cols 8+)
     rows.forEach((row, i) => {
       const rIdx = dataStart + i;
       const bg   = row.flag==='RED' ? C.RED_BG : row.flag==='YELLOW' ? C.YELLOW_BG : C.WHITE;
       const iaBg = row.flag==='RED' ? 'FFE8E8' : row.flag==='YELLOW' ? 'FFFAED' : 'F5FFF5';
-      for (let c=0;c<11;c++) {
+      for (let c=0;c<NUM_COLS;c++) {
         const ref = XLSX.utils.encode_cell({r:rIdx, c});
         if (!ws[ref]) ws[ref] = {v:'', t:'s'};
-        const useBg = c >= 7 ? iaBg : bg;
+        const useBg = c >= IA_ZONE ? iaBg : bg;
         const bold  = (row.flag === 'RED' && c <= 2);
         ws[ref].s = p1CellStyle(useBg, bold, '1A1A2E', 9, c===2 ? 'left' : 'center');
       }
-      // Negative system qty highlight
+      // Negative system qty highlight (col 3)
       if (row.sysQty < 0) {
         const ref = XLSX.utils.encode_cell({r:rIdx, c:3});
         ws[ref].s = p1CellStyle(bg, true, C.RED_TXT, 9, 'center');
       }
-      // Variance color (positive = green, negative = red)
-      if (row.variance !== 0 && row.variance !== null) {
+      // Damaged Qty (col 5) — amber accent so the IA notices it
+      if (row.damagedQty > 0) {
         const ref = XLSX.utils.encode_cell({r:rIdx, c:5});
+        ws[ref].s = p1CellStyle(bg, true, '7A3C00', 9, 'center');
+      }
+      // Variance color (col 6 now — was 5)
+      if (row.variance !== 0 && row.variance !== null) {
+        const ref = XLSX.utils.encode_cell({r:rIdx, c:6});
         ws[ref].s = p1CellStyle(bg, true, row.variance < 0 ? C.RED_TXT : C.GREEN_TXT, 9, 'center');
       }
     });
@@ -2905,8 +2962,8 @@ async function p1Generate() {
       p1Log(`🏪 Processing: ${f.name}…`, 'log-info');
       p1SetProgress(20 + Math.round((i/P1.icFiles.length)*60));
       try {
-        const {storeName, physical} = await p1ParseICFile(f);
-        const rows = p1Reconcile(storeName, stockData, physical);
+        const {storeName, physical, damages} = await p1ParseICFile(f);
+        const rows = p1Reconcile(storeName, stockData, physical, damages);
         const red    = rows.filter(r => r.flag === 'RED').length;
         const yellow = rows.filter(r => r.flag === 'YELLOW').length;
         const green  = rows.filter(r => r.flag === 'GREEN').length;
