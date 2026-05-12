@@ -763,8 +763,9 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 
 <div id="toasts"></div>
 
-<!-- SheetJS — used by Phase 1 reconciliation workspace -->
-<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<!-- xlsx-js-style — SheetJS fork with cell style support (free, MIT) -->
+<!-- Used by Phase 1 reconciliation workspace to write colored .xlsx reports -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
 <script>
 /* ══════════════════ CONFIG ══════════════════ */
@@ -2670,59 +2671,211 @@ function p1Reconcile(storeName, stockData, physical) {
   return results;
 }
 
-/* ── Excel report builder ────────────────────────────────────────────────── */
+/* ── Excel report builder ──────────────────────────────────────────────────
+   Uses xlsx-js-style (SheetJS fork) which supports cell styles.
+   Lifted from reconciliation_tool.html — preserves the rich Summary sheet
+   with legend + per-store sheets with row-level flag colors. */
 function p1CellStyle(bg, bold=false, color='1A1A2E', sz=9, halign='left') {
   return {
-    fill: { fgColor: { rgb: bg } },
-    font: { name: 'Calibri', sz, bold, color: { rgb: color } },
-    alignment: { horizontal: halign, vertical: 'center', wrapText: true },
+    font:  { name:'Arial', bold, color:{rgb:color}, sz },
+    fill:  { fgColor:{rgb:bg}, patternType:'solid' },
+    alignment: { horizontal:halign, vertical:'center', wrapText:true },
     border: {
-      top:    { style: 'thin', color: { rgb: 'CCCCCC' } },
-      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      left:   { style: 'thin', color: { rgb: 'CCCCCC' } },
-      right:  { style: 'thin', color: { rgb: 'CCCCCC' } },
-    },
+      left:   {style:'thin', color:{rgb:'CCCCCC'}},
+      right:  {style:'thin', color:{rgb:'CCCCCC'}},
+      top:    {style:'thin', color:{rgb:'CCCCCC'}},
+      bottom: {style:'thin', color:{rgb:'CCCCCC'}},
+    }
   };
 }
 
 function p1BuildExcel(allResults) {
   const wb = XLSX.utils.book_new();
-  const C = P1_COLORS;
+  const C  = P1_COLORS;
 
-  // Summary sheet
-  const summaryData = [];
-  summaryData.push(['ACACIA HBC — RECONCILIATION REPORT']);
-  summaryData.push([`Generated: ${p1FormatDate(new Date().toISOString())}`]);
-  summaryData.push([`Run by: ${S.user?.name || S.user?.username || '—'}`]);
-  summaryData.push([]);
-  summaryData.push(['Store', 'Total SKUs', 'Red Flags', 'Yellow Flags', 'Green', '% Issues']);
+  // ── SUMMARY SHEET ──────────────────────────────────────────────────────
+  const sumRows = [];
+  sumRows.push(['ACACIA HBC — INVENTORY RECONCILIATION REPORT','','','','','']);
+  sumRows.push([`Date: ${new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'})}    |    Stores reconciled: ${allResults.length}    |    Run by: ${S.user?.name || S.user?.username || '—'}`,'','','','','']);
+  sumRows.push([]);
+  // Legend
+  sumRows.push(['LEGEND','','','','','']);
+  sumRows.push(['🔴 RED','System stock is NEGATIVE. Ibig sabihin, nabenta ang item pero hindi pa na-enter sa Acacia. KAILANGAN i-investigate.','','','','']);
+  sumRows.push([`🟡 YELLOW`,`Variance > ${P1_YELLOW_UNIT} units O > ₱${P1_YELLOW_VALUE.toLocaleString()} ang halaga. Dapat i-investigate.`,'','','','']);
+  sumRows.push(['🟢 GREEN','System at physical count ay magkatugma. Walang action needed.','','','','']);
+  sumRows.push([]);
+  // Table header
+  sumRows.push(['Store','Total SKUs','🔴 Red','🟡 Yellow','🟢 Green','Total Variance (units)']);
+
+  const sumData = {};
   allResults.forEach(({storeName, rows}) => {
-    const r = rows.filter(x => x.flag === 'RED').length;
-    const y = rows.filter(x => x.flag === 'YELLOW').length;
-    const g = rows.filter(x => x.flag === 'GREEN').length;
-    const pct = rows.length ? Math.round(((r+y)/rows.length)*100) : 0;
-    summaryData.push([storeName, rows.length, r, y, g, pct + '%']);
+    const red    = rows.filter(r=>r.flag==='RED').length;
+    const yellow = rows.filter(r=>r.flag==='YELLOW').length;
+    const green  = rows.filter(r=>r.flag==='GREEN').length;
+    const totVar = rows.reduce((s,r)=>s+r.absVariance,0);
+    sumRows.push([storeName, rows.length, red, yellow, green, Math.round(totVar)]);
+    sumData[storeName] = {red,yellow,green};
   });
-  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-  wsSummary['!cols'] = [{wch:30},{wch:12},{wch:12},{wch:14},{wch:10},{wch:10}];
-  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
-  // One sheet per store
+  const sumWS = XLSX.utils.aoa_to_sheet(sumRows);
+
+  // Merges for title / legend rows
+  sumWS['!merges'] = [
+    {s:{r:0,c:0},e:{r:0,c:5}},
+    {s:{r:1,c:0},e:{r:1,c:5}},
+    {s:{r:3,c:0},e:{r:3,c:5}},
+    {s:{r:4,c:1},e:{r:4,c:5}},
+    {s:{r:5,c:1},e:{r:5,c:5}},
+    {s:{r:6,c:1},e:{r:6,c:5}},
+  ];
+
+  sumWS['!cols'] = [24,14,10,12,10,22].map(w=>({wch:w}));
+
+  // Style helper
+  const SS = (r,c,bg,bold=false,color='1A1A2E',sz=9,ha='left') => {
+    const ref = XLSX.utils.encode_cell({r,c});
+    if (!sumWS[ref]) sumWS[ref] = {v:'', t:'s'};
+    sumWS[ref].s = p1CellStyle(bg,bold,color,sz,ha);
+  };
+
+  // Title + meta
+  for (let c=0;c<6;c++) SS(0,c, C.HEADER_BG, true, 'FFFFFF', 13, 'center');
+  for (let c=0;c<6;c++) SS(1,c, C.LIGHT, false, C.GREY_TXT, 9, 'left');
+  // Legend
+  for (let c=0;c<6;c++) SS(3,c, C.SUBHDR,    true, '1A1A2E', 10, 'left');
+  for (let c=0;c<6;c++) SS(4,c, C.RED_BG,    true, '1A1A2E', 9, 'left');
+  for (let c=0;c<6;c++) SS(5,c, C.YELLOW_BG, true, '1A1A2E', 9, 'left');
+  for (let c=0;c<6;c++) SS(6,c, C.GREEN_BG,  true, '1A1A2E', 9, 'left');
+  // Table header (row 8)
+  for (let c=0;c<6;c++) SS(8,c, C.HEADER_BG, true, 'FFFFFF', 9, 'center');
+  // Data rows
+  allResults.forEach(({storeName}, i) => {
+    const r = 9 + i;
+    const {red, yellow, green} = sumData[storeName];
+    SS(r,0,'FFFFFF', true,  '1A1A2E', 9, 'left');
+    SS(r,1,'FFFFFF', false, '1A1A2E', 9, 'center');
+    SS(r,2, red>0    ? C.RED_BG    : 'FFFFFF', red>0,    red>0?C.RED_TXT:'1A1A2E', 9, 'center');
+    SS(r,3, yellow>0 ? C.YELLOW_BG : 'FFFFFF', false,    '1A1A2E',                  9, 'center');
+    SS(r,4, green>0  ? C.GREEN_BG  : 'FFFFFF', false,    '1A1A2E',                  9, 'center');
+    SS(r,5,'FFFFFF', false, '1A1A2E', 9, 'center');
+  });
+
+  XLSX.utils.book_append_sheet(wb, sumWS, 'SUMMARY');
+
+  // ── PER-STORE SHEETS ───────────────────────────────────────────────────
+  const COL_HEADERS = [
+    'Flag','Product Code','Product Name',
+    'System Qty','Physical Qty','Variance','Suggested Action',
+    'Confirmed Adj Qty','Reason Code','IA Notes','Status'
+  ];
+  const COL_WIDTHS = [7,20,40,12,13,10,34,18,28,34,18];
+  const REASON_NOTE = 'Reason Code: Missing Receipt/Delivery Not Entered | Unrecorded Sale | Damage/Loss Not Recorded | Transfer Error | Data Entry Error | Return Not Recorded | Count Error | Other';
+
   allResults.forEach(({storeName, rows}) => {
-    const aoa = [];
-    aoa.push([`STORE: ${storeName}`]);
-    aoa.push([]);
-    aoa.push(['Barcode','Product Name','System Qty','Physical Qty','Variance','Value Gap (₱)','Flag','Suggested Action','Adj Type','Adj Qty']);
-    rows.forEach(r => {
-      aoa.push([
-        r.bc, r.name, r.sysQty, r.counted ? r.physQty : '—',
-        r.counted ? r.variance : '—', r.counted ? Number(r.valueGap.toFixed(2)) : '—',
-        r.flag, r.suggestedAction, r.adjType, r.adjQty
+    const sheetRows = [];
+    const merges = [];
+
+    // Title
+    sheetRows.push([`${storeName} — Inventory Reconciliation`, ...Array(11).fill('')]);
+    merges.push({s:{r:0,c:0}, e:{r:0,c:11}});
+
+    // Counts row
+    const red    = rows.filter(r=>r.flag==='RED').length;
+    const yellow = rows.filter(r=>r.flag==='YELLOW').length;
+    const green  = rows.filter(r=>r.flag==='GREEN').length;
+    sheetRows.push([`🔴 ${red} Red  |  🟡 ${yellow} Yellow  |  🟢 ${green} Green  |  Total SKUs: ${rows.length}`, ...Array(10).fill('')]);
+    merges.push({s:{r:1,c:0}, e:{r:1,c:11}});
+
+    // Instructions
+    sheetRows.push(['INSTRUCTIONS: I-investigate lahat ng RED at YELLOW. Punan ang Confirmed Adj Qty (pwedeng baguhin), Reason Code, IA Notes. Pagkatapos i-enter sa Acacia, palitan ang Status ng "Entered in Acacia".', ...Array(11).fill('')]);
+    merges.push({s:{r:2,c:0}, e:{r:2,c:11}});
+
+    sheetRows.push([]);  // blank
+
+    // Column headers
+    sheetRows.push(COL_HEADERS);
+
+    // Data
+    rows.forEach(row => {
+      const flagEmoji = row.flag==='RED' ? '🔴' : row.flag==='YELLOW' ? '🟡' : '🟢';
+      sheetRows.push([
+        flagEmoji,
+        row.bc,
+        row.name,
+        row.sysQty,
+        row.counted ? row.physQty : 'Skip Batch',
+        row.counted ? row.variance : 'Skip Batch',
+        row.suggestedAction,
+        (row.flag !== 'GREEN' && row.counted) ? row.adjQty : 0,
+        '',
+        '',
+        (!row.counted || row.flag === 'GREEN') ? 'N/A' : 'Not Started',
       ]);
     });
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [{wch:16},{wch:40},{wch:11},{wch:12},{wch:10},{wch:13},{wch:8},{wch:42},{wch:10},{wch:9}];
-    XLSX.utils.book_append_sheet(wb, ws, storeName.substring(0,31));
+
+    // Reason note at bottom
+    sheetRows.push([]);
+    sheetRows.push([REASON_NOTE, ...Array(11).fill('')]);
+    merges.push({s:{r:sheetRows.length-1, c:0}, e:{r:sheetRows.length-1, c:10}});
+
+    const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+    ws['!merges'] = merges;
+    ws['!cols']   = COL_WIDTHS.map(w=>({wch:w}));
+    ws['!freeze'] = { xSplit:0, ySplit:5 };  // freeze through row 5
+
+    const dataStart = 5;  // row index where data begins
+
+    // Title
+    for (let c=0;c<12;c++) {
+      const ref = XLSX.utils.encode_cell({r:0,c});
+      if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+      ws[ref].s = p1CellStyle(C.HEADER_BG, true, 'FFFFFF', 12, 'center');
+    }
+    // Counts row
+    for (let c=0;c<12;c++) {
+      const ref = XLSX.utils.encode_cell({r:1,c});
+      if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+      ws[ref].s = p1CellStyle(C.LIGHT, false, C.GREY_TXT, 9, 'left');
+    }
+    // Instructions
+    for (let c=0;c<12;c++) {
+      const ref = XLSX.utils.encode_cell({r:2,c});
+      if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+      ws[ref].s = p1CellStyle('FFF2CC', true, '7A3C00', 9, 'left');
+    }
+    // Column headers (row 4)
+    for (let c=0;c<12;c++) {
+      const ref = XLSX.utils.encode_cell({r:4,c});
+      if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+      // Columns 8–10 are the IA-action zone — slightly darker header
+      ws[ref].s = p1CellStyle(c>=8 ? '2E4057' : C.HEADER_BG, true, 'FFFFFF', 9, 'center');
+    }
+    // Data rows — color by flag, with lighter tint for IA action zone (cols 7–10)
+    rows.forEach((row, i) => {
+      const rIdx = dataStart + i;
+      const bg   = row.flag==='RED' ? C.RED_BG : row.flag==='YELLOW' ? C.YELLOW_BG : C.WHITE;
+      const iaBg = row.flag==='RED' ? 'FFE8E8' : row.flag==='YELLOW' ? 'FFFAED' : 'F5FFF5';
+      for (let c=0;c<11;c++) {
+        const ref = XLSX.utils.encode_cell({r:rIdx, c});
+        if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+        const useBg = c >= 7 ? iaBg : bg;
+        const bold  = (row.flag === 'RED' && c <= 2);
+        ws[ref].s = p1CellStyle(useBg, bold, '1A1A2E', 9, c===2 ? 'left' : 'center');
+      }
+      // Negative system qty highlight
+      if (row.sysQty < 0) {
+        const ref = XLSX.utils.encode_cell({r:rIdx, c:3});
+        ws[ref].s = p1CellStyle(bg, true, C.RED_TXT, 9, 'center');
+      }
+      // Variance color (positive = green, negative = red)
+      if (row.variance !== 0 && row.variance !== null) {
+        const ref = XLSX.utils.encode_cell({r:rIdx, c:5});
+        ws[ref].s = p1CellStyle(bg, true, row.variance < 0 ? C.RED_TXT : C.GREEN_TXT, 9, 'center');
+      }
+    });
+
+    const safeName = storeName.substring(0,31);
+    XLSX.utils.book_append_sheet(wb, ws, safeName);
   });
 
   return wb;
