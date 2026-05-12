@@ -1,6 +1,6 @@
 {
-  "name": "Acacia HBC — Replenishment Dashboard",
-  "short_name": "Acacia Replen",
+  "name": "ACACIA HBC - Inventory & Dispatch",
+  "short_name": "Inventory & Dispatch",
   "description": "Store replenishment cycle tracking for Acacia Home Builders Corporation",
   "start_url": "/",
   "display": "standalone",
