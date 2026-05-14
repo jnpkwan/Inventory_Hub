@@ -1458,7 +1458,6 @@ function getWorkflowStatus(r) {
   const pdf= r.pdfStatus||'';
   // Phase 3 — SM Approval
   if(sm==='')                    return {label:'🔍 Awaiting SM Review',   cls:'wb-action'};
-  if(sm==='Changes Requested')   return {label:'📝 SM Changes Requested', cls:'wb-change'};
   if(sm==='Approved'&&pdf!=='Generated') return {label:'📄 PDF Pending',  cls:'wb-action'};
   // Phase 3 — Store Approval
   if(st==='')                    return {label:'📤 Awaiting Coordinator', cls:'wb-action'};
@@ -1490,7 +1489,7 @@ function renderTable(rows) {
 
   const pf    = S.phaseFilter;
   const isP34 = pf==='p3';
-  const cols  = isP34 ? 8 : 12;
+  const cols  = isP34 ? 7 : 12;
 
   // ── Dynamic thead ─────────────────────────────────────────────────────────
   const thead = document.getElementById('thead');
@@ -1499,7 +1498,6 @@ function renderTable(rows) {
       <th onclick="sortBy('cdf')">CDF Ref</th>
       <th onclick="sortBy('store')">Store</th>
       <th onclick="sortBy('type')">Type</th>
-      <th onclick="sortBy('boxes')">Boxes</th>
       <th>Workflow Status</th>
       <th onclick="sortBy('updatedBy')">Last Updated By</th>
       <th onclick="sortBy('updatedAt')">Updated At</th>
@@ -1545,7 +1543,6 @@ function renderTable(rows) {
           <td class="td-cdf">${esc(r.cdf)}</td>
           <td class="td-store">${esc(r.store)}</td>
           <td class="td-dim">${r.type}</td>
-          <td class="td-dim">${esc(r.boxes||'—')}</td>
           <td><span class="wb ${wf.cls}">${wf.label}</span>${od?'<span class="od-flag" style="margin-left:4px">⚠</span>':''}</td>
           <td class="td-dim">${esc(r.updatedBy||'—')}</td>
           <td class="td-date td-dim">${upAt}</td>
@@ -1705,6 +1702,9 @@ function buildDetail(r) {
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Barcode</th>
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Product</th>
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Brand</th>
+                  <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Category</th>
+                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Max</th>
+                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">CDF Inc</th>
                   <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">IA Submitted</th>
                   <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:${isLocked?'':'#1a3a7a'}">Final Qty</th>
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Flag</th>
@@ -1719,8 +1719,11 @@ function buildDetail(r) {
                   const changed   = final !== submitted;
                   return `<tr style="border-bottom:1px solid var(--silver);${i%2===0?'background:#fff':'background:var(--mist)'}">
                     <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-size:10px;color:#666;white-space:nowrap">${esc(l.barcode||'')}</td>
-                    <td style="padding:5px 10px;max-width:220px">${esc(l.productName||'')}</td>
+                    <td style="padding:5px 10px;max-width:200px">${esc(l.productName||'')}</td>
                     <td style="padding:5px 10px;color:#888">${esc(l.brand||'')}</td>
+                    <td style="padding:5px 10px;color:#888">${esc(l.category||'')}</td>
+                    <td style="padding:5px 10px;text-align:center;color:#999">${l.max??'—'}</td>
+                    <td style="padding:5px 10px;text-align:center;color:#999">${l.cdfIncrement??'—'}</td>
                     <td style="padding:5px 10px;text-align:center;color:#999">${submitted}</td>
                     <td style="padding:5px 10px;text-align:center;font-weight:700;${changed?'color:var(--blue)':''}">
                       ${(!isLocked && canEditQty)
@@ -1750,7 +1753,7 @@ function buildDetail(r) {
           <span class="wf-status-badge ${smBadge}">${smSt||'Awaiting Review'}</span>
         </div>
         <div class="wf-panel-bd">
-          ${r.smgrNotes?`<div class="wf-note${smSt===''?' resubmit':''}">${smSt==='Changes Requested'?'📝':'↑'} ${esc(r.smgrNotes)}</div>`:''}
+          ${r.smgrNotes?`<div class="wf-note">${esc(r.smgrNotes)}</div>`:''}
           ${orderLinesHTML}
           <div class="wf-meta-row">
             ${r.smgrApprovedBy?`<div class="wf-meta"><div class="wf-ml">${smSt==='Approved'?'Approved by':'Reviewed by'}</div><div class="wf-mv">${esc(r.smgrApprovedBy)}</div></div>`:''}
