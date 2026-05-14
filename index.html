@@ -833,6 +833,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
               <div class="p1-store-list" id="p2-store-list"></div>
               <div class="p1-actions-row">
                 <button class="p1-btn-dl" onclick="p2Download()">⬇️ Download Order (.xlsx)</button>
+                <button class="p1-btn-dl" style="background:var(--blue)" onclick="p3OpenUploadModal()">📋 Upload to Phase 3</button>
                 <button class="p1-btn-reset" onclick="p2Reset()">🔄 New Order</button>
               </div>
             </div>
@@ -889,6 +890,9 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <!-- JSZip — used to post-process xlsx files (e.g. inject freeze panes not supported by xlsx-js-style) -->
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<!-- jsPDF + autotable — used by Phase 3 PDF generator to produce Pre-CDF PDFs -->
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 
 <script>
 /* ══════════════════ CONFIG ══════════════════ */
@@ -2152,25 +2156,544 @@ function r_coordNote(uid) {
   return r?.coordNotes||'';
 }
 
-/* ══════════════════ GENERATE PDF (Phase 3 — IS only) ══════════════════ */
-async function generatePDF(uid) {
-  const r = S.records.find(x=>(x.id||x.cdf)===uid);
-  if(!r) return;
-  if(r.pdfStatus==='Generated') {
-    const again = confirm(`⚠️ A PDF was already generated for this CDF on ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):'an earlier date'} by ${r.pdfGeneratedBy||'IS'}.\n\nAre you sure you want to mark it as generated again? Only do this if you re-ran the script and uploaded a new version to Drive.`);
-    if(!again) return;
-  } else {
-    if(!confirm('Mark this CDF as "PDF Generated"?\n\nMake sure you have already run the Python script and uploaded the PDF to the shared Drive folder before confirming.')) return;
+/* ══════════════════════════════════════════════════════════════════════
+   PHASE 3 — BATCH CDF CREATION FROM REPLENISHMENT EXCEL UPLOAD
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Upload modal open/close ─────────────────────────────────────────── */
+function p3OpenUploadModal() {
+  if (!P2.results) { toast('Run Phase 2 first to generate the replenishment order.', 'err'); return; }
+  // Build the modal on first open
+  let m = document.getElementById('p3-upload-modal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'p3-upload-modal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:800;align-items:center;justify-content:center;padding:20px';
+    m.innerHTML = `
+      <div style="background:#fff;border-radius:14px;width:100%;max-width:820px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)">
+        <div style="padding:20px 24px 14px;border-bottom:1px solid var(--silver);display:flex;align-items:center;gap:10px">
+          <span style="font-family:'Montserrat',sans-serif;font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.8px">📋 Upload SM-Approved Replenishment to Phase 3</span>
+          <button onclick="p3CloseUploadModal()" style="margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:#888">✕</button>
+        </div>
+        <div style="padding:20px 24px">
+          <p style="font-size:12px;color:#666;margin-bottom:14px">Upload the replenishment Excel the Sales Manager returned with final order quantities. One CDF ticket will be auto-created per store.</p>
+
+          <!-- Drop zone -->
+          <div id="p3-upload-dz" style="border:2px dashed var(--silver);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:16px"
+            ondrop="p3HandleDrop(event)" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)"
+            onclick="document.getElementById('p3-file-input').click()">
+            <input type="file" id="p3-file-input" accept=".xlsx,.xls" style="display:none" onchange="p3HandleFileSelect(this)">
+            <div style="font-size:28px;margin-bottom:8px">📄</div>
+            <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:12px">Drop SM-Approved Excel here</div>
+            <div style="font-size:11px;color:#999;margin-top:4px">Same file format as Phase 2 output — with Final Order column filled in by SM</div>
+          </div>
+
+          <!-- Review table (hidden until file parsed) -->
+          <div id="p3-review-wrap" style="display:none">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <span style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Review — CDF Tickets to Create</span>
+              <span id="p3-review-count" style="font-size:11px;color:#888"></span>
+            </div>
+            <div id="p3-review-warn" style="display:none;background:var(--amber-pale);border-left:3px solid var(--amber);padding:8px 12px;border-radius:0 6px 6px 0;font-size:11.5px;color:#7A5A00;margin-bottom:10px"></div>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:12px" id="p3-review-table">
+                <thead>
+                  <tr style="background:var(--blue);color:#fff">
+                    <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Pre-CDF #</th>
+                    <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Store</th>
+                    <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Lines</th>
+                    <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Units</th>
+                    <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Type</th>
+                    <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Route</th>
+                    <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="p3-review-tbody"></tbody>
+              </table>
+            </div>
+            <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+              <button onclick="p3CloseUploadModal()" style="padding:9px 18px;border:1.5px solid var(--silver);border-radius:8px;background:#fff;font-family:'Montserrat',sans-serif;font-weight:700;font-size:11px;text-transform:uppercase;cursor:pointer;color:#666">Cancel</button>
+              <button id="p3-confirm-btn" onclick="p3ConfirmBatchCreate()" style="padding:9px 20px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-family:'Montserrat',sans-serif;font-weight:700;font-size:11px;text-transform:uppercase;cursor:pointer;letter-spacing:.5px">✓ Confirm &amp; Create CDFs</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
   }
-  const patch = {
-    pdfStatus: 'Generated',
-    pdfGeneratedBy: S.user.username,
-    pdfGeneratedAt: new Date().toISOString()
-  };
-  await apiUpdateCDF(uid, patch);
-  S.expandedId = uid;
-  renderAll();
-  toast('PDF status marked as Generated');
+  // Reset to empty state each open
+  document.getElementById('p3-review-wrap').style.display = 'none';
+  document.getElementById('p3-upload-dz').style.borderColor = 'var(--silver)';
+  document.getElementById('p3-upload-dz').style.background = '';
+  document.getElementById('p3-file-input').value = '';
+  m.style.display = 'flex';
+  // Populate from in-memory P2 results (no upload needed if SM returned same file format)
+  p3PopulateReviewFromPlan();
+}
+
+function p3CloseUploadModal() {
+  const m = document.getElementById('p3-upload-modal');
+  if (m) m.style.display = 'none';
+}
+
+/* ── Pre-populate review from P2.results (SM-approved Excel upload path) ─ */
+function p3HandleDrop(e) {
+  e.preventDefault();
+  document.getElementById('p3-upload-dz').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) p3ParseUploadedExcel(file);
+}
+
+function p3HandleFileSelect(input) {
+  const file = input.files[0];
+  if (file) p3ParseUploadedExcel(file);
+}
+
+/**
+ * Parses the SM-approved Excel file.
+ * Reads the "Final Order" column per store × barcode.
+ * Falls back to "Allocated Order" if Final Order is missing/zero.
+ * Stores parsed data in P3._staged for confirm step.
+ */
+const P3 = { _staged: null };
+
+async function p3ParseUploadedExcel(file) {
+  const dz = document.getElementById('p3-upload-dz');
+  dz.style.background = 'var(--blue-pale)';
+  dz.style.borderColor = 'var(--blue)';
+
+  try {
+    const ab  = await file.arrayBuffer();
+    const wb  = XLSX.read(ab, { type: 'array' });
+    // Find the data sheet — skip SUMMARY sheet if present
+    const sheetName = wb.SheetNames.find(n => n.toUpperCase() !== 'SUMMARY') || wb.SheetNames[0];
+    const ws  = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    // Find header row — look for row containing "Store" and "Barcode"
+    let hdrIdx = -1;
+    for (let i = 0; i < Math.min(10, rows.length); i++) {
+      const joined = rows[i].map(v => String(v).toLowerCase()).join('|');
+      if (joined.includes('store') && joined.includes('barcode')) { hdrIdx = i; break; }
+    }
+    if (hdrIdx < 0) throw new Error('Could not find header row. Make sure this is the Phase 2 replenishment Excel.');
+
+    const headers = rows[hdrIdx].map(v => String(v).trim());
+    const col = name => headers.findIndex(h => h.toLowerCase().includes(name.toLowerCase()));
+
+    const cStore      = col('Store');
+    const cBarcode    = col('Barcode');
+    const cName       = col('Product Name');
+    const cBrand      = col('Brand');
+    const cCat        = col('Category');
+    const cCDFInc     = col('CDF Inc');
+    const cAllocated  = col('Allocated Order');
+    const cFinal      = col('Final Order');
+    const cFlag       = col('Note');
+
+    if (cStore < 0 || cBarcode < 0) throw new Error('Missing Store or Barcode column.');
+    if (cFinal < 0) throw new Error('Missing "Final Order" column — make sure the SM has filled in the Final Order column before uploading.');
+
+    // Group rows by store
+    const byStore = {};
+    for (let i = hdrIdx + 1; i < rows.length; i++) {
+      const r = rows[i];
+      const store = String(r[cStore] || '').trim().toUpperCase();
+      if (!store || store === 'TOTAL' || store === 'GRAND TOTAL') continue;
+      const bc = String(r[cBarcode] || '').trim();
+      if (!bc) continue;
+
+      const finalQty    = parseFloat(r[cFinal])   || 0;
+      const allocQty    = parseFloat(r[cAllocated])|| 0;
+      const qty         = finalQty > 0 ? finalQty : allocQty; // fallback to allocated
+      if (qty <= 0) continue;
+
+      if (!byStore[store]) byStore[store] = [];
+      byStore[store].push({
+        barcode:      bc,
+        productName:  cName  >= 0 ? String(r[cName]  || '').trim() : '',
+        brand:        cBrand >= 0 ? String(r[cBrand] || '').trim() : '',
+        category:     cCat   >= 0 ? String(r[cCat]   || '').trim() : '',
+        cdfIncrement: cCDFInc>= 0 ? (parseFloat(r[cCDFInc]) || 1) : 1,
+        finalOrder:   qty,
+        allocated:    allocQty,
+        flag:         cFlag  >= 0 ? String(r[cFlag]  || '').trim() : '',
+      });
+    }
+
+    // Build staged CDF list
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+    const monthName = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'][today.getMonth()];
+
+    P3._staged = Object.entries(byStore).map(([store, lines]) => ({
+      store,
+      cdf:        `${store}-ORDER-${dateStr}`,
+      month:      monthName,
+      type:       'Regular',
+      route:      'Via SDC',
+      orderLines: lines,
+      totalUnits: lines.reduce((s, l) => s + l.finalOrder, 0),
+    }));
+
+    p3RenderReviewTable(P3._staged);
+
+  } catch (err) {
+    dz.style.background = 'var(--red-pale)';
+    dz.style.borderColor = 'var(--red)';
+    toast('Parse error: ' + err.message, 'err');
+  }
+}
+
+/**
+ * Pre-populate review table directly from P2.results (no file needed).
+ * Called when the modal opens — saves the IA from re-uploading the
+ * same file they already uploaded in Phase 2.
+ */
+function p3PopulateReviewFromPlan() {
+  if (!P2.results) return;
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+  const monthName = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'][today.getMonth()];
+
+  // Group plan rows by store
+  const byStore = {};
+  for (const r of P2.results.rows) {
+    if ((r.allocated || 0) <= 0) continue;
+    if (!byStore[r.store]) byStore[r.store] = [];
+    byStore[r.store].push({
+      barcode:      r.barcode,
+      productName:  r.productName,
+      brand:        r.brand,
+      category:     r.category,
+      cdfIncrement: r.cdfIncrement,
+      finalOrder:   r.allocated,  // SM hasn't edited yet — will update via Excel upload or inline
+      allocated:    r.allocated,
+      flag:         r.flag || '',
+    });
+  }
+
+  P3._staged = Object.entries(byStore).map(([store, lines]) => ({
+    store,
+    cdf:        `${store}-ORDER-${dateStr}`,
+    month:      monthName,
+    type:       'Regular',
+    route:      'Via SDC',
+    orderLines: lines,
+    totalUnits: lines.reduce((s, l) => s + l.finalOrder, 0),
+  }));
+
+  p3RenderReviewTable(P3._staged);
+}
+
+function p3RenderReviewTable(staged) {
+  const wrap  = document.getElementById('p3-review-wrap');
+  const tbody = document.getElementById('p3-review-tbody');
+  const count = document.getElementById('p3-review-count');
+  const warn  = document.getElementById('p3-review-warn');
+
+  if (!staged || !staged.length) {
+    wrap.style.display = 'none';
+    toast('No stores with order quantities found.', 'err');
+    return;
+  }
+
+  // Check for duplicates against existing records
+  const existingCDFs = new Set((S.records || []).map(r => r.cdf));
+  const dupes = staged.filter(s => existingCDFs.has(s.cdf));
+
+  if (dupes.length) {
+    warn.style.display = '';
+    warn.textContent = `⚠️ ${dupes.length} CDF reference(s) already exist and will be skipped: ${dupes.map(d => d.cdf).join(', ')}`;
+  } else {
+    warn.style.display = 'none';
+  }
+
+  count.textContent = `${staged.length} store${staged.length !== 1 ? 's' : ''}`;
+
+  tbody.innerHTML = staged.map((s, idx) => {
+    const isDupe = existingCDFs.has(s.cdf);
+    return `<tr style="border-bottom:1px solid var(--silver);${isDupe ? 'opacity:.45' : ''}">
+      <td style="padding:7px 10px;font-family:'DM Mono',monospace;font-size:11px;color:var(--blue)">${esc(s.cdf)}</td>
+      <td style="padding:7px 10px;font-weight:600">${esc(s.store)}</td>
+      <td style="padding:7px 10px;text-align:center">${s.orderLines.length}</td>
+      <td style="padding:7px 10px;text-align:center;font-weight:700">${s.totalUnits}</td>
+      <td style="padding:7px 10px">
+        <select onchange="P3._staged[${idx}].type=this.value" style="font-size:11.5px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa;${isDupe?'pointer-events:none':''}">
+          <option value="Regular" ${s.type==='Regular'?'selected':''}>Regular</option>
+          <option value="Spare Parts" ${s.type==='Spare Parts'?'selected':''}>Spare Parts</option>
+          <option value="Shopee" ${s.type==='Shopee'?'selected':''}>Shopee</option>
+          <option value="Supplies" ${s.type==='Supplies'?'selected':''}>Supplies</option>
+        </select>
+      </td>
+      <td style="padding:7px 10px">
+        <select onchange="P3._staged[${idx}].route=this.value" style="font-size:11.5px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa;${isDupe?'pointer-events:none':''}">
+          <option value="Via SDC" ${s.route==='Via SDC'?'selected':''}>Via SDC</option>
+          <option value="Direct" ${s.route==='Direct'?'selected':''}>Direct</option>
+          <option value="Via CDC" ${s.route==='Via CDC'?'selected':''}>Via CDC</option>
+          <option value="Unknown" ${s.route==='Unknown'?'selected':''}>Unknown</option>
+        </select>
+      </td>
+      <td style="padding:7px 10px;text-align:center;font-size:10px;color:${isDupe ? 'var(--red)' : 'var(--amber)'}">
+        ${isDupe ? '⚠ Duplicate' : '⏳ Awaiting SM'}
+      </td>
+    </tr>`;
+  }).join('');
+
+  wrap.style.display = '';
+}
+
+async function p3ConfirmBatchCreate() {
+  if (!P3._staged || !P3._staged.length) return;
+  const btn = document.getElementById('p3-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Creating…';
+
+  try {
+    const cdfs = P3._staged.map(s => ({
+      cdf:        s.cdf,
+      store:      s.store,
+      month:      s.month,
+      type:       s.type,
+      route:      s.route,
+      orderLines: JSON.stringify(s.orderLines),
+    }));
+
+    const resp = await gasPost('batchCreateCDFs', { username: S.user.username, cdfs });
+    if (!resp.ok) throw new Error(resp.error || 'Batch create failed');
+
+    const { created, skipped } = resp.data;
+    p3CloseUploadModal();
+
+    // Refresh records
+    await loadData();
+    renderAll();
+
+    let msg = `✅ Created ${created} CDF ticket${created !== 1 ? 's' : ''} in Phase 3 — Awaiting SM Review.`;
+    if (skipped > 0) msg += ` ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped.`;
+    toast(msg);
+
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+    btn.disabled = false;
+    btn.textContent = '✓ Confirm & Create CDFs';
+  }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   PHASE 3 — GENERATE PDF (IS / EXECUTIVE only)
+   Triggered from "📄 Generate PDF" button on PDF Pending tickets.
+   Uses orderLines stored on the CDF record — no re-upload needed.
+   ══════════════════════════════════════════════════════════════════════ */
+
+async function generatePDF(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+
+  // Parse stored orderLines
+  let lines = [];
+  try {
+    lines = r.orderLines ? JSON.parse(r.orderLines) : [];
+  } catch(e) { lines = []; }
+
+  if (!lines.length) {
+    toast('No order lines found on this CDF. Was it created via the Phase 2 upload?', 'err');
+    return;
+  }
+
+  // Confirm if regenerating
+  if (r.pdfStatus === 'Generated') {
+    if (!confirm(`⚠️ A PDF was already generated for this CDF.\n\nRegenerate and download again?`)) return;
+  }
+
+  toast('Generating PDF…');
+
+  try {
+    // Fetch store metadata — use P2 cache if available, else fetch from Bible
+    let storeInfo = {};
+    if (P2.storesInfo && P2.storesInfo[r.store]) {
+      storeInfo = P2.storesInfo[r.store];
+    } else {
+      const storesArr = await gasGet('getBibleStoresForUser', { username: S.user.username });
+      if (Array.isArray(storesArr)) {
+        const found = storesArr.find(s => s.store === r.store);
+        if (found) storeInfo = found;
+      }
+    }
+
+    await p3GeneratePDF(r, lines, storeInfo);
+
+    // Mark as Generated
+    const patch = {
+      pdfStatus:      'Generated',
+      pdfGeneratedBy: S.user.username,
+      pdfGeneratedAt: new Date().toISOString(),
+    };
+    await apiUpdateCDF(uid, patch);
+    S.expandedId = uid;
+    await loadData();
+    renderAll();
+    toast('✅ PDF downloaded and status marked as Generated.');
+
+  } catch (err) {
+    toast('PDF generation failed: ' + err.message, 'err');
+  }
+}
+
+/**
+ * Core PDF generator — one page per CDF record (one store).
+ * Uses jsPDF + autotable, letter size, Acacia brand colors.
+ */
+async function p3GeneratePDF(record, lines, storeInfo) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+
+  const PAGE_W  = 612;
+  const PAGE_H  = 792;
+  const MARGIN  = 36;
+  const CONTENT_W = PAGE_W - MARGIN * 2;
+
+  const BLUE  = [27,  77, 160];  // #1B4DA0
+  const GREEN = [0,  150,  60];  // #00963C
+  const WHITE = [255, 255, 255];
+  const CARBON= [44,  44,  44];
+  const GREY  = [120, 144, 156];
+
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+  // ── HEADER BANNER ────────────────────────────────────────────────────
+  doc.setFillColor(...BLUE);
+  doc.rect(0, 0, PAGE_W, 58, 'F');
+
+  // Company name
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(...WHITE);
+  doc.text('ACACIA HOME BUILDERS CORP.', MARGIN, 26);
+
+  // Sub-label
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text('INVENTORY & DISPATCH HUB', MARGIN, 38);
+
+  // Pre-CDF label (right side)
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('PRE-CDF #', PAGE_W - MARGIN - 130, 20, { align: 'left' });
+  doc.setFontSize(11);
+  doc.text(record.cdf || '', PAGE_W - MARGIN, 20, { align: 'right' });
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Order Date: ${dateStr}`, PAGE_W - MARGIN, 32, { align: 'right' });
+  doc.text(`Type: ${record.type || 'Regular'}  ·  Route: ${record.route || 'Via SDC'}`, PAGE_W - MARGIN, 44, { align: 'right' });
+
+  // ── GREEN STRIPE ─────────────────────────────────────────────────────
+  doc.setFillColor(...GREEN);
+  doc.rect(0, 58, PAGE_W, 5, 'F');
+
+  // ── STORE META BLOCK ─────────────────────────────────────────────────
+  let y = 78;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...CARBON);
+  doc.text('STORE', MARGIN, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(12);
+  doc.text(record.store || '', MARGIN, y + 14);
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(...GREY);
+  const addr = storeInfo.address || '';
+  const phone = storeInfo.phone  || '';
+  const email = storeInfo.email  || '';
+  if (addr)  doc.text(`📍 ${addr}`,  MARGIN, y + 28);
+  if (phone) doc.text(`📞 ${phone}`, MARGIN, y + 40);
+  if (email) doc.text(`✉️ ${email}`, MARGIN, y + 52);
+
+  y += addr || phone || email ? 68 : 22;
+
+  // Divider
+  doc.setDrawColor(...GREEN);
+  doc.setLineWidth(1);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 12;
+
+  // ── ITEMS TABLE ──────────────────────────────────────────────────────
+  const tableRows = lines.map((l, i) => [
+    i + 1,
+    l.barcode      || '',
+    l.productName  || '',
+    l.brand        || '',
+    l.category     || '',
+    l.finalOrder   || 0,
+  ]);
+
+  const totalUnits = lines.reduce((s, l) => s + (l.finalOrder || 0), 0);
+
+  doc.autoTable({
+    startY: y,
+    margin: { left: MARGIN, right: MARGIN },
+    head: [['#', 'Barcode', 'Product Name', 'Brand', 'Category', 'Qty']],
+    body: tableRows,
+    foot: [['', '', '', '', 'TOTAL', totalUnits]],
+    theme: 'striped',
+    headStyles: {
+      fillColor: BLUE,
+      textColor: WHITE,
+      fontStyle: 'bold',
+      fontSize: 8,
+    },
+    footStyles: {
+      fillColor: [230, 237, 250],
+      textColor: CARBON,
+      fontStyle: 'bold',
+      fontSize: 9,
+    },
+    bodyStyles: { fontSize: 8, textColor: CARBON },
+    alternateRowStyles: { fillColor: [245, 248, 255] },
+    columnStyles: {
+      0: { cellWidth: 24,  halign: 'center' },
+      1: { cellWidth: 75,  halign: 'left',   font: 'courier' },
+      2: { cellWidth: 'auto' },
+      3: { cellWidth: 70,  halign: 'left' },
+      4: { cellWidth: 70,  halign: 'left' },
+      5: { cellWidth: 32,  halign: 'center', fontStyle: 'bold' },
+    },
+  });
+
+  y = doc.lastAutoTable.finalY + 20;
+
+  // ── SIGNATURE BLOCK ──────────────────────────────────────────────────
+  // Ensure enough space — add page if needed
+  if (y + 80 > PAGE_H - MARGIN) { doc.addPage(); y = MARGIN + 20; }
+
+  const sigW   = (CONTENT_W - 20) / 3;
+  const sigLabels = ['Prepared by', 'Approved by', 'Received by'];
+  sigLabels.forEach((lbl, i) => {
+    const sx = MARGIN + i * (sigW + 10);
+    doc.setDrawColor(...GREY);
+    doc.setLineWidth(0.5);
+    doc.line(sx, y + 40, sx + sigW, y + 40);
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...GREY);
+    doc.text(lbl.toUpperCase(), sx + sigW / 2, y + 52, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text('Signature / Date', sx + sigW / 2, y + 62, { align: 'center' });
+  });
+
+  // Footer note
+  y += 76;
+  doc.setFontSize(7);
+  doc.setTextColor(...GREY);
+  doc.setFont('helvetica', 'italic');
+  doc.text(`Generated by Acacia HBC Inventory & Dispatch Hub · ${dateStr} · This is a Pre-CDF working document.`, PAGE_W / 2, y, { align: 'center' });
+
+  // ── DOWNLOAD ─────────────────────────────────────────────────────────
+  const filename = `PreCDF_${record.store}_${dateStr.replace(/-/g,'')}.pdf`;
+  doc.save(filename);
 }
 
 /* ══════════════════ ON HOLD TOGGLE (Phase 4) ══════════════════ */
@@ -3202,11 +3725,12 @@ function p1Download() {
 ══════════════════════════════════════════════════════════════════════════ */
 
 const P2 = {
-  stockFile: null,
-  whsFile:   null,
-  reportWB:  null,
-  results:   null,   // {totalUnits, totalLines, stockouts, shortfalls, stores:[{store, lines, units, stockouts}]}
-  bibleLastSyncIso: null,  // ISO timestamp of last Bible edit (from getBibleLastModified)
+  stockFile:   null,
+  whsFile:     null,
+  reportWB:    null,
+  results:     null,      // {totalUnits, totalLines, stockouts, shortfalls, stores:[{store, lines, units, stockouts}]}
+  storesInfo:  null,      // {STORE_NAME: {address, phone, email, size, region, tier}} — cached from bible after generate
+  bibleLastSyncIso: null, // ISO timestamp of last Bible edit (from getBibleLastModified)
 };
 
 // Store size → priority weight (fallback "Medium" 1.2× when Bible doesn't carry Size yet)
@@ -3351,7 +3875,7 @@ function p2Log(msg, cls='log-info') {
 function p2SetProgress(pct) { document.getElementById('p2-bar').style.width = pct + '%'; }
 
 function p2Reset() {
-  P2.stockFile = null; P2.whsFile = null; P2.reportWB = null; P2.results = null;
+  P2.stockFile = null; P2.whsFile = null; P2.reportWB = null; P2.results = null; P2.storesInfo = null;
   ['p2-stock-pills','p2-whs-pills'].forEach(id => document.getElementById(id).innerHTML = '');
   ['p2-dz-stock','p2-dz-whs'].forEach(id => document.getElementById(id).classList.remove('has-files'));
   ['p2-card-1','p2-card-2'].forEach(id => document.getElementById(id).classList.remove('done'));
@@ -3958,6 +4482,7 @@ async function p2Generate() {
     p2SetProgress(80);
 
     P2.results = plan;
+    P2.storesInfo = bible.stores;  // cache for Phase 3 PDF generation
     P2.reportWB = p2BuildExcel(plan);
     p2SetProgress(92);
 
