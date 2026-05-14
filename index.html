@@ -887,6 +887,8 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 <!-- xlsx-js-style — SheetJS fork with cell style support (free, MIT) -->
 <!-- Used by Phase 1 reconciliation workspace to write colored .xlsx reports -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<!-- JSZip — used to post-process xlsx files (e.g. inject freeze panes not supported by xlsx-js-style) -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <script>
 /* ══════════════════ CONFIG ══════════════════ */
@@ -3812,8 +3814,7 @@ function p2BuildExcel(plan) {
     }
   }
 
-  // Freeze header (data starts at row 6, so freeze first 5 rows)
-  ws['!freeze'] = { xSplit:0, ySplit:5 };
+  // Freeze pane applied via JSZip post-processing in p2Download()
 
   // ── STYLING ─────────────────────────────────────────────────────────────
   // Title row
@@ -4017,7 +4018,41 @@ function p2Download() {
   if (!P2.reportWB) return;
   const d = new Date();
   const ts = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
-  XLSX.writeFile(P2.reportWB, `Replenishment_Order_${ts}.xlsx`);
+  const fname = `Replenishment_Order_${ts}.xlsx`;
+
+  // xlsx-js-style does not support freeze panes via ws['!freeze'].
+  // Patch the zip directly: inject <pane> into the sheetView XML after write.
+  try {
+    const buf  = XLSX.write(P2.reportWB, { type: 'array', bookType: 'xlsx' });
+    const zip  = new JSZip();
+    zip.loadAsync(buf).then(z => {
+      const sheetPath = 'xl/worksheets/sheet1.xml';
+      return z.file(sheetPath).async('string').then(xml => {
+        // Inject freeze pane into <sheetView .../>  or  <sheetView ...>
+        // Row 6 is the first data row (rows 1-5 are headers/title), so ySplit=5, topLeftCell=A6
+        const frozen = '<sheetView workbookViewId="0"><pane ySplit="5" topLeftCell="A6" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft"/></sheetView>';
+        const patched = xml.replace(/<sheetView[^/]*\/>/,  frozen)
+                           .replace(/<sheetView[^>]*><\/sheetView>/, frozen)
+                           .replace(/<sheetView workbookViewId="0"\/>/, frozen);
+        z.file(sheetPath, patched);
+        return z.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+      });
+    }).then(out => {
+      const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    }).catch(() => {
+      // Fallback to standard write if zip patching fails
+      XLSX.writeFile(P2.reportWB, fname);
+    });
+  } catch(e) {
+    XLSX.writeFile(P2.reportWB, fname);
+  }
 }
 
 
