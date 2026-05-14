@@ -1847,11 +1847,11 @@ function buildDetail(r) {
     }
   } catch(e) { storeOrderLinesHTML = ''; }
 
-  const storeActions = !locked4 && canApproveStore && storeSt!=='Approved' ? `
-    <div class="wf-actions">
-      <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','store','approve')">✓ Store Approved</button>
-      <button class="btn btn-changes" onclick="event.stopPropagation();openApprovalModal('${uid}','store','changes')">✏ Store Requests Changes</button>
-    </div>` : '';
+  // Store approval buttons removed at the "Changes Requested" stage:
+  // by the time the ticket lands here, the SM has already declared what they
+  // want changed. The remaining step is to finalize the adjusted quantities
+  // and generate the CDF for the warehouse. No further approve/reject buttons.
+  const storeActions = '';
 
   // CDF generation — only when store has requested changes and submitted adjusted quantities
   const cdfGenBtn = storeSt==='Changes Requested' && !locked4 && canFulfill ? `
@@ -2752,8 +2752,9 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   if (!pdfLines.length) throw new Error('No lines with Final Qty > 0. Set quantities before generating the PDF.');
   const totalUnits = pdfLines.reduce((s,l) => s+(Number(l.finalOrder)||0), 0);
 
-  // ── Logo (pre-fetch as base64) ────────────────────────────────────────────
+  // ── Logo (pre-fetch as base64 + read true aspect ratio) ──────────────────
   let logoDataUrl = null;
+  let logoAspect  = 2000/1058;   // fallback if image probe fails
   try {
     const logoUrl = 'https://jnpkwan.github.io/Inventory_Hub/logo.png';
     const resp = await fetch(logoUrl);
@@ -2762,6 +2763,14 @@ async function p3GeneratePDF(record, lines, storeInfo) {
       const fr = new FileReader();
       fr.onload = () => res(fr.result);
       fr.readAsDataURL(blob);
+    });
+    // Read true dimensions so the logo always renders with correct proportions
+    // even if the file is later updated or cropped.
+    logoAspect = await new Promise(res => {
+      const img = new Image();
+      img.onload  = () => res(img.naturalWidth / img.naturalHeight);
+      img.onerror = () => res(2000/1058);
+      img.src = logoDataUrl;
     });
   } catch(e) { logoDataUrl = null; }
 
@@ -2803,14 +2812,15 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     // thin rule
     doc.setDrawColor(...GREY_LIGHT); doc.setLineWidth(0.4);
     doc.line(MARGIN, fy, MARGIN + IW, fy);
-    // logo small repeat (if available)
+    // logo small repeat — height-anchored, width follows true aspect ratio
     if (logoDataUrl) {
-      try { doc.addImage(logoDataUrl, 'PNG', MARGIN, fy + 3, 18, 8, '', 'FAST'); } catch(e) {}
+      const fLogoH = 10, fLogoW = fLogoH * logoAspect;
+      try { doc.addImage(logoDataUrl, 'PNG', MARGIN, fy + 3, fLogoW, fLogoH, '', 'FAST'); } catch(e) {}
     }
     doc.setFont('helvetica', 'bold'); doc.setFontSize(6); doc.setTextColor(...DARK_BLUE);
     doc.text('Acacia Home Builders Corporation', PW/2, fy + 7, {align:'center'});
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...GREY_MID);
-    doc.text(`${address}  ·  ${phone}  ·  ${email}`, PW/2, fy + 13, {align:'center'});
+    doc.text(`${phone}  ·  ${email}`, PW/2, fy + 13, {align:'center'});
     doc.setFontSize(5); doc.setTextColor(190, 195, 210);
     doc.text(`Batch: ${batchTs}  ·  Page 1 of 1`, PW - MARGIN, fy + 13, {align:'right'});
   }
@@ -2850,8 +2860,8 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   doc.setFillColor(...BRAND_GRN);
   doc.rect(MARGIN, curY + bannerH - 2, IW, 2, 'F');
 
-  // Logo (left side, vertically centered in banner)
-  const logoH = 11*MM, logoW = logoH * (2000/1058);
+  // Logo (left side, vertically centered in banner) — uses true aspect ratio
+  const logoH = 11*MM, logoW = logoH * logoAspect;
   const logoX = MARGIN + 10;
   const logoY = curY + (bannerH - logoH) / 2;
   if (logoDataUrl) {
