@@ -71,6 +71,9 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .dw{display:flex;align-items:center;gap:5px;font-size:12px;color:#666}
 .dw input{width:44px;padding:5px 7px;border:1px solid var(--silver);border-radius:var(--r);font-size:12px;text-align:center;outline:none}
 .dw input:focus{border-color:var(--amber)}
+/* Remove spinners from order line qty inputs */
+.ol-qty-input{-webkit-appearance:none;-moz-appearance:textfield;appearance:textfield}
+.ol-qty-input::-webkit-inner-spin-button,.ol-qty-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .rc{font-size:11.5px;color:#999;white-space:nowrap}
 .sync-info{font-size:10.5px;color:#bbb;display:flex;align-items:center;gap:5px}
 
@@ -1260,7 +1263,6 @@ function getFiltered() {
     if(sf) {
       const uid = r.id||r.cdf;
       if(sf==='p3_await')  { if(sm!=='')                                    return false; }
-      if(sf==='p3_chg')    { if(sm!=='Changes Requested')                  return false; }
       if(sf==='p3_pdf')    { if(sm!=='Approved'||(r.pdfStatus||'')==='Generated') return false; }
       if(sf==='p3_coord')  { if(sm!=='Approved'||st!=='')         return false; }
       if(sf==='p3_stchg')    { if(st!=='Changes Requested')         return false; }
@@ -1358,7 +1360,6 @@ function renderSummary(rows) {
   if(pf==='p3') {
     // All sub-steps across both SM and Store approval
     const smAwait   = all.filter(r=>(r.smgrStatus||'')==='').length;
-    const smChg     = all.filter(r=>r.smgrStatus==='Changes Requested').length;
     const pdfPend   = all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')!=='Generated'&&(r.storeStatus||'')!=='Approved').length;
     const coordAwait= all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')==='Generated'&&(r.storeStatus||'')==='').length;
     const storeChg  = all.filter(r=>r.storeStatus==='Changes Requested').length;
@@ -1373,7 +1374,6 @@ function renderSummary(rows) {
       +'<div class="sub-label">Phase 3 — Approvals breakdown</div>'
       +uploadCard
       +mkSub('p3_await', '🔍','Awaiting SM Review',     smAwait,   '#F9A825')  // amber — action needed
-      +mkSub('p3_chg',   '📝','SM Changes Requested',   smChg,     '#C0392B')  // red — blocked
       +mkSub('p3_pdf',   '📄','PDF Pending',            pdfPend,   '#F9A825')  // amber — action needed
       +mkSub('p3_coord', '📤','Awaiting Coordinator',   coordAwait,'#F9A825')  // amber — action needed
       +mkSub('p3_stchg', '🏪','Store Changes Requested',storeChg,  '#C0392B')  // red — blocked
@@ -1671,13 +1671,9 @@ function buildDetail(r) {
   const smBadge  = smSt==='Approved'?'wfs-approved':smSt==='Changes Requested'?'wfs-changes':'wfs-pending';
   const smActions = canApproveSM && smSt!=='Approved' ? `
     <div class="wf-actions">
-      <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','approve')">✓ Approve</button>
-      <button class="btn btn-changes" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','changes')">✏ Request Changes</button>
+      <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','approve')">✓ Approve Order</button>
     </div>` : '';
-  const smResubmit = role==='IS' && smSt==='Changes Requested' ? `
-    <div class="wf-actions">
-      <button class="btn btn-resubmit" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','resubmit')">↑ Resubmit</button>
-    </div>` : '';
+  const smResubmit = '';
   // PDF badge/button shown inline in the meta row — no extra divider line
   const pdfInline = smSt==='Approved'
     ? (pdfSt==='Generated'
@@ -1717,7 +1713,9 @@ function buildDetail(r) {
               <tbody>
                 ${lines.map((l, i) => {
                   const submitted = l.allocated ?? l.finalOrder ?? 0;
-                  const final     = l.finalOrder ?? l.allocated ?? 0;
+                  // Use in-progress edit value if SM has started editing
+                  const editBuf   = P3_EDITS[uid];
+                  const final     = editBuf ? (editBuf[i]?.finalOrder ?? l.finalOrder ?? l.allocated ?? 0) : (l.finalOrder ?? l.allocated ?? 0);
                   const changed   = final !== submitted;
                   return `<tr style="border-bottom:1px solid var(--silver);${i%2===0?'background:#fff':'background:var(--mist)'}">
                     <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-size:10px;color:#666;white-space:nowrap">${esc(l.barcode||'')}</td>
@@ -1727,8 +1725,9 @@ function buildDetail(r) {
                     <td style="padding:5px 10px;text-align:center;font-weight:700;${changed?'color:var(--blue)':''}">
                       ${(!isLocked && canEditQty)
                         ? `<input type="number" min="0" value="${final}"
+                            class="ol-qty-input"
                             data-line-idx="${i}"
-                            style="width:60px;text-align:center;border:1.5px solid ${changed?'var(--blue)':'var(--silver)'};border-radius:4px;padding:2px 4px;font-size:11px;font-weight:700"
+                            style="width:60px;text-align:center;border:1.5px solid ${changed?'var(--blue)':'var(--silver)'};border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;outline:none"
                             oninput="p3LineChanged(this,'${uid}')">`
                         : final}
                     </td>
