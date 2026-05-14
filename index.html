@@ -3895,10 +3895,13 @@ function p2BuildExcel(plan) {
 
 /* ── STOCK SUMMARY → { Branch: { Barcode: qty } } ───────────────────────── */
 function p2StockToMap(stockData) {
+  // Skip summary/total rows the Acacia system appends (e.g. 'TOTAL')
+  const SKIP_BRANCHES = new Set(['TOTAL','GRAND TOTAL','SUBTOTAL','SUMMARY']);
   const map = {};
   for (const r of stockData) {
     const br = r['Branch'];
     if (!br) continue;
+    if (SKIP_BRANCHES.has(br.toUpperCase())) continue;
     if (!map[br]) map[br] = {};
     map[br][r['Product Code']] = r['Stock On Hand'];
   }
