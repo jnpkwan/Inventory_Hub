@@ -2330,6 +2330,7 @@ async function p3ParseUploadedExcel(file) {
     const cName       = col('Product Name');
     const cBrand      = col('Brand');
     const cCat        = col('Category');
+    const cMax        = col('Max');
     const cCDFInc     = col('CDF Inc');
     const cAllocated  = col('Allocated Order');
     const cFinal      = col('Final Order');
@@ -2358,6 +2359,7 @@ async function p3ParseUploadedExcel(file) {
         productName:  cName  >= 0 ? String(r[cName]  || '').trim() : '',
         brand:        cBrand >= 0 ? String(r[cBrand] || '').trim() : '',
         category:     cCat   >= 0 ? String(r[cCat]   || '').trim() : '',
+        max:          cMax   >= 0 ? (parseFloat(r[cMax]) || null) : null,
         cdfIncrement: cCDFInc>= 0 ? (parseFloat(r[cCDFInc]) || 1) : 1,
         finalOrder:   qty,
         allocated:    allocQty,
@@ -2410,8 +2412,9 @@ function p3PopulateReviewFromPlan() {
       productName:  r.productName,
       brand:        r.brand,
       category:     r.category,
+      max:          r.max,
       cdfIncrement: r.cdfIncrement,
-      finalOrder:   r.allocated,  // SM hasn't edited yet — will update via Excel upload or inline
+      finalOrder:   r.allocated,
       allocated:    r.allocated,
       flag:         r.flag || '',
     });
