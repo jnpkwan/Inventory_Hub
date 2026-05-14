@@ -1155,9 +1155,10 @@ async function loadData() {
       'smgrStatus','smgrNotes','smgrApprovedBy','smgrApprovedAt',
       'storeStatus','storeNotes','coordNotes','storeUpdatedBy','storeUpdatedAt',
       'pdfStatus','pdfGeneratedBy','pdfGeneratedAt',
+      'cdfGeneratedAt','cdfGeneratedBy',
       'fulfillStatus','actualBoxes','reasonCode','fulfillNotes',
       'fulfillBy','fulfillAt','sentToWhsBy','sentToWhsAt',
-      'status'  // preserve dispatch status (On Hold, In Transit etc.) across polls
+      'status'
     ];
     if(S._wfCache) {
       S.records = S.records.map(r => {
@@ -1771,11 +1772,79 @@ function buildDetail(r) {
 
   // ── Phase 3 continued — Store Approval ────────────────────────────────────
   const storeBadge = storeSt==='Approved'?'wfs-approved':storeSt==='Changes Requested'?'wfs-changes':'wfs-pending';
+
+  // ── Store order lines table ──────────────────────────────────────────────
+  let storeOrderLinesHTML = '';
+  try {
+    const sLines = r.orderLines ? JSON.parse(r.orderLines) : [];
+    if (sLines.length && (storeSt === 'Changes Requested' || storeSt === 'Approved')) {
+      const canEditStore = (role === 'EXECUTIVE' || role === 'COORDINATOR') && storeSt === 'Changes Requested';
+      const storeEditBuf = P3_EDITS['store:' + uid];
+      storeOrderLinesHTML = `
+        <div style="margin:10px 0;border:1px solid var(--silver);border-radius:8px;overflow:hidden">
+          <div style="background:var(--mist);padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--silver)">
+            <span style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Order Lines</span>
+            <span style="font-size:10px;color:#999">${sLines.length} SKUs</span>
+            ${storeSt==='Changes Requested'?`<span style="font-size:10px;color:var(--amber);font-weight:600;margin-left:4px">· Store editing quantities</span>`:''}
+            ${canEditStore ? `<span style="font-size:10px;color:var(--amber);margin-left:auto">Edit Store Qty below · <a href="#" onclick="event.preventDefault();p3SaveStoreOrders('${uid}')" style="color:var(--amber);font-weight:700">Save Changes</a></span>` : ''}
+          </div>
+          <div style="overflow-x:auto;max-height:280px;overflow-y:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:11px">
+              <thead style="position:sticky;top:0;background:var(--blue);color:#fff">
+                <tr>
+                  <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Barcode</th>
+                  <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Product</th>
+                  <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Category</th>
+                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">SM Approved</th>
+                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:${storeSt==='Changes Requested'?'#7a5500':'#1a3a7a'}">Store Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${sLines.map((l, i) => {
+                  const smQty    = l.finalOrder ?? l.allocated ?? 0;
+                  const storeQty = storeEditBuf ? (storeEditBuf[i]?.storeOrder ?? l.storeOrder ?? smQty) : (l.storeOrder ?? smQty);
+                  const changed  = storeQty !== smQty;
+                  const isEmpty  = storeQty === null || storeQty === undefined || storeQty === '';
+                  return `<tr style="border-bottom:1px solid var(--silver);${i%2===0?'background:#fff':'background:var(--mist)'}">
+                    <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-size:10px;color:#666;white-space:nowrap">${esc(l.barcode||'')}</td>
+                    <td style="padding:5px 10px;max-width:200px">${esc(l.productName||'')}</td>
+                    <td style="padding:5px 10px;color:#888">${esc(l.category||'')}</td>
+                    <td style="padding:5px 10px;text-align:center;color:#999;font-weight:600">${smQty}</td>
+                    <td style="padding:5px 10px;text-align:center;font-weight:700;background:${storeSt==='Changes Requested'?'var(--amber-pale)':'inherit'};${changed?'color:var(--amber)':''}">
+                      ${canEditStore
+                        ? `<input type="number" min="0" value="${storeQty??''}"
+                            class="ol-qty-input"
+                            data-line-idx="${i}"
+                            style="width:60px;text-align:center;border:1.5px solid ${isEmpty?'var(--red)':changed?'var(--amber)':'var(--silver)'};border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;outline:none;background:transparent"
+                            placeholder="${smQty}"
+                            oninput="p3StoreLineChanged(this,'${uid}')">`
+                        : `<span style="color:${changed?'var(--amber)':''}">${isEmpty?'—':storeQty}</span>`}
+                    </td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+  } catch(e) { storeOrderLinesHTML = ''; }
+
   const storeActions = !locked4 && canApproveStore && storeSt!=='Approved' ? `
     <div class="wf-actions">
       <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','store','approve')">✓ Store Approved</button>
       <button class="btn btn-changes" onclick="event.stopPropagation();openApprovalModal('${uid}','store','changes')">✏ Store Requests Changes</button>
     </div>` : '';
+
+  // CDF generation — appears in Phase 3 after store approves, available to IS/EXECUTIVE
+  const cdfGenBtn = storeSt==='Approved' && !locked4 && canFulfill ? `
+    <div class="wf-actions" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--silver)">
+      <button class="btn btn-blue" style="font-weight:700;letter-spacing:.3px"
+        onclick="event.stopPropagation();generateFinalCDF('${uid}')">
+        📄 ${r.cdfGeneratedAt ? 'Re-download CDF' : 'Generate &amp; Download CDF'}
+      </button>
+      ${r.cdfGeneratedAt ? `<span style="font-size:10.5px;color:var(--teal);font-weight:600;margin-left:8px">✓ Generated ${fmtD(r.cdfGeneratedAt.slice(0,10))} by ${esc(r.cdfGeneratedBy||'IS')}</span>` : `<span style="font-size:10.5px;color:#aaa;margin-left:8px">Generate the final CDF to send to the warehouse</span>`}
+    </div>` : '';
+
   const panelP4 = `
     <div class="ph-panel" data-phase="p4">
       <div class="wf-panel" style="${locked4?'opacity:.55;pointer-events:none':''}">
@@ -1787,11 +1856,13 @@ function buildDetail(r) {
         <div class="wf-panel-bd">
           ${storeSt==='Changes Requested'&&r.storeNotes?`<div class="wf-note">🏪 Store: ${esc(r.storeNotes)}</div>`:''}
           ${r.coordNotes?`<div class="wf-note" style="border-color:var(--green);background:var(--green-pale)">🤝 Coordinator: ${esc(r.coordNotes)}</div>`:''}
+          ${storeOrderLinesHTML}
           <div class="wf-meta-row">
             ${r.storeUpdatedBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.storeUpdatedBy)}</div></div>`:''}
             ${r.storeUpdatedAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.storeUpdatedAt.slice(0,10))}</div></div>`:''}
           </div>
           ${storeActions}
+          ${cdfGenBtn}
         </div>
       </div>
     </div>`;
@@ -2604,30 +2675,32 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
 
-  // ── Constants matching Python script geometry ─────────────────────────────
+  // ── Geometry ──────────────────────────────────────────────────────────────
   const PW     = 612;
   const PH     = 792;
   const MM     = 2.835;
-  const MARGIN = 10 * MM;
+  const MARGIN = 12 * MM;   // ~34pt — comfortable side margin
   const IW     = PW - 2 * MARGIN;
 
-  // ── Brand palette (matching Python exactly) ───────────────────────────────
-  const DARK_BLUE  = [0,   34, 102];
-  const BRAND_BLUE = [0,   60, 150];
-  const BRAND_GRN  = [0,  150,  60];
-  const META_BG    = [245,248,254];
-  const META_BDR   = [221,228,240];
-  const ROW_ALT    = [247,249,255];
+  // ── Palette ───────────────────────────────────────────────────────────────
+  const DARK_BLUE  = [0,   34, 102];   // #002266 — banner, headings
+  const BRAND_BLUE = [0,   60, 150];   // #003C96 — labels
+  const BRAND_GRN  = [0,  150,  60];   // #00963C — accent
+  const META_BG    = [245,248,254];    // #F5F8FE — info cells
+  const META_BDR   = [210,220,238];    // border
+  const ROW_EVEN   = [247,250,255];    // alternating row
   const SIG_BG     = [250,252,255];
   const WHITE      = [255,255,255];
-  const GREY_TEXT  = [26, 26, 46];
-  const BODY_GREY  = [68, 68, 68];
-  const MID_GREY   = [153,153,153];
-  const LIGHT_GREY = [228,232,240];
+  const GREY_DARK  = [30,  30,  50];
+  const GREY_MID   = [110,120,140];
+  const GREY_LIGHT = [210,216,228];
+  const GRN_PALE   = [235,248,240];    // subtle green tint for qty col
 
-  const today   = new Date();
-  const months  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const genDate = `${months[today.getMonth()]} ${String(today.getDate()).padStart(2,'0')}, ${today.getFullYear()}`;
+  // ── Dates ─────────────────────────────────────────────────────────────────
+  const today  = new Date();
+  const MNAMES = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const genDate = `${MNAMES[today.getMonth()]} ${String(today.getDate()).padStart(2,'0')}, ${today.getFullYear()}`;
   const dateTag = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
   const batchTs = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
 
@@ -2636,206 +2709,345 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   const phone    = storeInfo.phone   || '—';
   const email    = storeInfo.email   || '—';
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Filter lines ──────────────────────────────────────────────────────────
+  const pdfLines = lines.filter(l => l.finalOrder !== null && l.finalOrder !== undefined && Number(l.finalOrder) > 0);
+  if (!pdfLines.length) throw new Error('No lines with Final Qty > 0. Set quantities before generating the PDF.');
+  const totalUnits = pdfLines.reduce((s,l) => s+(Number(l.finalOrder)||0), 0);
+
+  // ── Logo (pre-fetch as base64) ────────────────────────────────────────────
+  let logoDataUrl = null;
+  try {
+    const logoUrl = 'https://jnpkwan.github.io/Inventory_Hub/logo.png';
+    const resp = await fetch(logoUrl);
+    const blob = await resp.blob();
+    logoDataUrl = await new Promise(res => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.readAsDataURL(blob);
+    });
+  } catch(e) { logoDataUrl = null; }
+
+  // ── Helper: section heading ────────────────────────────────────────────────
+  // Green pill accent · bold uppercase label · thin rule
   function sectionHeading(y, label) {
+    // Accent pill
     doc.setFillColor(...BRAND_GRN);
-    doc.rect(MARGIN, y, 2.5, 10, 'F');
+    doc.roundedRect(MARGIN, y + 1, 3, 9, 1, 1, 'F');
+    // Label
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
+    doc.setFontSize(7);
     doc.setTextColor(...DARK_BLUE);
-    doc.text(label.toUpperCase(), MARGIN + 7.5, y + 7.5);
-    const labelW = doc.getTextWidth(label.toUpperCase()) + 12;
-    doc.setDrawColor(...LIGHT_GREY);
-    doc.setLineWidth(0.5);
-    doc.line(MARGIN + labelW, y + 5, MARGIN + IW, y + 5);
-    return y + 14;
+    doc.setCharSpace(1.2);
+    doc.text(label.toUpperCase(), MARGIN + 8, y + 8.5);
+    doc.setCharSpace(0);
+    // Rule
+    const lw = doc.getTextWidth(label.toUpperCase()) + 14;
+    doc.setDrawColor(...GREY_LIGHT);
+    doc.setLineWidth(0.4);
+    doc.line(MARGIN + lw, y + 5.5, MARGIN + IW, y + 5.5);
+    return y + 16;
   }
 
+  // ── Helper: crop marks ────────────────────────────────────────────────────
   function cropMarks() {
-    const tick = 5; const cm = MARGIN;
-    doc.setDrawColor(204,204,204); doc.setLineWidth(0.25);
-    doc.line(cm,cm,cm+tick,cm); doc.line(cm,cm,cm,cm+tick);
-    doc.line(PW-cm,cm,PW-cm-tick,cm); doc.line(PW-cm,cm,PW-cm,cm+tick);
-    doc.line(cm,PH-cm,cm+tick,PH-cm); doc.line(cm,PH-cm,cm,PH-cm-tick);
-    doc.line(PW-cm,PH-cm,PW-cm-tick,PH-cm); doc.line(PW-cm,PH-cm,PW-cm,PH-cm-tick);
+    const t = 6, c = MARGIN * 0.6;
+    doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
+    [[c,c],[PW-c,c],[c,PH-c],[PW-c,PH-c]].forEach(([x,y]) => {
+      const sx = x < PW/2 ? 1 : -1, sy = y < PH/2 ? 1 : -1;
+      doc.line(x, y, x + sx*t, y);
+      doc.line(x, y, x, y + sy*t);
+    });
   }
 
-  function drawBottomFooter() {
-    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...DARK_BLUE);
-    doc.text('Acacia Home Builders Corporation', PW/2, 22*MM, {align:'center'});
-    doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(136,136,136);
-    doc.text(`${address}   |   ${email}   |   ${phone}`, PW/2, 12*MM, {align:'center'});
-    doc.setFontSize(5.5); doc.setTextColor(187,187,187);
-    doc.text(`Batch: ${batchTs}`, PW-MARGIN, 10*MM, {align:'right'});
+  // ── Helper: bottom footer ─────────────────────────────────────────────────
+  function drawFooter() {
+    const fy = PH - 8*MM;
+    // thin rule
+    doc.setDrawColor(...GREY_LIGHT); doc.setLineWidth(0.4);
+    doc.line(MARGIN, fy, MARGIN + IW, fy);
+    // logo small repeat (if available)
+    if (logoDataUrl) {
+      try { doc.addImage(logoDataUrl, 'PNG', MARGIN, fy + 3, 18, 8, '', 'FAST'); } catch(e) {}
+    }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6); doc.setTextColor(...DARK_BLUE);
+    doc.text('Acacia Home Builders Corporation', PW/2, fy + 7, {align:'center'});
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...GREY_MID);
+    doc.text(`${address}  ·  ${phone}  ·  ${email}`, PW/2, fy + 13, {align:'center'});
+    doc.setFontSize(5); doc.setTextColor(190, 195, 210);
+    doc.text(`Batch: ${batchTs}  ·  Page 1 of 1`, PW - MARGIN, fy + 13, {align:'right'});
   }
 
-  function drawRunningHeader(storeName) {
-    const barH = 6*MM; const barY = PH - MARGIN - barH;
-    doc.setFillColor(240,244,251); doc.rect(MARGIN, barY, IW, barH, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...DARK_BLUE);
-    doc.text(storeName, MARGIN+6, barY+1.8*MM+5);
-    doc.setFont('helvetica','normal'); doc.setTextColor(...MID_GREY);
-    doc.text('Page 1 of 1', PW-MARGIN-6, barY+1.8*MM+5, {align:'right'});
+  // ── Helper: running store header bar ──────────────────────────────────────
+  function drawStoreBar() {
+    const bh = 7*MM, by = PH - MARGIN - bh;
+    // subtle gradient-like bar using two rects
+    doc.setFillColor(232, 238, 252); doc.rect(MARGIN, by, IW, bh, 'F');
+    doc.setFillColor(0, 34, 102, 0.06);
+    // left accent stripe
+    doc.setFillColor(...BRAND_GRN); doc.rect(MARGIN, by, 3, bh, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...DARK_BLUE);
+    doc.text(record.store, MARGIN + 9, by + bh/2 + 2.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GREY_MID);
+    doc.text(poNumber, MARGIN + IW, by + bh/2 + 2.5, {align:'right'});
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // START DRAWING
+  // ═══════════════════════════════════════════════════════════════════════════
+  let curY = MARGIN + 7*MM;   // leave room for store bar at top
 
   // ── BANNER ────────────────────────────────────────────────────────────────
-  let curY = MARGIN + 6*MM;
-  const bannerH = 13*MM + 20;
+  const bannerH = 19*MM;
+
+  // Main dark blue banner
   doc.setFillColor(...DARK_BLUE);
   doc.rect(MARGIN, curY, IW, bannerH, 'F');
-  // Company name
-  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(...WHITE);
-  doc.text('Acacia Home Builders Corporation', MARGIN+10, curY+bannerH-8);
-  // CDF label
-  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(123,175,212);
-  doc.text('CONCESSION DELIVERY FORM', PW-MARGIN-10, curY+10, {align:'right'});
-  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...WHITE);
-  doc.text(poNumber, PW-MARGIN-10, curY+10+14, {align:'right'});
-  curY += bannerH;
 
-  // Green stripe
+  // Right panel — slightly lighter blue for CDF info
+  const rpW = IW * 0.38;
+  doc.setFillColor(0, 48, 120);   // #003078
+  doc.rect(MARGIN + IW - rpW, curY, rpW, bannerH, 'F');
+
+  // Thin green accent line at banner bottom
   doc.setFillColor(...BRAND_GRN);
-  doc.rect(MARGIN, curY, IW, 3, 'F');
-  curY += 3 + 3*MM;
+  doc.rect(MARGIN, curY + bannerH - 2, IW, 2, 'F');
 
-  // ── META BLOCK (2-row grid) ───────────────────────────────────────────────
-  const col1W=IW*0.25, col2W=IW*0.50, col3W=IW*0.25;
-  const rowH = 7*MM;
-  const metaRows = [
-    [{label:'CITI HARDWARE LOCATION', value:record.store, w:col1W},
-     {label:'STORE ADDRESS',          value:address,       w:col2W},
-     {label:'ORDER DATE',             value:genDate,       w:col3W}],
-    [{label:'PHONE', value:phone, w:col1W},
-     {label:'EMAIL', value:email, w:col2W+col3W, span:true}],
-  ];
+  // Logo (left side, vertically centered in banner)
+  const logoH = 11*MM, logoW = logoH * (2000/1058);
+  const logoX = MARGIN + 10;
+  const logoY = curY + (bannerH - logoH) / 2;
+  if (logoDataUrl) {
+    try { doc.addImage(logoDataUrl, 'PNG', logoX, logoY, logoW, logoH, '', 'FAST'); } catch(e) {}
+  }
 
-  metaRows.forEach((row, ri) => {
-    let mx = MARGIN;
-    const mh = rowH + 4;
-    row.forEach((cell, ci) => {
-      doc.setFillColor(...META_BG);
-      doc.setDrawColor(...META_BDR);
-      doc.setLineWidth(0.5);
-      doc.rect(mx, curY, cell.w, mh, 'FD');
-      doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...BRAND_BLUE);
-      doc.text(cell.label, mx+10, curY+8);
-      doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...GREY_TEXT);
-      doc.text(String(cell.value||'—'), mx+10, curY+8+12);
-      mx += cell.w;
-    });
-    curY += mh;
-  });
-  curY += 5*MM;
+  // Company name — vertically centered, right of logo
+  const nameX = logoDataUrl ? logoX + logoW + 8 : MARGIN + 12;
+  const nameY = curY + bannerH / 2;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13.5);
+  doc.setTextColor(...WHITE);
+  doc.text('Acacia Home Builders', nameX, nameY - 4);
+  doc.setFontSize(13.5);
+  doc.text('Corporation', nameX, nameY + 11);
+
+  // CDF label + number (right panel, vertically centered)
+  const rpX = MARGIN + IW - rpW + 12;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(160, 195, 235);   // steel blue label
+  doc.setCharSpace(1.5);
+  doc.text('CONCESSION DELIVERY FORM', rpX, curY + bannerH/2 - 8);
+  doc.setCharSpace(0);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(...WHITE);
+  // Word-wrap CDF number if long
+  const poLines = doc.splitTextToSize(poNumber, rpW - 20);
+  doc.text(poLines, rpX, curY + bannerH/2 + 5);
+
+  curY += bannerH + 3*MM;
+
+  // ── META BLOCK ────────────────────────────────────────────────────────────
+  // 3-col top row + 2-col bottom row
+  // Taller cells, generous padding, uppercase micro-labels in brand blue
+  const metaRowH = 9*MM;
+
+  function drawMetaCell(x, y, w, h, label, value) {
+    doc.setFillColor(...META_BG);
+    doc.setDrawColor(...META_BDR);
+    doc.setLineWidth(0.4);
+    doc.rect(x, y, w, h, 'FD');
+    // label
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6);
+    doc.setCharSpace(0.8);
+    doc.setTextColor(...BRAND_BLUE);
+    doc.text(label, x + 9, y + 7.5);
+    doc.setCharSpace(0);
+    // value
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...GREY_DARK);
+    const maxW = w - 18;
+    const vLines = doc.splitTextToSize(String(value || '—'), maxW);
+    doc.text(vLines[0], x + 9, y + 7.5 + 11);
+  }
+
+  const c1 = IW * 0.22, c2 = IW * 0.46, c3 = IW * 0.32;
+  drawMetaCell(MARGIN,          curY, c1, metaRowH, 'STORE / LOCATION', record.store);
+  drawMetaCell(MARGIN + c1,     curY, c2, metaRowH, 'STORE ADDRESS',    address);
+  drawMetaCell(MARGIN + c1+c2,  curY, c3, metaRowH, 'ORDER DATE',       genDate);
+  curY += metaRowH;
+
+  const d1 = IW * 0.22, d2 = IW * 0.38, d3 = IW * 0.40;
+  drawMetaCell(MARGIN,          curY, d1, metaRowH, 'PHONE', phone);
+  drawMetaCell(MARGIN + d1,     curY, d2, metaRowH, 'EMAIL', email);
+  drawMetaCell(MARGIN + d1+d2,  curY, d3, metaRowH, 'ROUTE / TYPE', `${record.route || 'Via SDC'}  ·  ${record.type || 'Regular'}`);
+  curY += metaRowH + 5*MM;
 
   // ── ORDER ITEMS TABLE ─────────────────────────────────────────────────────
   curY = sectionHeading(curY, 'Order Items');
   curY += 2*MM;
 
-  const colWs = [IW*0.04, IW*0.10, IW*0.11, IW*0.32, IW*0.17, IW*0.13, IW*0.13];
-  // Filter out lines with no final qty — zero/null means SM removed them
-  const pdfLines = lines.filter(l => l.finalOrder !== null && l.finalOrder !== undefined && Number(l.finalOrder) > 0);
-  if (!pdfLines.length) {
-    throw new Error('No lines with a Final Qty > 0. Set quantities before generating the PDF.');
-  }
-
-  const totalUnits = pdfLines.reduce((s,l) => s+(l.finalOrder||0), 0);
+  // Column widths — wider Product Name, no Cost column (drop it, it's always —)
+  // #  | Brand | Category | Product Name         | Barcode       | Qty
+  // 3% | 10%   | 13%      | 42%                  | 20%           | 12%
+  const CW = [IW*0.03, IW*0.10, IW*0.13, IW*0.42, IW*0.20, IW*0.12];
 
   doc.autoTable({
     startY: curY,
-    margin: { left:MARGIN, right:MARGIN },
-    head: [['#','Brand','Category','Product Name','Barcode','Order Qty','Cost']],
-    body: pdfLines.map((l,i) => [i+1, l.brand||'', l.category||'', l.productName||'', l.barcode||'', l.finalOrder||0, '—']),
+    margin: { left: MARGIN, right: MARGIN },
+    head: [['#', 'Brand', 'Category', 'Product Name', 'Barcode', 'Qty']],
+    body: pdfLines.map((l, i) => [
+      i + 1,
+      l.brand    || '',
+      l.category || '',
+      l.productName || '',
+      l.barcode  || '',
+      l.finalOrder || 0,
+    ]),
     theme: 'plain',
-    headStyles: { fillColor:DARK_BLUE, textColor:WHITE, fontStyle:'bold', fontSize:6.5,
-                  halign:'center', cellPadding:{top:7,bottom:7,left:6,right:6} },
-    bodyStyles: { fontSize:8, textColor:BODY_GREY, cellPadding:{top:5,bottom:5,left:6,right:6},
-                  lineColor:LIGHT_GREY, lineWidth:0.25 },
-    columnStyles: {
-      0: { halign:'center', cellWidth:colWs[0], textColor:MID_GREY },
-      1: { halign:'center', cellWidth:colWs[1] },
-      2: { halign:'center', cellWidth:colWs[2] },
-      3: { halign:'left',   cellWidth:colWs[3] },
-      4: { halign:'center', cellWidth:colWs[4] },
-      5: { halign:'center', cellWidth:colWs[5], fontStyle:'bold', fontSize:9.5, textColor:DARK_BLUE },
-      6: { halign:'center', cellWidth:colWs[6], textColor:MID_GREY },
+    headStyles: {
+      fillColor:   DARK_BLUE,
+      textColor:   WHITE,
+      fontStyle:   'bold',
+      fontSize:    6.5,
+      halign:      'center',
+      cellPadding: { top:7, bottom:7, left:5, right:5 },
     },
-    alternateRowStyles: { fillColor:ROW_ALT },
-    didParseCell(d) { if(d.section==='head'&&d.column.index===3) d.cell.styles.halign='left'; },
-    didDrawCell(d) {
-      if(d.section==='head'&&d.row.index===0) {
-        doc.setDrawColor(...BRAND_GRN); doc.setLineWidth(1.5);
-        doc.line(d.cell.x, d.cell.y+d.cell.height, d.cell.x+d.cell.width, d.cell.y+d.cell.height);
+    bodyStyles: {
+      fontSize:    7.5,
+      textColor:   GREY_DARK,
+      cellPadding: { top:5, bottom:5, left:5, right:5 },
+      lineColor:   GREY_LIGHT,
+      lineWidth:   0.25,
+    },
+    columnStyles: {
+      0: { halign:'center', cellWidth:CW[0], textColor:GREY_MID, fontSize:7 },
+      1: { halign:'center', cellWidth:CW[1] },
+      2: { halign:'center', cellWidth:CW[2] },
+      3: { halign:'left',   cellWidth:CW[3], fontStyle:'normal' },
+      4: { halign:'center', cellWidth:CW[4], font:'courier', fontSize:7, textColor:GREY_MID },
+      5: { halign:'center', cellWidth:CW[5], fontStyle:'bold', fontSize:10,
+           textColor:DARK_BLUE, fillColor:GRN_PALE },
+    },
+    alternateRowStyles: { fillColor: ROW_EVEN },
+    didParseCell(d) {
+      if (d.section === 'head') {
+        if (d.column.index === 3) d.cell.styles.halign = 'left';
+        if (d.column.index === 5) d.cell.styles.fillColor = BRAND_GRN;
       }
-      if(d.section==='body'&&d.column.index===5) {
+    },
+    didDrawCell(d) {
+      // Green underline on entire header row
+      if (d.section === 'head' && d.row.index === 0) {
         doc.setDrawColor(...BRAND_GRN); doc.setLineWidth(1.5);
-        doc.line(d.cell.x, d.cell.y, d.cell.x, d.cell.y+d.cell.height);
+        doc.line(d.cell.x, d.cell.y + d.cell.height,
+                 d.cell.x + d.cell.width, d.cell.y + d.cell.height);
+      }
+      // Left border on Qty col (body only)
+      if (d.section === 'body' && d.column.index === 5) {
+        doc.setDrawColor(...BRAND_GRN); doc.setLineWidth(1);
+        doc.line(d.cell.x, d.cell.y, d.cell.x, d.cell.y + d.cell.height);
       }
     },
   });
   curY = doc.lastAutoTable.finalY;
 
-  // ── TOTALS ────────────────────────────────────────────────────────────────
-  doc.setDrawColor(...DARK_BLUE); doc.setLineWidth(1.5);
-  doc.line(MARGIN, curY, MARGIN+IW, curY);
-  const colW3 = IW/3;
-  const totItems = [
-    {label:'TOTAL SKUs',             value:String(pdfLines.length)},
-    {label:'TOTAL UNITS TO DELIVER', value:String(totalUnits)},
-    {label:'TOTAL COST',             value:'—', muted:true},
-  ];
-  const totH = 7*MM + 8;
-  totItems.forEach((item,i) => {
-    const tx = MARGIN + i*colW3;
-    doc.setFillColor(...META_BG); doc.setDrawColor(...META_BDR); doc.setLineWidth(0.5);
-    doc.rect(tx, curY, colW3, totH, 'FD');
-    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...BRAND_BLUE);
-    doc.text(item.label, tx+12, curY+9);
-    doc.setFont('helvetica','bold'); doc.setFontSize(10);
-    doc.setTextColor(...(item.muted ? MID_GREY : DARK_BLUE));
-    doc.text(item.value, tx+12, curY+9+13);
-  });
-  curY += totH + 4*MM;
+  // ── TOTALS BAR ────────────────────────────────────────────────────────────
+  const totH = 8*MM + 6;
 
-  // ── COMMENTS ─────────────────────────────────────────────────────────────
+  // Dark blue top rule
+  doc.setDrawColor(...DARK_BLUE); doc.setLineWidth(1.5);
+  doc.line(MARGIN, curY, MARGIN + IW, curY);
+
+  const totCols = [
+    { label:'TOTAL SKUs',             value: String(pdfLines.length), muted:false },
+    { label:'TOTAL UNITS TO DELIVER', value: String(totalUnits),      muted:false },
+    { label:'TOTAL COST',             value: '—',                      muted:true  },
+  ];
+  const tCW = IW / 3;
+  totCols.forEach((col, i) => {
+    const tx = MARGIN + i * tCW;
+    doc.setFillColor(...META_BG);
+    doc.setDrawColor(...META_BDR); doc.setLineWidth(0.4);
+    doc.rect(tx, curY, tCW, totH, 'FD');
+    // label
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6);
+    doc.setCharSpace(0.7); doc.setTextColor(...BRAND_BLUE);
+    doc.text(col.label, tx + 10, curY + 8);
+    doc.setCharSpace(0);
+    // value
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.setTextColor(...(col.muted ? GREY_MID : DARK_BLUE));
+    doc.text(col.value, tx + 10, curY + 8 + 14);
+  });
+  curY += totH + 5*MM;
+
+  // ── COMMENTS / NOTES ─────────────────────────────────────────────────────
   curY = sectionHeading(curY, 'Comments / Notes');
   curY += 2*MM;
-  doc.setFillColor(...SIG_BG); doc.setDrawColor(...META_BDR); doc.setLineWidth(0.5);
-  doc.rect(MARGIN, curY, IW, 18*MM, 'FD');
-  curY += 18*MM + 4*MM;
+  const commH = 20*MM;
+  doc.setFillColor(...SIG_BG);
+  doc.setDrawColor(...META_BDR); doc.setLineWidth(0.4);
+  doc.roundedRect(MARGIN, curY, IW, commH, 2, 2, 'FD');
+  // placeholder dotted lines inside comments box
+  doc.setDrawColor(...GREY_LIGHT); doc.setLineWidth(0.3);
+  doc.setLineDashPattern([2,3], 0);
+  [0.35, 0.62, 0.89].forEach(t => {
+    const ly = curY + commH * t;
+    doc.line(MARGIN + 10, ly, MARGIN + IW - 10, ly);
+  });
+  doc.setLineDashPattern([], 0);
+  curY += commH + 4*MM;
 
   // ── SIGNATURES ────────────────────────────────────────────────────────────
   curY = sectionHeading(curY, 'Authorisation & Signatures');
   curY += 2*MM;
-  const sigTitles = ['Prepared By','Store Manager','Warehouse Manager'];
-  const sigW = (IW - 8*MM)/3; const gapW = 4*MM; const sigH = 22*MM;
-  sigTitles.forEach((title,i) => {
-    const sx = MARGIN + i*(sigW+gapW);
-    doc.setFillColor(...SIG_BG); doc.setDrawColor(...META_BDR); doc.setLineWidth(0.5);
-    doc.rect(sx, curY, sigW, sigH, 'FD');
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...DARK_BLUE);
-    doc.text(title, sx+8, curY+14);
-    doc.setDrawColor(...MID_GREY); doc.setLineWidth(0.5);
-    doc.setLineDashPattern([2,3],0);
-    doc.line(sx+8, curY+sigH-12, sx+sigW-8, curY+sigH-12);
-    doc.setLineDashPattern([],0);
-    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...MID_GREY);
-    doc.text('Name & Date', sx+8, curY+sigH-5);
+
+  const sigLabels = ['Prepared By', 'Store Manager', 'Warehouse Manager'];
+  const sigW = (IW - 2 * 3*MM) / 3;
+  const sigGap = 3*MM;
+  const sigH = 26*MM;
+
+  sigLabels.forEach((title, i) => {
+    const sx = MARGIN + i * (sigW + sigGap);
+    // box
+    doc.setFillColor(...SIG_BG);
+    doc.setDrawColor(...META_BDR); doc.setLineWidth(0.4);
+    doc.roundedRect(sx, curY, sigW, sigH, 2, 2, 'FD');
+    // green top accent on each sig box
+    doc.setFillColor(...BRAND_GRN);
+    doc.roundedRect(sx, curY, sigW, 3, 1, 1, 'F');
+    // title
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...DARK_BLUE);
+    doc.text(title, sx + 9, curY + 12);
+    // dashed sign line
+    doc.setDrawColor(...GREY_MID); doc.setLineWidth(0.5);
+    doc.setLineDashPattern([2, 3], 0);
+    doc.line(sx + 9, curY + sigH - 11, sx + sigW - 9, curY + sigH - 11);
+    doc.setLineDashPattern([], 0);
+    // name & date hint
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GREY_MID);
+    doc.text('Signature above  ·  Print name & date below', sx + 9, curY + sigH - 4);
   });
   curY += sigH + 4*MM;
 
-  // ── FOOTER NOTE ───────────────────────────────────────────────────────────
-  doc.setDrawColor(...LIGHT_GREY); doc.setLineWidth(0.5);
-  doc.line(MARGIN, curY, MARGIN+IW, curY);
-  doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...MID_GREY);
-  doc.text('System-generated by Acacia Home Builders Corporation  ·  CDF-adjusted allocated orders  ·  Retain signed copy for records',
-    PW/2, curY+8, {align:'center'});
+  // ── LEGAL FOOTER LINE ─────────────────────────────────────────────────────
+  doc.setDrawColor(...GREY_LIGHT); doc.setLineWidth(0.4);
+  doc.line(MARGIN, curY, MARGIN + IW, curY);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GREY_MID);
+  doc.text(
+    'System-generated by Acacia Home Builders Corporation  ·  CDF-adjusted allocated orders  ·  Retain signed copy for records.',
+    PW / 2, curY + 7, { align:'center' }
+  );
 
-  // ── PAGE DECORATIONS ─────────────────────────────────────────────────────
-  drawRunningHeader(record.store);
-  drawBottomFooter();
+  // ── PAGE CHROME ───────────────────────────────────────────────────────────
+  drawStoreBar();   // running header at top
+  drawFooter();     // logo + contact + batch at bottom
   cropMarks();
 
-  // ── DOWNLOAD ─────────────────────────────────────────────────────────────
+  // ── SAVE ──────────────────────────────────────────────────────────────────
   const filename = `AcaciaHBC_CDF_${dateTag}_${record.store}.pdf`;
   doc.save(filename);
 }
@@ -2879,6 +3091,120 @@ async function p3SaveOrderLines(uid) {
     toast('✅ Order quantities saved.');
   } catch(e) {
     toast('Save failed: ' + e.message, 'err');
+  }
+}
+
+/* ── Store Manager qty editing ─────────────────────────────────────────────
+   Uses P3_EDITS keyed as 'store:{uid}' so SM edits and Store edits
+   live in separate buffers and never clobber each other.
+   storeOrder is stored on each orderLine object alongside finalOrder,
+   preserving both SM-approved and Store-requested counts for history.
+────────────────────────────────────────────────────────────────────────── */
+function p3StoreLineChanged(input, uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  const bufKey = 'store:' + uid;
+  if (!P3_EDITS[bufKey]) {
+    try { P3_EDITS[bufKey] = JSON.parse(r.orderLines || '[]'); } catch(e) { P3_EDITS[bufKey] = []; }
+  }
+  const idx = parseInt(input.dataset.lineIdx);
+  if (P3_EDITS[bufKey][idx]) {
+    const raw = input.value.trim();
+    P3_EDITS[bufKey][idx].storeOrder = raw === '' ? null : (parseInt(raw) || 0);
+  }
+  const smQty   = P3_EDITS[bufKey][idx]?.finalOrder ?? P3_EDITS[bufKey][idx]?.allocated ?? 0;
+  const storeQty = P3_EDITS[bufKey][idx]?.storeOrder;
+  const isEmpty = storeQty === null || storeQty === undefined;
+  const changed = !isEmpty && storeQty !== smQty;
+  input.style.borderColor = isEmpty ? 'var(--red)' : changed ? 'var(--amber)' : 'var(--silver)';
+  input.style.color = isEmpty ? 'var(--red)' : changed ? 'var(--amber)' : '';
+}
+
+async function p3SaveStoreOrders(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  const bufKey = 'store:' + uid;
+  const lines = P3_EDITS[bufKey];
+  if (!lines) { toast('No changes to save.'); return; }
+  try {
+    await apiUpdateCDF(uid, { orderLines: JSON.stringify(lines) });
+    delete P3_EDITS[bufKey];
+    S.expandedId = uid;
+    await loadData();
+    renderAll();
+    toast('✅ Store quantities saved.');
+  } catch(e) {
+    toast('Save failed: ' + e.message, 'err');
+  }
+}
+
+/* ══════════════════ GENERATE FINAL CDF (Phase 4) ══════════════════
+   Computes effective qty per SKU:
+     storeOrder (if set) > finalOrder (SM approved)
+   Downloads the CDF PDF and stamps cdfGeneratedAt on the record.
+════════════════════════════════════════════════════════════════════ */
+async function generateFinalCDF(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+
+  // Parse stored orderLines
+  let lines = [];
+  try { lines = r.orderLines ? JSON.parse(r.orderLines) : []; } catch(e) { lines = []; }
+  if (!lines.length) {
+    toast('No order lines found on this ticket.', 'err');
+    return;
+  }
+
+  // Compute effective qty: storeOrder takes precedence per SKU, else finalOrder
+  const effectiveLines = lines
+    .map(l => ({
+      ...l,
+      effectiveQty: (l.storeOrder !== null && l.storeOrder !== undefined)
+        ? Number(l.storeOrder)
+        : Number(l.finalOrder || l.allocated || 0),
+    }))
+    .filter(l => l.effectiveQty > 0);
+
+  if (!effectiveLines.length) {
+    toast('No lines with a quantity > 0.', 'err');
+    return;
+  }
+
+  toast('Generating CDF…');
+
+  try {
+    // Fetch store metadata
+    let storeInfo = {};
+    if (P2.storesInfo && P2.storesInfo[r.store]) {
+      storeInfo = P2.storesInfo[r.store];
+    } else {
+      try {
+        const storesArr = await gasGet('getBibleStoresForUser', { username: S.user.username });
+        if (Array.isArray(storesArr)) {
+          const found = storesArr.find(s => s.store === r.store);
+          if (found) storeInfo = found;
+        }
+      } catch(e) {}
+    }
+
+    await p3GeneratePDF(r, effectiveLines.map(l => ({
+      ...l,
+      finalOrder: l.effectiveQty,   // PDF generator reads finalOrder
+    })), storeInfo);
+
+    // Stamp cdfGeneratedAt on the record
+    const patch = {
+      cdfGeneratedAt: new Date().toISOString(),
+      cdfGeneratedBy: S.user.username,
+    };
+    await apiUpdateCDF(uid, patch);
+    S.expandedId = uid;
+    await loadData();
+    renderAll();
+    toast('✅ CDF downloaded and stamped.');
+
+  } catch(err) {
+    toast('CDF generation failed: ' + err.message, 'err');
   }
 }
 
