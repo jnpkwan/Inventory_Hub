@@ -1746,9 +1746,23 @@ function buildDetail(r) {
           </div>
         </div>`;
     } else {
-      orderLinesHTML = `<div style="margin:10px 0;padding:10px 14px;background:var(--mist);border:1px solid var(--silver);border-radius:8px;font-size:11.5px;color:#aaa">
-        No order lines on this ticket. This ticket was created manually — order lines are only available on tickets created via the Phase 2 replenishment upload.
-      </div>`;
+      const canAttach = (role === 'EXECUTIVE' || role === 'IS');
+      orderLinesHTML = `
+        <div style="margin:10px 0;padding:12px 14px;background:var(--amber-pale);border:1px solid var(--amber);border-radius:8px;display:flex;align-items:center;gap:12px">
+          <span style="font-size:18px">📎</span>
+          <div style="flex:1">
+            <div style="font-size:11.5px;font-weight:700;color:#7A5500;margin-bottom:2px">No order lines attached to this ticket</div>
+            <div style="font-size:11px;color:#9A6900">Upload the replenishment Excel to attach order lines — the SM will then be able to review and approve quantities.</div>
+          </div>
+          ${canAttach ? `<div>
+            <input type="file" id="ol-attach-${uid}" accept=".xlsx,.xls" style="display:none"
+              onchange="p3AttachOrderLines(this,'${uid}')">
+            <button class="btn btn-blue btn-sm" style="white-space:nowrap"
+              onclick="event.stopPropagation();document.getElementById('ol-attach-${uid}').click()">
+              📂 Attach Excel
+            </button>
+          </div>` : ''}
+        </div>`;
     }
   } catch(e) { orderLinesHTML = ''; }
 
@@ -2572,41 +2586,61 @@ async function p3ConfirmBatchCreate() {
   if (!P3._staged || !P3._staged.length) return;
   const btn = document.getElementById('p3-confirm-btn');
   btn.disabled = true;
-  btn.textContent = '⏳ Creating…';
 
-  try {
-    const cdfs = P3._staged.map(s => ({
-      cdf:        s.cdf,
-      store:      s.store,
-      month:      s.month,
-      type:       s.type,
-      route:      s.route,
-      orderLines: JSON.stringify(s.orderLines),
-    }));
+  // Check for duplicates upfront
+  const existingRefs = new Set((S.records || []).map(r => r.cdf));
+  const toCreate = P3._staged.filter(s => !existingRefs.has(s.cdf));
+  const skippedCount = P3._staged.length - toCreate.length;
 
-    // gasPost encodes everything into a GET query string — fine for small payloads,
-    // but orderLines JSON can be large. Call the URL directly with a raw payload param.
-    const url = new URL(CFG.apiUrl);
-    url.searchParams.set('action', 'batchCreateCDFs');
-    url.searchParams.set('payload', JSON.stringify({ username: S.user.username, cdfs }));
-    const resp = await fetch(url.toString());
-    const data = await resp.json();
-    if (!data.ok) throw new Error(data.error || 'Batch create failed');
-    const { created, skipped } = data.data;
-
-    p3CloseUploadModal();
-    await loadData();
-    renderAll();
-
-    let msg = `✅ Created ${created} CDF ticket${created !== 1 ? 's' : ''} in Phase 3 — Awaiting SM Review.`;
-    if (skipped > 0) msg += ` ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped.`;
-    toast(msg);
-
-  } catch (err) {
-    toast('Error: ' + err.message, 'err');
+  if (!toCreate.length) {
+    toast(`All ${skippedCount} ticket${skippedCount!==1?'s':''} already exist — nothing to create.`);
     btn.disabled = false;
-    btn.textContent = '✓ Confirm & Create CDFs';
+    return;
   }
+
+  let created = 0, failed = 0;
+  const errors = [];
+
+  for (let i = 0; i < toCreate.length; i++) {
+    const s = toCreate[i];
+    btn.textContent = `⏳ Creating ${i + 1} of ${toCreate.length}…`;
+
+    try {
+      // Send one CDF at a time via addCDF — keeps payload small, avoids URL limit
+      const payload = {
+        username:   S.user.username,
+        cdf:        s.cdf,
+        store:      s.store,
+        month:      s.month,
+        type:       s.type,
+        route:      s.route,
+        status:     'Preparing Order',
+        orderLines: JSON.stringify(s.orderLines),
+      };
+      const url = new URL(CFG.apiUrl);
+      url.searchParams.set('action', 'addCDF');
+      url.searchParams.set('payload', JSON.stringify(payload));
+      const resp = await fetch(url.toString());
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || 'Failed');
+      created++;
+    } catch(err) {
+      failed++;
+      errors.push(`${s.store}: ${err.message}`);
+    }
+  }
+
+  p3CloseUploadModal();
+  await loadData();
+  renderAll();
+
+  let msg = `✅ Created ${created} CDF ticket${created!==1?'s':''} in Phase 3 — Awaiting SM Review.`;
+  if (skippedCount > 0) msg += ` ${skippedCount} duplicate${skippedCount!==1?'s':''} skipped.`;
+  if (failed > 0) msg += ` ⚠ ${failed} failed: ${errors.join(', ')}`;
+  toast(msg);
+
+  btn.disabled = false;
+  btn.textContent = '✓ Confirm & Create CDFs';
 }
 
 
@@ -3094,6 +3128,92 @@ async function p3SaveOrderLines(uid) {
     toast('✅ Order quantities saved.');
   } catch(e) {
     toast('Save failed: ' + e.message, 'err');
+  }
+}
+
+/**
+ * Attaches order lines to an existing ticket by parsing the replenishment Excel.
+ * Finds rows matching the ticket's store name and saves them as orderLines.
+ * Called when the IA uploads the Excel via the "Attach Excel" button on a ticket
+ * that was created without order lines (e.g. due to a failed batch upload).
+ */
+async function p3AttachOrderLines(input, uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r || !input.files[0]) return;
+
+  toast('Parsing Excel…');
+
+  try {
+    const ab  = await input.files[0].arrayBuffer();
+    const wb  = XLSX.read(ab, { type: 'array' });
+    const sheetName = wb.SheetNames.find(n => n.toUpperCase() !== 'SUMMARY') || wb.SheetNames[0];
+    const ws  = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    // Find header row
+    let hdrIdx = -1;
+    for (let i = 0; i < Math.min(10, rows.length); i++) {
+      const joined = rows[i].map(v => String(v).toLowerCase()).join('|');
+      if (joined.includes('store') && joined.includes('barcode')) { hdrIdx = i; break; }
+    }
+    if (hdrIdx < 0) throw new Error('Could not find header row in this file.');
+
+    const headers = rows[hdrIdx].map(v => String(v).trim());
+    const col = name => headers.findIndex(h => h.toLowerCase().includes(name.toLowerCase()));
+
+    const cStore     = col('Store');
+    const cBarcode   = col('Barcode');
+    const cName      = col('Product Name');
+    const cBrand     = col('Brand');
+    const cCat       = col('Category');
+    const cMax       = col('Max');
+    const cCDFInc    = col('CDF Inc');
+    const cAllocated = col('Allocated Order');
+    const cFinal     = col('Final Order');
+    const cFlag      = col('Note');
+
+    if (cStore < 0 || cBarcode < 0) throw new Error('Missing Store or Barcode column.');
+
+    const targetStore = (r.store || '').toUpperCase();
+    const lines = [];
+
+    for (let i = hdrIdx + 1; i < rows.length; i++) {
+      const row = rows[i];
+      const store = String(row[cStore] || '').trim().toUpperCase();
+      if (store !== targetStore) continue;
+      const bc = String(row[cBarcode] || '').trim();
+      if (!bc) continue;
+
+      const finalQty = cFinal >= 0 ? (parseFloat(row[cFinal]) || 0) : 0;
+      const allocQty = cAllocated >= 0 ? (parseFloat(row[cAllocated]) || 0) : 0;
+      const qty = finalQty > 0 ? finalQty : allocQty;
+      if (qty <= 0) continue;
+
+      lines.push({
+        barcode:      bc,
+        productName:  cName   >= 0 ? String(row[cName]   || '').trim() : '',
+        brand:        cBrand  >= 0 ? String(row[cBrand]  || '').trim() : '',
+        category:     cCat    >= 0 ? String(row[cCat]    || '').trim() : '',
+        max:          cMax    >= 0 ? (parseFloat(row[cMax]) || null) : null,
+        cdfIncrement: cCDFInc >= 0 ? (parseFloat(row[cCDFInc]) || 1) : 1,
+        finalOrder:   qty,
+        allocated:    allocQty,
+        flag:         cFlag   >= 0 ? String(row[cFlag]   || '').trim() : '',
+      });
+    }
+
+    if (!lines.length) {
+      throw new Error(`No rows found for store "${targetStore}" in this file. Check the Store / Location column matches exactly.`);
+    }
+
+    await apiUpdateCDF(uid, { orderLines: JSON.stringify(lines) });
+    S.expandedId = uid;
+    await loadData();
+    renderAll();
+    toast(`✅ ${lines.length} order lines attached to ${r.store}.`);
+
+  } catch(err) {
+    toast('Attach failed: ' + err.message, 'err');
   }
 }
 
