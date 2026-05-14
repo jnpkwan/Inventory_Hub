@@ -770,7 +770,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 
             <!-- STEP 1: Stock Summary -->
             <div class="p1-step" id="p2-card-1">
-              <div class="p1-step-lbl"><span class="p1-step-num">1</span> Step 1 of 3</div>
+              <div class="p1-step-lbl"><span class="p1-step-num">1</span> Step 1 of 2</div>
               <h3>Upload the Stock Summary 📊</h3>
               <p class="p1-desc">Same file as Phase 1 — galing sa Acacia system. Filename: <strong>StockSummary_AllTime_…</strong></p>
               <div class="p1-drop" id="p2-dz-stock" ondrop="p2DropFile(event,'stock')" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)">
@@ -785,7 +785,7 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
 
             <!-- STEP 2: Warehouse Inventory -->
             <div class="p1-step" id="p2-card-2">
-              <div class="p1-step-lbl"><span class="p1-step-num">2</span> Step 2 of 3</div>
+              <div class="p1-step-lbl"><span class="p1-step-num">2</span> Step 2 of 2</div>
               <h3>Upload the Warehouse Inventory 🏭</h3>
               <p class="p1-desc">Galing sa Acacia system. Filename: <strong>WarehouseInventory_AllTime_…</strong></p>
               <div class="p1-drop" id="p2-dz-whs" ondrop="p2DropFile(event,'whs')" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)">
@@ -799,18 +799,15 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
             </div>
 
             <!-- STEP 3: Min/Max Bible -->
-            <div class="p1-step" id="p2-card-3">
-              <div class="p1-step-lbl"><span class="p1-step-num">3</span> Step 3 of 3</div>
-              <h3>Upload the Min/Max Bible 📕</h3>
-              <p class="p1-desc">Per-store max stocking, CDF increment, brand, category — IA-maintained. Filename: <strong>MinMax_Bible_…</strong></p>
-              <div class="p1-drop" id="p2-dz-bible" ondrop="p2DropFile(event,'bible')" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)">
-                <input type="file" id="p2-file-bible" accept=".xlsx,.xls" onchange="p2PickFile(this,'bible')" style="display:none">
-                <div class="p1-drop-icon">📕</div>
-                <h4>Drag the Min/Max Bible here</h4>
-                <p>Includes STORES tab + per-store SKU tabs</p>
-                <button class="btn-browse" onclick="document.getElementById('p2-file-bible').click()">📂 Choose File</button>
-              </div>
-              <div id="p2-bible-pills" class="p1-pills"></div>
+            <!-- BIBLE STATUS — auto-fetched from Google Sheets, no upload needed -->
+            <div class="p1-step" id="p2-card-3" style="background:#F4FBF6;border-color:#B8E5C4">
+              <div class="p1-step-lbl" style="color:var(--green)"><span class="p1-step-num" style="background:var(--green)">📕</span> Min/Max Bible — auto-loaded</div>
+              <h3>Loaded directly from the central Bible Sheet</h3>
+              <p class="p1-desc" id="p2-bible-status">Checking last sync time…</p>
+              <p style="font-size:11px;color:#666;margin-top:6px">
+                <a id="p2-bible-link" href="https://docs.google.com/spreadsheets/d/1b29d6L4TRPAqBiKIJUtr0ror3ZKVOP_daAlTCSZpFK0/edit" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-weight:600">📕 Open Bible in Google Sheets ↗</a>
+                <span style="color:#999;margin-left:10px">— edits in the Sheet apply automatically next time you Generate</span>
+              </p>
             </div>
 
             <button class="p1-generate" id="p2-btn-generate" onclick="p2Generate()" disabled>
@@ -3205,9 +3202,9 @@ function p1Download() {
 const P2 = {
   stockFile: null,
   whsFile:   null,
-  bibleFile: null,
   reportWB:  null,
   results:   null,   // {totalUnits, totalLines, stockouts, shortfalls, stores:[{store, lines, units, stockouts}]}
+  bibleLastSyncIso: null,  // ISO timestamp of last Bible edit (from getBibleLastModified)
 };
 
 // Store size → priority weight (fallback "Medium" 1.2× when Bible doesn't carry Size yet)
@@ -3229,6 +3226,28 @@ function p2RenderWorkspace() {
     body.style.display = 'none';
   }
   p2RenderHistory();
+  p2RefreshBibleStatus();   // background refresh of "last synced" indicator
+}
+
+function p2RefreshBibleStatus() {
+  const statusEl = document.getElementById('p2-bible-status');
+  if (!statusEl) return;
+  if (CFG.offline || !CFG.apiUrl) {
+    statusEl.textContent = 'Offline — Bible status unavailable';
+    return;
+  }
+  gasGet('getBibleLastModified', {}).then(resp => {
+    if (resp && resp.isoTimestamp) {
+      P2.bibleLastSyncIso = resp.isoTimestamp;
+      const ago = p1AgoLabel(resp.isoTimestamp);
+      statusEl.innerHTML = `Last edited <strong>${esc(ago)}</strong> · <span style="color:#666">${esc(resp.readable || '')}</span>`;
+    } else {
+      statusEl.textContent = 'Bible reachable — sync time unknown';
+    }
+  }).catch(() => {
+    statusEl.textContent = '⚠ Could not reach Bible Sheet — check Apps Script';
+    statusEl.style.color = 'var(--red)';
+  });
 }
 
 /* ── History (right panel) ───────────────────────────────────────────────── */
@@ -3306,7 +3325,6 @@ function p2SetFile(kind, file) {
   const map = {
     stock: { state:'stockFile', dz:'p2-dz-stock', pills:'p2-stock-pills', card:'p2-card-1', icon:'📋' },
     whs:   { state:'whsFile',   dz:'p2-dz-whs',   pills:'p2-whs-pills',   card:'p2-card-2', icon:'🏭' },
-    bible: { state:'bibleFile', dz:'p2-dz-bible', pills:'p2-bible-pills', card:'p2-card-3', icon:'📕' },
   }[kind];
   if (!map) return;
   P2[map.state] = file;
@@ -3318,7 +3336,8 @@ function p2SetFile(kind, file) {
 }
 
 function p2CheckReady() {
-  const ready = P2.stockFile && P2.whsFile && P2.bibleFile;
+  // Bible is now auto-fetched from Sheets, so only Stock + Warehouse uploads are required
+  const ready = P2.stockFile && P2.whsFile;
   document.getElementById('p2-btn-generate').disabled = !ready;
 }
 
@@ -3330,10 +3349,10 @@ function p2Log(msg, cls='log-info') {
 function p2SetProgress(pct) { document.getElementById('p2-bar').style.width = pct + '%'; }
 
 function p2Reset() {
-  P2.stockFile = null; P2.whsFile = null; P2.bibleFile = null; P2.reportWB = null; P2.results = null;
-  ['p2-stock-pills','p2-whs-pills','p2-bible-pills'].forEach(id => document.getElementById(id).innerHTML = '');
-  ['p2-dz-stock','p2-dz-whs','p2-dz-bible'].forEach(id => document.getElementById(id).classList.remove('has-files'));
-  ['p2-card-1','p2-card-2','p2-card-3'].forEach(id => document.getElementById(id).classList.remove('done'));
+  P2.stockFile = null; P2.whsFile = null; P2.reportWB = null; P2.results = null;
+  ['p2-stock-pills','p2-whs-pills'].forEach(id => document.getElementById(id).innerHTML = '');
+  ['p2-dz-stock','p2-dz-whs'].forEach(id => document.getElementById(id).classList.remove('has-files'));
+  ['p2-card-1','p2-card-2'].forEach(id => document.getElementById(id).classList.remove('done'));
   document.getElementById('p2-progress').classList.remove('show');
   document.getElementById('p2-results').classList.remove('show');
   document.getElementById('p2-log').innerHTML = '';
@@ -3811,7 +3830,7 @@ function p2StockToMap(stockData) {
 /* ── Main orchestrator ───────────────────────────────────────────────────── */
 async function p2Generate() {
   if (!p2CanEdit()) { toast('Only Inventory Associates can generate orders.', 'err'); return; }
-  if (!P2.stockFile || !P2.whsFile || !P2.bibleFile) return;
+  if (!P2.stockFile || !P2.whsFile) return;
 
   document.getElementById('p2-btn-generate').disabled = true;
   document.getElementById('p2-progress').classList.add('show');
@@ -3831,20 +3850,23 @@ async function p2Generate() {
     p2Log(`✓ Loaded: ${Object.keys(whsMap).length} warehouse SKUs`, 'log-ok');
     p2SetProgress(45);
 
-    p2Log('📕 Loading Min/Max Bible…', 'log-info');
-    const bible = await p2ParseBible(P2.bibleFile);
+    p2Log('📕 Fetching Min/Max Bible from Google Sheets…', 'log-info');
+    if (CFG.offline || !CFG.apiUrl) {
+      throw new Error('Offline mode — Bible fetch requires connection to Apps Script.');
+    }
+    const bible = await gasGet('getBibleProductsForUser', { username: S.user.username });
+    if (!bible || !bible.products) {
+      throw new Error('Bible fetch returned no data. Check Apps Script deployment.');
+    }
     const storeCnt = Object.keys(bible.products).length;
     const skuCnt = Object.values(bible.products).reduce((s,o) => s + Object.keys(o).length, 0);
-    p2Log(`✓ Loaded: ${storeCnt} stores · ${skuCnt} SKU/store pairs`, 'log-ok');
+    p2Log(`✓ Loaded: ${storeCnt} stores · ${skuCnt} SKU/store pairs (filtered to your assigned stores)`, 'log-ok');
     p2SetProgress(60);
 
-    // Scope: filter to IA's assigned stores (EXEC = no filter)
-    const scopeStores = p1AssignedSet();   // Set or null
-    if (scopeStores) {
-      p2Log(`🔒 Scope: ${scopeStores.size} assigned store${scopeStores.size!==1?'s':''}`, 'log-info');
-    } else {
-      p2Log(`🌐 Scope: all stores (executive view)`, 'log-info');
-    }
+    // Bible scope already filtered server-side by Assignments tab.
+    // No need to additionally filter — pass null to use everything the server returned.
+    const scopeStores = null;
+    p2Log(`🔒 Scope: ${storeCnt} accessible store${storeCnt!==1?'s':''} (per Bible Assignments)`, 'log-info');
 
     p2Log('🧮 Computing replenishment plan…', 'log-info');
     const plan = p2ComputePlan(stockMap, whsMap, bible, scopeStores);
