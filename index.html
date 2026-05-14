@@ -1391,7 +1391,8 @@ function renderSummary(rows) {
     const pdfPend   = all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')!=='Generated'&&(r.storeStatus||'')!=='Approved').length;
     const coordAwait= all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')==='Generated'&&(r.storeStatus||'')==='').length;
     const storeChg  = all.filter(r=>r.storeStatus==='Changes Requested').length;
-    const uploadCard = (role==='IS'||role==='EXECUTIVE')
+    const roleNow   = S.user?.role || '';
+    const uploadCard = (roleNow==='IS'||roleNow==='EXECUTIVE')
       ? '<div class="ssc" style="border-color:var(--green);cursor:pointer" onclick="p3OpenUploadModal()">'
           +'<div class="ssc-n" style="color:var(--green)">📋</div>'
           +'<div class="ssc-l" style="color:var(--green);font-weight:700">Upload Replenishment Order</div>'
