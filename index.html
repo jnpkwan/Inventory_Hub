@@ -1584,18 +1584,9 @@ function renderTable(rows) {
   }).join('');
 }
 
-async function toggleExpand(uid) {
-  if (S.expandedId === uid) {
-    S.expandedId = null;
-    renderTable();
-    return;
-  }
-  S.expandedId = uid;
-  // Render immediately with whatever's cached, then hydrate lines and re-render
+function toggleExpand(uid) {
+  S.expandedId = S.expandedId===uid ? null : uid;
   renderTable();
-  await ensureOrderLines(uid);
-  // Only re-render if this row is still the expanded one (user may have collapsed)
-  if (S.expandedId === uid) renderTable();
 }
 
 /* ══════════════════ PHASE PILL COUNTS (month-level) ══════════════════ */
@@ -2740,9 +2731,6 @@ async function generatePDF(uid) {
   const r = S.records.find(x => (x.id || x.cdf) === uid);
   if (!r) return;
 
-  // Hydrate order lines on demand (getCDFs strips them by default)
-  await ensureOrderLines(uid);
-
   // Parse stored orderLines
   let lines = [];
   try {
@@ -3193,53 +3181,6 @@ async function p3GeneratePDF(record, lines, storeInfo) {
 // Tracks in-progress edits per record: { uid: [lines array] }
 const P3_EDITS = {};
 
-/**
- * Lazy-fetch helper for order lines.
- *
- * The getCDFs endpoint now strips orderLines from the response by default
- * (heavy JSON blob, rarely needed in list views). When a ticket is expanded,
- * a PDF is generated, or quantities are edited, we need the order lines —
- * fetch them on demand and cache them onto the in-memory record so subsequent
- * reads in the same session are instant.
- *
- * Uses a separate _pending Set so we never expose a sentinel value through
- * r.orderLines (which would confuse JSON.parse in render code paths).
- *
- * Returns the record (with orderLines populated) or null if record not found.
- * Safe to call when offline — falls back to whatever's on the record already.
- */
-const _orderLinesPending = new Map(); // uid -> Promise
-async function ensureOrderLines(uid) {
-  const r = S.records.find(x => (x.id || x.cdf) === uid);
-  if (!r) return null;
-  // Already hydrated? Use cache. (Empty string counts as hydrated — no lines.)
-  if (r.orderLines !== undefined && r.orderLines !== null) return r;
-  // Offline mode — nothing to fetch
-  if (CFG.offline) { r.orderLines = ''; return r; }
-  // Already in flight? Join the existing promise.
-  if (_orderLinesPending.has(uid)) {
-    await _orderLinesPending.get(uid);
-    return r;
-  }
-  const p = (async () => {
-    try {
-      const resp = await gasGet('getCDFOrderLines', {
-        username: S.user.username,
-        id:       r.id || r.cdf
-      });
-      r.orderLines = (resp && resp.orderLines) || '';
-    } catch(e) {
-      r.orderLines = '';
-      toast('Could not load order lines: ' + e.message, 'err');
-    } finally {
-      _orderLinesPending.delete(uid);
-    }
-  })();
-  _orderLinesPending.set(uid, p);
-  await p;
-  return r;
-}
-
 // Guard against losing edits to refresh / tab close / nav away.
 // Wired exactly once; checks both SM-edit and Store-edit buffers.
 if (!window._p3UnsavedGuardWired) {
@@ -3442,9 +3383,6 @@ async function p3SaveStoreOrders(uid) {
 async function generateFinalCDF(uid) {
   const r = S.records.find(x => (x.id || x.cdf) === uid);
   if (!r) return;
-
-  // Hydrate order lines on demand (getCDFs strips them by default)
-  await ensureOrderLines(uid);
 
   // Parse stored orderLines
   let lines = [];
