@@ -1496,7 +1496,7 @@ function renderTable(rows) {
   const thead = document.getElementById('thead');
   if(isP34) {
     thead.innerHTML = `<tr>
-      <th onclick="sortBy('cdf')">CDF Ref</th>
+      <th onclick="sortBy('cdf')">Store Order</th>
       <th onclick="sortBy('store')">Store</th>
       <th onclick="sortBy('type')">Type</th>
       <th>Workflow Status</th>
@@ -1506,7 +1506,7 @@ function renderTable(rows) {
     </tr>`;
   } else {
     thead.innerHTML = `<tr>
-      <th onclick="sortBy('cdf')">CDF Ref</th>
+      <th onclick="sortBy('cdf')">Store Order</th>
       <th onclick="sortBy('store')">Store</th>
       <th onclick="sortBy('route')">Route</th>
       <th onclick="sortBy('type')">Type</th>
@@ -1969,7 +1969,7 @@ function buildDetail(r) {
     <div class="wf-meta-row">
       ${r.sentToWhsBy?`<div class="wf-meta"><div class="wf-ml">Sent to WHS by</div><div class="wf-mv">${esc(r.sentToWhsBy)}</div></div>`:''}
       ${r.sentToWhsAt?`<div class="wf-meta"><div class="wf-ml">Sent Date</div><div class="wf-mv">${fmtD(r.sentToWhsAt.slice(0,10))}</div></div>`:''}
-      ${r.acaciaRef?`<div class="wf-meta"><div class="wf-ml">Acacia Ref</div><div class="wf-mv" style="font-family:'DM Mono',monospace;color:var(--blue);font-weight:700">${esc(r.acaciaRef)}</div></div>`:''}
+      ${r.acaciaRef?`<div class="wf-meta"><div class="wf-ml">CDF Ref</div><div class="wf-mv" style="font-family:'DM Mono',monospace;color:var(--blue);font-weight:700">${esc(r.acaciaRef)}</div></div>`:''}
       <div style="margin-left:auto;display:flex;gap:12px;align-items:flex-start">
         ${r.boxes?`<div class="wf-meta"><div class="wf-ml">Boxes</div><div class="wf-mv">${esc(r.boxes)}</div></div>`:''}
         ${r.truck?`<div class="wf-meta"><div class="wf-ml">Truck</div><div class="wf-mv" style="font-family:'DM Mono',monospace">${esc(r.truck)}</div></div>`:''}
@@ -2041,8 +2041,8 @@ function buildForm(r) {
     </div>` : '';
   return `${p6Banner}
     <div class="frow"><div class="fg">
-      <label>CDF Reference <span class="req">*</span></label>
-      <input type="text" id="f-cdf" value="${esc(r.cdf||'')}" placeholder="CDF3390-335">
+      <label>Store Order <span class="req">*</span></label>
+      <input type="text" id="f-cdf" value="${esc(r.cdf||'')}" placeholder="ACMAC-ORDER-20260515">
     </div><div class="fg">
       <label>Store Name <span class="req">*</span></label>
       <select id="f-store" class="ms">
@@ -2104,6 +2104,18 @@ function buildForm(r) {
       <label id="cas-lbl">CAS No.</label>
       <input type="text" id="f-cas" value="${esc(r.cas||'')}" placeholder="169070">
     </div></div>
+
+    ${isEdit ? `
+    <div class="frow"><div class="fg">
+      <label>CDF Ref ${S.user.role === 'EXECUTIVE'
+        ? '<span style="color:#999;font-weight:400;text-transform:none;font-size:10px">— editable by executives</span>'
+        : '<span style="color:#999;font-weight:400;text-transform:none;font-size:10px">— read-only (executives only)</span>'}</label>
+      <input type="text" id="f-acaciaRef"
+        value="${esc(r.acaciaRef||'')}"
+        placeholder="e.g. CDF-2026-00123"
+        style="font-family:'DM Mono',monospace;font-weight:600${S.user.role !== 'EXECUTIVE' ? ';background:#f5f5f7;color:#666;cursor:not-allowed' : ''}"
+        ${S.user.role !== 'EXECUTIVE' ? 'readonly' : ''}>
+    </div></div>` : ''}
 
     <div class="frow full"><div class="fg">
       <label>Remarks</label>
@@ -2239,7 +2251,13 @@ function getFormVals() {
     boxes:   document.getElementById('f-boxes').value.trim(),
     truck:   document.getElementById('f-truck').value.trim(),
     cas:     document.getElementById('f-cas').value.trim(),
-    remarks: document.getElementById('f-remarks').value.trim()
+    remarks: document.getElementById('f-remarks').value.trim(),
+    // acaciaRef (displayed as "CDF Ref") is editable only by executives.
+    // For non-executives, the field is readonly in the form; we omit it from
+    // the payload entirely so the server keeps the existing stored value.
+    ...(S.user.role === 'EXECUTIVE' && document.getElementById('f-acaciaRef')
+        ? { acaciaRef: document.getElementById('f-acaciaRef').value.trim() }
+        : {})
   };
 }
 
@@ -3527,9 +3545,10 @@ async function markSentToWHS(uid) {
 }
 
 /* ══════════════════ CONFIRM ACTUALS LOGGED (Phase 4 — IS only) ══════════════════
-   Opens a modal requiring the IA to enter the Acacia CDF System Reference
-   before the ticket can move to Pending Dispatch. On save:
-     - acaciaRef is persisted
+   Opens a modal requiring the IA to enter the CDF Ref (the reference code
+   from the Acacia system) before the ticket can move to Pending Dispatch.
+   On save:
+     - acaciaRef (displayed as "CDF Ref") is persisted
      - dWhs is auto-stamped with today's date (only if currently empty, so we
        don't overwrite a manually-set value)
      - fulfillStatus → 'Actuals Logged', status → derived from dates
@@ -3552,12 +3571,12 @@ function markActualsLogged(uid) {
         📦 You are confirming that the warehouse team has received the order and the actual count has been logged in the Acacia system. This will move the CDF to <strong>Pending Dispatch</strong>.
       </div>
       <div class="fg">
-        <label>Acacia CDF System Reference <span class="req">*</span></label>
+        <label>CDF Ref <span class="req">*</span></label>
         <input type="text" id="wf-acacia-ref" value="${esc(existingRef)}"
           placeholder="e.g. CDF-2026-00123"
           style="font-family:'DM Mono',monospace;font-weight:600"
           autocomplete="off">
-        <div style="font-size:10.5px;color:#888;margin-top:4px">Enter the reference code generated by the Acacia system once the warehouse has logged the actuals.</div>
+        <div style="font-size:10.5px;color:#888;margin-top:4px">Enter the CDF reference code generated by the Acacia system once the warehouse has logged the actuals.</div>
       </div>
       <div style="margin-top:12px;padding:8px 12px;background:var(--mist);border-radius:6px;font-size:11px;color:#555">
         <strong>WHS handoff date:</strong>
@@ -3579,7 +3598,7 @@ async function submitActualsLogged(uid) {
   const input = document.getElementById('wf-acacia-ref');
   const acaciaRef = (input?.value || '').trim();
   if (!acaciaRef) {
-    toast('Please enter the Acacia CDF System Reference before proceeding.', 'err');
+    toast('Please enter the CDF Ref before proceeding.', 'err');
     input?.focus();
     return;
   }
@@ -3611,7 +3630,7 @@ async function submitActualsLogged(uid) {
     S.expandedId = uid;
     await loadData();
     renderAll();
-    toast('✅ Acacia reference saved — CDF moved to Pending Dispatch');
+    toast('✅ CDF Ref saved — ticket moved to Pending Dispatch');
   } catch(e) {
     toast('Failed to update: ' + e.message, 'err');
   }
@@ -3622,7 +3641,7 @@ async function saveRecord() {
   const vals = getFormVals();
   const isNew = !S.editingId;
 
-  if(!vals.cdf)   { toast('CDF Reference is required','err'); return; }
+  if(!vals.cdf)   { toast('Store Order is required','err'); return; }
   if(!vals.store) { toast('Store Name is required','err'); return; }
 
   // Additional fields required on initial entry
@@ -3812,13 +3831,13 @@ async function gasGet(action, params={}) {
 /* ══════════════════ EXPORT ══════════════════ */
 function exportCSV() {
   const rows = getFiltered();
-  const h=['Month','CDF Ref','Store','Type','Route','Status','WHS','WHS→Hub','Hub→Store','Received','Transit Days','Truck','Boxes','CAS No','Remarks'];
+  const h=['Month','Store Order','CDF Ref','Store','Type','Route','Status','WHS','WHS→Hub','Hub→Store','Received','Transit Days','Truck','Boxes','CAS No','Remarks'];
   const lines=[h.join(',')];
   rows.forEach(r=>{
     const td=tdDays(r);
     const h1=r.dSdc||r.dCdc||r.dDirect||'';
     const h2=r.dSdc2||r.dCdc2||'';
-    lines.push([r.month,r.cdf,r.store,r.type,r.route,r.status,r.dWhs,h1,h2,r.dRecv,td??'',r.truck,r.boxes,r.cas,r.remarks]
+    lines.push([r.month,r.cdf,r.acaciaRef||'',r.store,r.type,r.route,r.status,r.dWhs,h1,h2,r.dRecv,td??'',r.truck,r.boxes,r.cas,r.remarks]
       .map(v=>{const s=String(v||'');return s.includes(',')||s.includes('"')?`"${s.replace(/"/g,'""')}"`  :s}).join(','));
   });
   const a=document.createElement('a');
