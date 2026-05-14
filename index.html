@@ -611,28 +611,6 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
   <div class="controls">
     <div class="crow">
       <select class="fs" id="month-sel" onchange="setMonth(this.value)" style="font-weight:600;min-width:130px"></select>
-      <div class="sep" id="cdf-ctrls-sep-1"></div>
-      <div class="cdf-ctrls" id="cdf-ctrls">
-        <div class="sw"><span class="si">🔍</span><input type="text" id="search" placeholder="Store or CDF ref… (⌘K)" oninput="renderAll()"></div>
-        <select class="fs" id="f-route" onchange="renderAll()">
-          <option value="">All Routes</option>
-          <option value="Direct">Direct</option>
-          <option value="Via SDC">Via SDC</option>
-          <option value="Via CDC">Via CDC</option>
-        </select>
-        <select class="fs" id="f-type" onchange="renderAll()">
-          <option value="">All Types</option>
-          <option value="Regular">Regular</option>
-          <option value="Spare Parts">Spare Parts</option>
-          <option value="Shopee">Shopee</option>
-          <option value="Supplies">Supplies</option>
-        </select>
-        <div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="7" min="1" max="60" onchange="renderAll()"> days</div>
-        <button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records">
-          <span class="tog-dot"></span> Hide Received
-        </button>
-        <div class="sep"></div>
-      </div>
       <div class="sync-info" id="sync-info"></div>
     </div>
   </div>
@@ -1210,13 +1188,6 @@ async function loadData() {
 
 /* ══════════════════ RENDER ══════════════════ */
 function renderAll() {
-  // ── CDF-specific controls visibility (hide on Phase 1 & 2) ─────────────────
-  const cdfCtrls = document.getElementById('cdf-ctrls');
-  const sep1     = document.getElementById('cdf-ctrls-sep-1');
-  const hideCtrls = (S.phaseFilter === 'p1' || S.phaseFilter === 'p2');
-  if (cdfCtrls) cdfCtrls.classList.toggle('hidden', hideCtrls);
-  if (sep1)     sep1.style.display = hideCtrls ? 'none' : '';
-
   // ── Workspace toggle for Phase 1 and Phase 2 ───────────────────────────────
   const ws1 = document.getElementById('p1-workspace');
   const ws2 = document.getElementById('p2-workspace');
@@ -1270,9 +1241,9 @@ function toggleHideReceived() {
 }
 
 function getFiltered() {
-  const search = document.getElementById('search').value.toLowerCase();
-  const fRoute = document.getElementById('f-route').value;
-  const fType  = document.getElementById('f-type').value;
+  const search = (document.getElementById('search')?.value || '').toLowerCase();
+  const fRoute = document.getElementById('f-route')?.value || '';
+  const fType  = document.getElementById('f-type')?.value  || '';
   return S.records.filter(r => {
     if (S.hideReceived && (r.status==='Received'||r.status==='Completed')) return false;
     if (fRoute && r.route!==fRoute) return false;
@@ -1422,6 +1393,14 @@ function renderSummary(rows) {
       +mkSub('p4_hold', '⏸', 'On Hold',              cnt['On Hold'],         '#78909C')  // grey — paused
       +mkSub('p4_attn', '🚨','Needs Attention',       attn,                  '#C0392B')  // red — blocked
       +mkSub('p4_recv', '✅','Received',              cnt['Received'],        '#22A749')  // green — done
+      +'</div>'
+      // ── Phase 4 filter controls row ──────────────────────────────────────────
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 2px 0">'
+        +'<div class="sw" style="min-width:160px;max-width:220px"><span class="si">🔍</span><input type="text" id="search" placeholder="Store or CDF ref… (⌘K)" oninput="renderAll()"></div>'
+        +'<select class="fs" id="f-route" onchange="renderAll()"><option value="">All Routes</option><option value="Direct">Direct</option><option value="Via SDC">Via SDC</option><option value="Via CDC">Via CDC</option></select>'
+        +'<select class="fs" id="f-type" onchange="renderAll()"><option value="">All Types</option><option value="Regular">Regular</option><option value="Spare Parts">Spare Parts</option><option value="Shopee">Shopee</option><option value="Supplies">Supplies</option></select>'
+        +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="7" min="1" max="60" onchange="renderAll()"> days</div>'
+        +'<button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records"><span class="tog-dot"></span> Hide Received</button>'
       +'</div>';
   }
 
@@ -2170,7 +2149,6 @@ function r_coordNote(uid) {
 
 /* ── Upload modal open/close ─────────────────────────────────────────── */
 function p3OpenUploadModal() {
-  if (!P2.results) { toast('Run Phase 2 first to generate the replenishment order.', 'err'); return; }
   // Build the modal on first open
   let m = document.getElementById('p3-upload-modal');
   if (!m) {
