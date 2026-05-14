@@ -1798,13 +1798,25 @@ function buildDetail(r) {
     if (sLines.length && (storeSt === 'Changes Requested' || storeSt === 'Approved')) {
       const canEditStore = (role === 'EXECUTIVE' || role === 'COORDINATOR') && storeSt === 'Changes Requested';
       const storeEditBuf = P3_EDITS['store:' + uid];
+      const isDirty = !!storeEditBuf;
+      // True if at least one line on the record already has a saved storeOrder
+      const hasSavedOverrides = sLines.some(l => l.storeOrder !== null && l.storeOrder !== undefined && l.storeOrder !== '');
       storeOrderLinesHTML = `
-        <div style="margin:10px 0;border:1px solid var(--silver);border-radius:8px;overflow:hidden">
-          <div style="background:var(--mist);padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--silver)">
+        <div style="margin:10px 0;border:1px solid var(--silver);border-radius:8px;overflow:hidden" data-store-edit-wrap="${uid}">
+          <div style="background:var(--mist);padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--silver);flex-wrap:wrap">
             <span style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Order Lines</span>
             <span style="font-size:10px;color:#999">${sLines.length} SKUs</span>
-            ${storeSt==='Changes Requested'?`<span style="font-size:10px;color:var(--amber);font-weight:600;margin-left:4px">· Store editing quantities</span>`:''}
-            ${canEditStore ? `<span style="font-size:10px;color:var(--amber);margin-left:auto">Edit Store Qty below · <a href="#" onclick="event.preventDefault();p3SaveStoreOrders('${uid}')" style="color:var(--amber);font-weight:700">Save Changes</a></span>` : ''}
+            ${canEditStore ? `
+              <span id="p3-store-dirty-${uid}" style="font-size:10.5px;font-weight:700;margin-left:auto;${isDirty?'color:var(--amber)':hasSavedOverrides?'color:var(--green)':'color:#999'}">
+                ${isDirty ? '● Unsaved changes' : hasSavedOverrides ? '✓ All saved' : '— No edits yet'}
+              </span>
+              <button class="btn btn-primary" id="p3-store-save-${uid}"
+                onclick="event.stopPropagation();p3SaveStoreOrders('${uid}')"
+                ${isDirty?'':'disabled'}
+                style="padding:5px 12px;font-size:10.5px;font-weight:700;background:${isDirty?'var(--amber)':'#ccc'};color:#fff;border:none;border-radius:6px;cursor:${isDirty?'pointer':'not-allowed'};text-transform:uppercase;letter-spacing:.3px">
+                💾 Save Store Qty
+              </button>
+            ` : ''}
           </div>
           <div style="overflow-x:auto;max-height:280px;overflow-y:auto">
             <table style="width:100%;border-collapse:collapse;font-size:11px">
@@ -1819,10 +1831,15 @@ function buildDetail(r) {
               </thead>
               <tbody>
                 ${sLines.map((l, i) => {
-                  const smQty    = l.finalOrder ?? l.allocated ?? 0;
-                  const storeQty = storeEditBuf ? (storeEditBuf[i]?.storeOrder ?? l.storeOrder ?? smQty) : (l.storeOrder ?? smQty);
-                  const changed  = storeQty !== smQty;
-                  const isEmpty  = storeQty === null || storeQty === undefined || storeQty === '';
+                  const smQty = l.finalOrder ?? l.allocated ?? 0;
+                  // Saved value on the record (null/empty if never set)
+                  const savedStoreQty = (l.storeOrder !== null && l.storeOrder !== undefined && l.storeOrder !== '') ? l.storeOrder : null;
+                  // In-flight buffer value (if user is editing now)
+                  const bufStoreQty = storeEditBuf && storeEditBuf[i] && storeEditBuf[i].storeOrder !== undefined ? storeEditBuf[i].storeOrder : undefined;
+                  // Display value: buffer (if exists) > saved > blank (NEVER fall back to SM qty silently)
+                  const displayQty = bufStoreQty !== undefined ? bufStoreQty : savedStoreQty;
+                  const isEmpty  = displayQty === null || displayQty === undefined || displayQty === '';
+                  const changed  = !isEmpty && Number(displayQty) !== Number(smQty);
                   return `<tr style="border-bottom:1px solid var(--silver);${i%2===0?'background:#fff':'background:var(--mist)'}">
                     <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-size:10px;color:#666;white-space:nowrap">${esc(l.barcode||'')}</td>
                     <td style="padding:5px 10px;max-width:200px">${esc(l.productName||'')}</td>
@@ -1830,19 +1847,32 @@ function buildDetail(r) {
                     <td style="padding:5px 10px;text-align:center;color:#999;font-weight:600">${smQty}</td>
                     <td style="padding:5px 10px;text-align:center;font-weight:700;background:${storeSt==='Changes Requested'?'var(--amber-pale)':'inherit'};${changed?'color:var(--amber)':''}">
                       ${canEditStore
-                        ? `<input type="number" min="0" value="${storeQty??''}"
+                        ? `<input type="number" min="0" value="${isEmpty?'':displayQty}"
                             class="ol-qty-input"
                             data-line-idx="${i}"
                             style="width:60px;text-align:center;border:1.5px solid ${isEmpty?'var(--red)':changed?'var(--amber)':'var(--silver)'};border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;outline:none;background:transparent"
                             placeholder="${smQty}"
                             oninput="p3StoreLineChanged(this,'${uid}')">`
-                        : `<span style="color:${changed?'var(--amber)':''}">${isEmpty?'—':storeQty}</span>`}
+                        : `<span style="color:${changed?'var(--amber)':''}">${isEmpty?'—':displayQty}</span>`}
                     </td>
                   </tr>`;
                 }).join('')}
               </tbody>
             </table>
           </div>
+          ${canEditStore ? `
+            <div style="background:var(--mist);padding:8px 12px;display:flex;align-items:center;gap:10px;border-top:1px solid var(--silver)">
+              <span style="font-size:10.5px;color:#666;flex:1">
+                ${isDirty ? '⚠️ <strong style="color:var(--amber)">You have unsaved changes.</strong> Click <strong>Save Store Qty</strong> to persist them — refreshing or leaving without saving will lose your edits.' : hasSavedOverrides ? '✓ Quantities have been saved. You can now <strong>Generate Adjusted CDF</strong>.' : 'Enter the store-adjusted quantity for each line, then click Save.'}
+              </span>
+              <button class="btn btn-primary"
+                onclick="event.stopPropagation();p3SaveStoreOrders('${uid}')"
+                ${isDirty?'':'disabled'}
+                style="padding:7px 16px;font-size:11px;font-weight:700;background:${isDirty?'var(--amber)':'#ccc'};color:#fff;border:none;border-radius:6px;cursor:${isDirty?'pointer':'not-allowed'};text-transform:uppercase;letter-spacing:.3px">
+                💾 Save Store Qty
+              </button>
+            </div>
+          ` : ''}
         </div>`;
     }
   } catch(e) { storeOrderLinesHTML = ''; }
@@ -1853,14 +1883,23 @@ function buildDetail(r) {
   // and generate the CDF for the warehouse. No further approve/reject buttons.
   const storeActions = '';
 
-  // CDF generation — only when store has requested changes and submitted adjusted quantities
+  // CDF generation — only when store has requested changes and submitted adjusted quantities.
+  // If there are unsaved edits in the buffer, disable the button so we never generate a PDF
+  // with stale numbers.
+  const hasUnsavedStoreEdits = !!P3_EDITS['store:' + uid];
   const cdfGenBtn = storeSt==='Changes Requested' && !locked4 && canFulfill ? `
     <div class="wf-actions" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--silver)">
-      <button class="btn btn-blue" style="font-weight:700;letter-spacing:.3px"
+      <button class="btn btn-blue" style="font-weight:700;letter-spacing:.3px;${hasUnsavedStoreEdits?'opacity:.45;cursor:not-allowed':''}"
+        ${hasUnsavedStoreEdits?'disabled':''}
         onclick="event.stopPropagation();generateFinalCDF('${uid}')">
         📄 ${r.cdfGeneratedAt ? 'Re-download Adjusted CDF' : 'Generate Adjusted CDF'}
       </button>
-      ${r.cdfGeneratedAt ? `<span style="font-size:10.5px;color:var(--teal);font-weight:600;margin-left:8px">✓ Generated ${fmtD(r.cdfGeneratedAt.slice(0,10))} by ${esc(r.cdfGeneratedBy||'IS')}</span>` : `<span style="font-size:10.5px;color:#aaa;margin-left:8px">Uses store-adjusted quantities</span>`}
+      ${hasUnsavedStoreEdits
+        ? `<span style="font-size:10.5px;color:var(--amber);font-weight:700;margin-left:8px">⚠ Save Store Qty first</span>`
+        : r.cdfGeneratedAt
+          ? `<span style="font-size:10.5px;color:var(--teal);font-weight:600;margin-left:8px">✓ Generated ${fmtD(r.cdfGeneratedAt.slice(0,10))} by ${esc(r.cdfGeneratedBy||'IS')}</span>`
+          : `<span style="font-size:10.5px;color:#aaa;margin-left:8px">Uses store-adjusted quantities</span>`
+      }
     </div>` : '';
 
   const panelP4 = `
@@ -3105,6 +3144,20 @@ async function p3GeneratePDF(record, lines, storeInfo) {
 // Tracks in-progress edits per record: { uid: [lines array] }
 const P3_EDITS = {};
 
+// Guard against losing edits to refresh / tab close / nav away.
+// Wired exactly once; checks both SM-edit and Store-edit buffers.
+if (!window._p3UnsavedGuardWired) {
+  window.addEventListener('beforeunload', (e) => {
+    const hasUnsaved = Object.keys(P3_EDITS).length > 0;
+    if (hasUnsaved) {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    }
+  });
+  window._p3UnsavedGuardWired = true;
+}
+
 function p3LineChanged(input, uid) {
   const r = S.records.find(x => (x.id || x.cdf) === uid);
   if (!r) return;
@@ -3252,6 +3305,19 @@ function p3StoreLineChanged(input, uid) {
   const changed = !isEmpty && storeQty !== smQty;
   input.style.borderColor = isEmpty ? 'var(--red)' : changed ? 'var(--amber)' : 'var(--silver)';
   input.style.color = isEmpty ? 'var(--red)' : changed ? 'var(--amber)' : '';
+
+  // Live-update the dirty badge + save buttons without re-rendering the whole row
+  // (a full renderAll would steal focus from the input the user is typing into).
+  const dirtyEl = document.getElementById('p3-store-dirty-' + uid);
+  if (dirtyEl) {
+    dirtyEl.textContent = '● Unsaved changes';
+    dirtyEl.style.color = 'var(--amber)';
+  }
+  document.querySelectorAll(`[data-store-edit-wrap="${uid}"] button`).forEach(btn => {
+    btn.disabled = false;
+    btn.style.background = 'var(--amber)';
+    btn.style.cursor = 'pointer';
+  });
 }
 
 async function p3SaveStoreOrders(uid) {
