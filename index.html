@@ -1085,10 +1085,10 @@ function startApp() {
 
   loadData();
 
-  // Fetch stores once at login (non-blocking)
+  // Fetch stores once at login (non-blocking) — scoped to user's assigned stores via Bible
   if(!CFG.offline && CFG.apiUrl) {
-    gasGet('getStores', {}).then(sr => {
-      S.stores = (sr||[]).map(s => s.storeName||s.storeCode||'').filter(Boolean).sort();
+    gasGet('getBibleStoresForUser', { username: S.user.username }).then(sr => {
+      S.stores = (sr||[]).map(s => s.store||'').filter(Boolean).sort();
     }).catch(() => {});
   }
 
