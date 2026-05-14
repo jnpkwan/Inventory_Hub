@@ -1713,11 +1713,12 @@ function buildDetail(r) {
               <tbody>
                 ${lines.map((l, i) => {
                   const submitted = l.allocated ?? l.finalOrder ?? 0;
-                  // Use in-progress edit value if SM has started editing
                   const editBuf   = P3_EDITS[uid];
                   const final     = editBuf ? (editBuf[i]?.finalOrder ?? l.finalOrder ?? l.allocated ?? 0) : (l.finalOrder ?? l.allocated ?? 0);
                   const changed   = final !== submitted;
-                  return `<tr style="border-bottom:1px solid var(--silver);${i%2===0?'background:#fff':'background:var(--mist)'}">
+                  const isEmpty   = final === null || final === undefined || final === '';
+                  const isZero    = !isEmpty && Number(final) === 0;
+                  return `<tr style="border-bottom:1px solid var(--silver);${i%2===0?'background:#fff':'background:var(--mist)'}${isEmpty||isZero?';opacity:.85':''}">
                     <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-size:10px;color:#666;white-space:nowrap">${esc(l.barcode||'')}</td>
                     <td style="padding:5px 10px;max-width:200px">${esc(l.productName||'')}</td>
                     <td style="padding:5px 10px;color:#888">${esc(l.brand||'')}</td>
@@ -1725,16 +1726,19 @@ function buildDetail(r) {
                     <td style="padding:5px 10px;text-align:center;color:#999">${l.max??'—'}</td>
                     <td style="padding:5px 10px;text-align:center;color:#999">${l.cdfIncrement??'—'}</td>
                     <td style="padding:5px 10px;text-align:center;color:#999">${submitted}</td>
-                    <td style="padding:5px 10px;text-align:center;font-weight:700;${changed?'color:var(--blue)':''}">
+                    <td style="padding:5px 10px;text-align:center;font-weight:700;${changed&&!isEmpty?'color:var(--blue)':''}">
                       ${(!isLocked && canEditQty)
-                        ? `<input type="number" min="0" value="${final}"
+                        ? `<input type="number" min="0" value="${final??''}"
                             class="ol-qty-input"
                             data-line-idx="${i}"
-                            style="width:60px;text-align:center;border:1.5px solid ${changed?'var(--blue)':'var(--silver)'};border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;outline:none"
+                            style="width:60px;text-align:center;border:1.5px solid ${isEmpty?'var(--red)':changed?'var(--blue)':'var(--silver)'};border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;outline:none;color:${isEmpty?'var(--red)':''}"
+                            placeholder="0"
                             oninput="p3LineChanged(this,'${uid}')">`
-                        : final}
+                        : `<span style="color:${isEmpty||isZero?'var(--red)':'inherit'}">${isEmpty?'—':final}</span>`}
                     </td>
-                    <td style="padding:5px 10px;font-size:10px;color:${l.flag==='STOCKOUT'?'var(--red)':l.flag==='SHORTFALL'?'var(--amber)':'#aaa'}">${esc(l.flag||'')}</td>
+                    <td style="padding:5px 10px;font-size:10px;color:${isEmpty||isZero?'var(--red)':l.flag==='STOCKOUT'?'var(--red)':l.flag==='SHORTFALL'?'var(--amber)':'#aaa'}">
+                      ${isEmpty||isZero ? '⚠ No Qty' : esc(l.flag||'')}
+                    </td>
                   </tr>`;
                 }).join('')}
               </tbody>
@@ -2728,13 +2732,19 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   curY += 2*MM;
 
   const colWs = [IW*0.04, IW*0.10, IW*0.11, IW*0.32, IW*0.17, IW*0.13, IW*0.13];
-  const totalUnits = lines.reduce((s,l) => s+(l.finalOrder||0), 0);
+  // Filter out lines with no final qty — zero/null means SM removed them
+  const pdfLines = lines.filter(l => l.finalOrder !== null && l.finalOrder !== undefined && Number(l.finalOrder) > 0);
+  if (!pdfLines.length) {
+    throw new Error('No lines with a Final Qty > 0. Set quantities before generating the PDF.');
+  }
+
+  const totalUnits = pdfLines.reduce((s,l) => s+(l.finalOrder||0), 0);
 
   doc.autoTable({
     startY: curY,
     margin: { left:MARGIN, right:MARGIN },
     head: [['#','Brand','Category','Product Name','Barcode','Order Qty','Cost']],
-    body: lines.map((l,i) => [i+1, l.brand||'', l.category||'', l.productName||'', l.barcode||'', l.finalOrder||0, '—']),
+    body: pdfLines.map((l,i) => [i+1, l.brand||'', l.category||'', l.productName||'', l.barcode||'', l.finalOrder||0, '—']),
     theme: 'plain',
     headStyles: { fillColor:DARK_BLUE, textColor:WHITE, fontStyle:'bold', fontSize:6.5,
                   halign:'center', cellPadding:{top:7,bottom:7,left:6,right:6} },
@@ -2769,7 +2779,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   doc.line(MARGIN, curY, MARGIN+IW, curY);
   const colW3 = IW/3;
   const totItems = [
-    {label:'TOTAL SKUs',             value:String(lines.length)},
+    {label:'TOTAL SKUs',             value:String(pdfLines.length)},
     {label:'TOTAL UNITS TO DELIVER', value:String(totalUnits)},
     {label:'TOTAL COST',             value:'—', muted:true},
   ];
@@ -2838,18 +2848,21 @@ const P3_EDITS = {};
 function p3LineChanged(input, uid) {
   const r = S.records.find(x => (x.id || x.cdf) === uid);
   if (!r) return;
-  // Initialize edit buffer from stored orderLines
   if (!P3_EDITS[uid]) {
     try { P3_EDITS[uid] = JSON.parse(r.orderLines || '[]'); } catch(e) { P3_EDITS[uid] = []; }
   }
   const idx = parseInt(input.dataset.lineIdx);
   if (P3_EDITS[uid][idx]) {
-    P3_EDITS[uid][idx].finalOrder = parseInt(input.value) || 0;
+    // Empty string → null (intentionally cleared); number → that value
+    const raw = input.value.trim();
+    P3_EDITS[uid][idx].finalOrder = raw === '' ? null : (parseInt(raw) || 0);
   }
-  // Highlight changed vs original
   const orig = P3_EDITS[uid][idx]?.allocated ?? 0;
-  const cur  = P3_EDITS[uid][idx]?.finalOrder ?? 0;
-  input.style.borderColor = cur !== orig ? 'var(--blue)' : 'var(--silver)';
+  const cur  = P3_EDITS[uid][idx]?.finalOrder;
+  const isEmpty = cur === null || cur === '' || cur === undefined;
+  const changed = !isEmpty && cur !== orig;
+  input.style.borderColor = isEmpty ? 'var(--red)' : changed ? 'var(--blue)' : 'var(--silver)';
+  input.style.color = isEmpty ? 'var(--red)' : '';
 }
 
 async function p3SaveOrderLines(uid) {
