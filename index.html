@@ -1688,7 +1688,8 @@ function buildDetail(r) {
     const lines = r.orderLines ? JSON.parse(r.orderLines) : [];
     if (lines.length) {
       const canEditQty = (role === 'EXECUTIVE' || role === 'IS');
-      const isLocked   = smSt === 'Approved'; // lock after SM approval      orderLinesHTML = `
+      const isLocked   = smSt === 'Approved'; // lock after SM approval
+      orderLinesHTML = `
         <div style="margin:10px 0;border:1px solid var(--silver);border-radius:8px;overflow:hidden">
           <div style="background:var(--mist);padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--silver)">
             <span style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Order Lines</span>
