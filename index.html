@@ -1908,6 +1908,18 @@ function buildDetail(r) {
       }
     </div>` : '';
 
+  // Push to Fulfillment — appears only after the adjusted CDF has been generated
+  // for a "Changes Requested" ticket. Advances storeStatus to 'Approved' so the
+  // ticket unlocks Phase 4 (warehouse fulfillment). One-way action.
+  const pushToFulfillBtn = storeSt==='Changes Requested' && !locked4 && canFulfill && r.cdfGeneratedAt && !hasUnsavedStoreEdits ? `
+    <div class="wf-actions" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--silver);background:var(--green-pale);border-radius:6px;padding:8px 10px">
+      <button class="btn btn-approve" style="font-weight:700;letter-spacing:.3px"
+        onclick="event.stopPropagation();pushToFulfillment('${uid}')">
+        🚀 Begin Fulfillment
+      </button>
+      <span style="font-size:10.5px;color:#1a5a3a;margin-left:8px">Adjusted CDF has been generated. Send to warehouse to begin fulfillment.</span>
+    </div>` : '';
+
   const panelP4 = `
     <div class="ph-panel" data-phase="p4">
       <div class="wf-panel" style="${locked4?'opacity:.55;pointer-events:none':''}">
@@ -1926,6 +1938,7 @@ function buildDetail(r) {
           </div>
           ${storeActions}
           ${cdfGenBtn}
+          ${pushToFulfillBtn}
         </div>
       </div>
     </div>`;
@@ -3418,6 +3431,58 @@ async function generateFinalCDF(uid) {
 
   } catch(err) {
     toast('CDF generation failed: ' + err.message, 'err');
+  }
+}
+
+/* ══════════════════ PUSH TO FULFILLMENT (Phase 4) ══════════════════
+   Advances a "Changes Requested" ticket to Phase 4 (warehouse fulfillment)
+   after the coordinator has finalized adjusted quantities and generated
+   the adjusted CDF. Patches storeStatus='Approved' so the existing Phase 4
+   gate (showP5 = storeSt==='Approved') unlocks.
+
+   Preserves audit trail: storeNotes (original change request) and storeOrder
+   values on each line stay intact for history.
+══════════════════════════════════════════════════════════════════════ */
+async function pushToFulfillment(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+
+  // Safety checks — the button only renders when these are true, but guard anyway
+  if ((r.storeStatus || '') !== 'Changes Requested') {
+    toast('Ticket is not in Changes Requested state.', 'err');
+    return;
+  }
+  if (!r.cdfGeneratedAt) {
+    toast('Generate the Adjusted CDF before pushing to Phase 4.', 'err');
+    return;
+  }
+  if (P3_EDITS['store:' + uid]) {
+    toast('You have unsaved Store Qty edits. Save them first.', 'err');
+    return;
+  }
+
+  if (!confirm(
+    '🚀 Begin Fulfillment for this ticket?\n\n' +
+    `Ticket: ${r.cdf}\nStore: ${r.store}\n\n` +
+    'This will mark the store-adjusted order as Approved and unlock the ' +
+    'warehouse fulfillment phase. The store manager\'s change request and ' +
+    'all adjusted quantities will be preserved for audit.\n\n' +
+    'Proceed?'
+  )) return;
+
+  try {
+    const now = new Date().toISOString();
+    await apiUpdateCDF(uid, {
+      storeStatus:    'Approved',
+      storeUpdatedBy: S.user.username,
+      storeUpdatedAt: now,
+    });
+    S.expandedId = uid;
+    await loadData();
+    renderAll();
+    toast('✅ Ticket pushed to Phase 4 — warehouse fulfillment unlocked.');
+  } catch(err) {
+    toast('Push failed: ' + err.message, 'err');
   }
 }
 
