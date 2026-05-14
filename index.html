@@ -3653,165 +3653,243 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
 /* ── EXCEL BUILDER ───────────────────────────────────────────────────────── */
 
 function p2BuildExcel(plan) {
+  // PRE-CDF REPLENISHMENT ORDER — lean working document.
+  // Single sheet. Sales Manager reviews here and edits the "Final Order" column
+  // before the pre-CDF PDF is generated (Phase 3, generate_cdfs.py).
+  // The "Final Order" column is what Phase 3 SHOULD read going forward —
+  // currently generate_cdfs.py reads "Allocated Order". When Phase 3 is wired,
+  // change the generator to prefer "Final Order" then fall back to "Allocated Order".
   const wb = XLSX.utils.book_new();
-  const C  = P1_COLORS;
 
-  // ── SHEET 1: Replenishment Order ──────────────────────────────────────
-  // Required columns first (CDF generator contract): Store / Location, Brand,
-  // Category, Product Name, Barcode, Allocated Order. Extras follow.
+  // Filter: only rows the SM actually needs to act on
+  // (allocated > 0, or stockouts that the SM should see and possibly override)
+  const reportRows = plan.rows.filter(r =>
+    r.allocated > 0 || r.flag === 'STOCKOUT' || r.flag === 'OVERSTOCK' || r.flag === 'WARNING'
+  );
+
+  // Sort by Store then Brand then Product Name (matches mock + groups for CDF generator)
+  reportRows.sort((a, b) =>
+    (a.store || '').localeCompare(b.store) ||
+    (a.brand || '').localeCompare(b.brand) ||
+    (a.productName || '').localeCompare(b.productName)
+  );
+
+  // Date string for Pre-CDF # format: STORENAME-ORDER-YYYYMMDD
+  const d = new Date();
+  const dateStr = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+
+  // Helper: store name → compact code for Pre-CDF #
+  const compactStore = s => (s || '').replace(/[.\-\s]/g, '').toUpperCase();
+
+  // ── HEADER ROWS ─────────────────────────────────────────────────────────
   const aoa = [];
-  aoa.push(['ACACIA HBC — WAREHOUSE REPLENISHMENT ORDER', ...Array(15).fill('')]);
-  aoa.push([`Generated: ${p1FormatDate(new Date().toISOString())}   |   ${plan.storesTouched.length} stores   |   ${plan.totalLines} lines   |   ${plan.totalUnits} units   |   In-Transit assumed 0`, ...Array(15).fill('')]);
+  aoa.push(['ACACIA HBC · PRE-CDF REPLENISHMENT ORDER', ...Array(16).fill('')]);
+  aoa.push([
+    `Generated: ${p1FormatDate(new Date().toISOString())}  ·  By: ${S.user?.name || S.user?.username || ''}  ·  Source: Acacia System + Min/Max Bible`,
+    ...Array(16).fill('')
+  ]);
+  aoa.push([
+    'WORKING DOCUMENT — Sales Manager may override Final Order before pre-CDF generation. Blue column = editable.',
+    ...Array(16).fill('')
+  ]);
   aoa.push([]);
 
   const headers = [
-    '#','Store / Location','Brand','Category','Product Name','Barcode','Allocated Order',
-    'Max Stocking','CDF Increment','Store Inventory','In Transit','Effective Stock','Stock Fill %',
-    'Need (Gap)','Ideal Order','Allocation Note',
+    'Pre-CDF #','Store / Location','Size','Barcode','Product Name','Brand','Category',
+    'Max','CDF Inc','Sys Inv','In Transit','Need','Ideal','Allocated Order','Final Order','Note','SM Comment'
   ];
   aoa.push(headers);
 
-  // Only include rows with allocated > 0, OR rows flagged as STOCKOUT (so IA sees what couldn't ship)
-  const reportRows = plan.rows.filter(r => r.allocated > 0 || r.flag === 'STOCKOUT' || r.flag === 'OVERSTOCK' || r.flag === 'WARNING');
+  // ── DATA ROWS ───────────────────────────────────────────────────────────
+  // Final Order defaults to a formula referencing Allocated Order so the SM
+  // sees the suggested number but can overwrite with a plain number to override.
   reportRows.forEach((r, i) => {
+    const rowNum = i + 6; // 1-indexed Excel row (headers at row 5, data starts row 6)
     aoa.push([
-      i + 1,
+      `${compactStore(r.store)}-ORDER-${dateStr}`,
       r.store,
+      r.storeSize || '',
+      r.barcode,
+      r.productName,
       r.brand || '',
       r.category || '',
-      r.productName,
-      r.barcode,
-      r.allocated,
       r.max,
       r.cdfIncrement + (r.cdfDefaulted ? ' (default)' : ''),
       r.storeInv,
       r.inTransit,
-      r.effective,
-      `${r.fillPct}%`,
       r.need,
       r.ideal,
-      r.allocationNote || (r.flag || ''),
+      r.allocated,
+      r.allocated,           // Final Order: initial = Allocated (formula set after aoa_to_sheet)
+      r.allocationNote || (r.flag === 'STOCKOUT' ? 'No stock' : ''),
+      '',                     // SM Comment — blank, for SM to fill
     ]);
   });
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = [
-    {s:{r:0,c:0}, e:{r:0,c:headers.length-1}},
-    {s:{r:1,c:0}, e:{r:1,c:headers.length-1}},
-  ];
-  ws['!cols'] = [
-    {wch:5},{wch:16},{wch:12},{wch:16},{wch:42},{wch:16},{wch:13},
-    {wch:11},{wch:14},{wch:12},{wch:10},{wch:13},{wch:11},
-    {wch:10},{wch:11},{wch:30},
-  ];
-  ws['!freeze'] = { xSplit:0, ySplit:4 };
-
-  // Style — title, sub, header
-  for (let c=0;c<headers.length;c++) {
-    let ref = XLSX.utils.encode_cell({r:0,c});
-    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
-    ws[ref].s = p1CellStyle('1A2B4A', true, 'FFFFFF', 13, 'center');
-    ref = XLSX.utils.encode_cell({r:1,c});
-    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
-    ws[ref].s = p1CellStyle('2E6DB4', false, 'FFFFFF', 9, 'center');
-    ref = XLSX.utils.encode_cell({r:3,c});
-    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
-    ws[ref].s = p1CellStyle('2E6DB4', true, 'FFFFFF', 9, 'center');
+  // ── TOTAL ROW ───────────────────────────────────────────────────────────
+  const totalRowIdx = aoa.length; // 0-indexed position where total will go
+  const firstDataRow = 6;          // 1-indexed Excel row of first data row
+  const lastDataRow  = firstDataRow + reportRows.length - 1;
+  if (reportRows.length > 0) {
+    const sumAllocated = reportRows.reduce((s, r) => s + (r.allocated || 0), 0);
+    aoa.push([
+      'TOTAL', '', '', '', '', '', '', '', '', '', '', '', '',
+      sumAllocated,   // formula set after aoa_to_sheet
+      sumAllocated,   // Final Order total = same initially
+      '', ''
+    ]);
+  } else {
+    aoa.push(['No replenishment needed across your assigned stores.', ...Array(16).fill('')]);
   }
 
-  // Data row styling — color by flag
+  // ── FOOTNOTES ───────────────────────────────────────────────────────────
+  const footnoteStart = aoa.length + 1;
+  aoa.push([]);
+  const notes = [
+    '• In-Transit assumed 0 — Acacia per-SKU in-transit export pending.',
+    '• Warehouse-short allocation weighted by size: XB 2.0× · Large/B 1.5× · Medium 1.2× · Small 1.0×.',
+    '• Amber row = partial warehouse coverage.  Red row = no stock available.',
+    '• "Final Order" defaults to "Allocated Order". Sales Manager edits this column to override before pre-CDF PDF is generated.',
+    '• Pre-CDF # is a placeholder reference. Final CDF # is assigned by the Acacia system at dispatch.',
+  ];
+  notes.forEach(n => aoa.push([n, ...Array(16).fill('')]));
+
+  // ── BUILD WORKSHEET ─────────────────────────────────────────────────────
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Set Final Order column formulas (=N{row}) explicitly — aoa_to_sheet
+  // doesn't preserve formula objects cleanly, so we assign them directly.
+  // Final Order = column O (index 14), data rows start at Excel row 6.
   reportRows.forEach((r, i) => {
-    const rIdx = 4 + i;
-    const bg =
-      r.flag === 'STOCKOUT'  ? 'FFCCCC' :
-      r.flag === 'SHORTFALL' ? 'FFF2CC' :
+    const xlsxRow = firstDataRow + i; // 1-indexed Excel row
+    const ref = `O${xlsxRow}`;
+    const allocRef = `N${xlsxRow}`;
+    ws[ref] = { t: 'n', f: allocRef, v: r.allocated };
+  });
+  // TOTAL row SUM formulas for cols N and O
+  if (reportRows.length > 0) {
+    const totalXlsxRow = lastDataRow + 1;
+    const sumN = reportRows.reduce((s, r) => s + (r.allocated || 0), 0);
+    ws[`N${totalXlsxRow}`] = { t: 'n', f: `SUM(N${firstDataRow}:N${lastDataRow})`, v: sumN };
+    ws[`O${totalXlsxRow}`] = { t: 'n', f: `SUM(O${firstDataRow}:O${lastDataRow})`, v: sumN };
+  }
+
+  // Column widths matching the mock
+  ws['!cols'] = [
+    {wch:22}, // Pre-CDF #
+    {wch:20}, // Store
+    {wch:8},  // Size
+    {wch:16}, // Barcode
+    {wch:40}, // Product Name
+    {wch:11}, // Brand
+    {wch:14}, // Category
+    {wch:7},  // Max
+    {wch:10}, // CDF Inc
+    {wch:9},  // Sys Inv
+    {wch:11}, // In Transit
+    {wch:8},  // Need
+    {wch:8},  // Ideal
+    {wch:14}, // Allocated Order
+    {wch:13}, // Final Order
+    {wch:20}, // Note
+    {wch:26}, // SM Comment
+  ];
+
+  // Merge title rows (full width across 17 columns)
+  ws['!merges'] = [
+    {s:{r:0,c:0}, e:{r:0,c:16}},
+    {s:{r:1,c:0}, e:{r:1,c:16}},
+    {s:{r:2,c:0}, e:{r:2,c:16}},
+  ];
+
+  // Merge footnotes
+  if (footnoteStart > 0) {
+    for (let i = 0; i < notes.length; i++) {
+      ws['!merges'].push({
+        s:{r: footnoteStart + i, c:0},
+        e:{r: footnoteStart + i, c:9},
+      });
+    }
+  }
+
+  // Freeze header (data starts at row 6, so freeze first 5 rows)
+  ws['!freeze'] = { xSplit:0, ySplit:5 };
+
+  // ── STYLING ─────────────────────────────────────────────────────────────
+  // Title row
+  for (let c=0; c<headers.length; c++) {
+    let ref = XLSX.utils.encode_cell({r:0,c});
+    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+    ws[ref].s = p1CellStyle('1A1A1A', true, 'FFFFFF', 14, 'left');
+  }
+  // Subtitle row
+  for (let c=0; c<headers.length; c++) {
+    let ref = XLSX.utils.encode_cell({r:1,c});
+    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+    ws[ref].s = p1CellStyle('F5F5F5', false, '666666', 10, 'left');
+  }
+  // Working-document banner row
+  for (let c=0; c<headers.length; c++) {
+    let ref = XLSX.utils.encode_cell({r:2,c});
+    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+    ws[ref].s = p1CellStyle('FFF8E1', false, 'C49000', 9, 'left');
+  }
+  // Header row (row index 4, 0-indexed)
+  for (let c=0; c<headers.length; c++) {
+    const ref = XLSX.utils.encode_cell({r:4,c});
+    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+    // Override columns (Final Order, SM Comment) get blue tint header
+    const isOverride = (c === 14 || c === 16);
+    ws[ref].s = isOverride
+      ? p1CellStyle('E3F2FD', true, '1A1A1A', 10, 'center')
+      : p1CellStyle('1A1A1A', true, 'FFFFFF', 10, 'center');
+  }
+
+  // Data rows
+  reportRows.forEach((r, i) => {
+    const rIdx = 5 + i; // 0-indexed (data starts at row index 5)
+    // Row tint by status
+    const tint =
+      (r.allocated === 0 && r.ideal > 0) || r.flag === 'STOCKOUT' ? 'FFEBEE' :
+      r.flag === 'SHORTFALL' ? 'FFF8E1' :
       r.flag === 'OVERSTOCK' ? 'E1E8F5' :
       r.flag === 'WARNING'   ? 'FFE8CC' :
-      (i % 2 === 0 ? 'F4F6F9' : 'FFFFFF');
-    for (let c=0;c<headers.length;c++) {
+      'FFFFFF';
+
+    for (let c=0; c<headers.length; c++) {
       const ref = XLSX.utils.encode_cell({r:rIdx, c});
       if (!ws[ref]) ws[ref] = {v:'', t:'s'};
-      const halign = (c >= 6 && c <= 14) ? 'center' : (c === 4 ? 'left' : 'left');
-      ws[ref].s = p1CellStyle(bg, c === 6, '1A1A2E', 9, halign);
-    }
-    // Highlight allocated order column
-    const allocRef = XLSX.utils.encode_cell({r:rIdx, c:6});
-    if (r.allocated > 0) {
-      ws[allocRef].s = p1CellStyle(bg, true, '1E7E34', 10, 'center');
-    } else {
-      ws[allocRef].s = p1CellStyle(bg, true, 'C0392B', 10, 'center');
+      // Final Order column always blue tint, bold
+      if (c === 14) {
+        ws[ref].s = p1CellStyle('E3F2FD', true, '1A1A1A', 10, 'center');
+      } else if (c === 16) {
+        // SM Comment also blue tint
+        ws[ref].s = p1CellStyle('E3F2FD', false, '1A1A1A', 9, 'left');
+      } else {
+        // Left-align text columns (Store, Product Name, Note), center numerics
+        const halign = (c === 1 || c === 4 || c === 15) ? 'left' : 'center';
+        ws[ref].s = p1CellStyle(tint, false, '1A1A1A', 9, halign);
+      }
     }
   });
+
+  // Total row
+  if (reportRows.length > 0) {
+    for (let c=0; c<headers.length; c++) {
+      const ref = XLSX.utils.encode_cell({r: totalRowIdx, c});
+      if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+      ws[ref].s = p1CellStyle('1A1A1A', true, 'FFFFFF', 10, c === 0 ? 'left' : 'center');
+    }
+  }
+
+  // Footnote rows
+  for (let i = 0; i < notes.length; i++) {
+    const ref = XLSX.utils.encode_cell({r: footnoteStart + i, c:0});
+    if (!ws[ref]) ws[ref] = {v:'', t:'s'};
+    ws[ref].s = p1CellStyle('FFFFFF', false, '555555', 9, 'left');
+  }
 
   XLSX.utils.book_append_sheet(wb, ws, 'Replenishment Order');
-
-  // ── SHEET 2: Summary by Store ─────────────────────────────────────────
-  const sumAoa = [];
-  sumAoa.push(['SUMMARY BY STORE', '', '', '', '']);
-  sumAoa.push([]);
-  sumAoa.push(['Store', 'Lines', 'Total Units', 'Stockouts', 'Shortfalls']);
-  plan.perStore.forEach(s => sumAoa.push([s.store, s.lines, s.units, s.stockouts, s.shortfalls]));
-  const sumWS = XLSX.utils.aoa_to_sheet(sumAoa);
-  sumWS['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:4}}];
-  sumWS['!cols'] = [{wch:24},{wch:10},{wch:13},{wch:12},{wch:12}];
-  for (let c=0;c<5;c++) {
-    let ref = XLSX.utils.encode_cell({r:0,c});
-    if (!sumWS[ref]) sumWS[ref] = {v:'', t:'s'};
-    sumWS[ref].s = p1CellStyle('1A2B4A', true, 'FFFFFF', 13, 'center');
-    ref = XLSX.utils.encode_cell({r:2,c});
-    if (!sumWS[ref]) sumWS[ref] = {v:'', t:'s'};
-    sumWS[ref].s = p1CellStyle('2E6DB4', true, 'FFFFFF', 9, 'center');
-  }
-  plan.perStore.forEach((s, i) => {
-    const rIdx = 3 + i;
-    const bg = i % 2 === 0 ? 'F4F6F9' : 'FFFFFF';
-    for (let c=0;c<5;c++) {
-      const ref = XLSX.utils.encode_cell({r:rIdx, c});
-      if (!sumWS[ref]) sumWS[ref] = {v:'', t:'s'};
-      ws[ref] = ws[ref] || {v:'', t:'s'};
-      sumWS[ref].s = p1CellStyle(bg, c===0, '1A1A2E', 9, c===0 ? 'left' : 'center');
-    }
-  });
-  XLSX.utils.book_append_sheet(wb, sumWS, 'Summary by Store');
-
-  // ── SHEET 3: Summary by Product ───────────────────────────────────────
-  const byBC = {};
-  plan.rows.forEach(r => {
-    if (r.allocated <= 0 && r.flag !== 'STOCKOUT') return;
-    if (!byBC[r.barcode]) byBC[r.barcode] = { barcode: r.barcode, name: r.productName, brand: r.brand, category: r.category, stores: 0, units: 0, stockouts: 0 };
-    byBC[r.barcode].stores++;
-    byBC[r.barcode].units += r.allocated;
-    if (r.flag === 'STOCKOUT') byBC[r.barcode].stockouts++;
-  });
-  const prodSummary = Object.values(byBC).sort((a,b) => b.units - a.units);
-
-  const prodAoa = [];
-  prodAoa.push(['SUMMARY BY PRODUCT', '', '', '', '', '', '']);
-  prodAoa.push([]);
-  prodAoa.push(['Barcode','Product Name','Brand','Category','Stores','Total Units','Stockouts']);
-  prodSummary.forEach(p => prodAoa.push([p.barcode, p.name, p.brand, p.category, p.stores, p.units, p.stockouts]));
-  const prodWS = XLSX.utils.aoa_to_sheet(prodAoa);
-  prodWS['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:6}}];
-  prodWS['!cols'] = [{wch:16},{wch:42},{wch:12},{wch:16},{wch:9},{wch:13},{wch:11}];
-  for (let c=0;c<7;c++) {
-    let ref = XLSX.utils.encode_cell({r:0,c});
-    if (!prodWS[ref]) prodWS[ref] = {v:'', t:'s'};
-    prodWS[ref].s = p1CellStyle('1A2B4A', true, 'FFFFFF', 13, 'center');
-    ref = XLSX.utils.encode_cell({r:2,c});
-    if (!prodWS[ref]) prodWS[ref] = {v:'', t:'s'};
-    prodWS[ref].s = p1CellStyle('2E6DB4', true, 'FFFFFF', 9, 'center');
-  }
-  prodSummary.forEach((p, i) => {
-    const rIdx = 3 + i;
-    const bg = p.stockouts > 0 ? 'FFCCCC' : (i % 2 === 0 ? 'F4F6F9' : 'FFFFFF');
-    for (let c=0;c<7;c++) {
-      const ref = XLSX.utils.encode_cell({r:rIdx, c});
-      if (!prodWS[ref]) prodWS[ref] = {v:'', t:'s'};
-      prodWS[ref].s = p1CellStyle(bg, false, '1A1A2E', 9, c === 1 ? 'left' : 'center');
-    }
-  });
-  XLSX.utils.book_append_sheet(wb, prodWS, 'Summary by Product');
-
   return wb;
 }
 
