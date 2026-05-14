@@ -1931,6 +1931,7 @@ function syncDateLocks() {
   if(boxesLbl) boxesLbl.innerHTML = 'No. of Boxes' + (toStoreFilled ? ' '+reqMark : '');
   if(truckLbl) truckLbl.innerHTML = 'Truck / Plate No.' + (toStoreFilled ? ' '+reqMark : '');
   if(casLbl)   casLbl.innerHTML   = 'CAS No.' + (toStoreFilled ? ' '+reqMark : '');
+  const fRecv = document.getElementById('f-dRecv');
   if (fRecv) {
     if (p6Locked) {
       fRecv.disabled = true;
@@ -2444,13 +2445,17 @@ async function p3ConfirmBatchCreate() {
       orderLines: JSON.stringify(s.orderLines),
     }));
 
-    const resp = await gasPost('batchCreateCDFs', { username: S.user.username, cdfs });
-    if (!resp.ok) throw new Error(resp.error || 'Batch create failed');
+    // gasPost encodes everything into a GET query string — fine for small payloads,
+    // but orderLines JSON can be large. Call the URL directly with a raw payload param.
+    const url = new URL(CFG.apiUrl);
+    url.searchParams.set('action', 'batchCreateCDFs');
+    url.searchParams.set('payload', JSON.stringify({ username: S.user.username, cdfs }));
+    const resp = await fetch(url.toString());
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || 'Batch create failed');
+    const { created, skipped } = data.data;
 
-    const { created, skipped } = resp.data;
     p3CloseUploadModal();
-
-    // Refresh records
     await loadData();
     renderAll();
 
