@@ -891,7 +891,7 @@ const S = {
   records:      [],
   month:        _nowMonth,
   statusFilter: '',
-  phaseFilter:  '',   // 'p3'|'p4'|'p5'|''
+  phaseFilter:  'p3', // default to Phase 3 (Approvals) on load
   subFilter:    '',   // sub-card key within active phase
   sortField:    'dWhs',
   sortDir:      'desc',
@@ -1688,8 +1688,7 @@ function buildDetail(r) {
     const lines = r.orderLines ? JSON.parse(r.orderLines) : [];
     if (lines.length) {
       const canEditQty = (role === 'EXECUTIVE' || role === 'IS');
-      const isLocked   = smSt === 'Approved'; // lock after SM approval
-      orderLinesHTML = `
+      const isLocked   = smSt === 'Approved'; // lock after SM approval      orderLinesHTML = `
         <div style="margin:10px 0;border:1px solid var(--silver);border-radius:8px;overflow:hidden">
           <div style="background:var(--mist);padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--silver)">
             <span style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Order Lines</span>
@@ -1746,6 +1745,10 @@ function buildDetail(r) {
             </table>
           </div>
         </div>`;
+    } else {
+      orderLinesHTML = `<div style="margin:10px 0;padding:10px 14px;background:var(--mist);border:1px solid var(--silver);border-radius:8px;font-size:11.5px;color:#aaa">
+        No order lines on this ticket. This ticket was created manually — order lines are only available on tickets created via the Phase 2 replenishment upload.
+      </div>`;
     }
   } catch(e) { orderLinesHTML = ''; }
 
@@ -1835,14 +1838,14 @@ function buildDetail(r) {
       <button class="btn btn-changes" onclick="event.stopPropagation();openApprovalModal('${uid}','store','changes')">✏ Store Requests Changes</button>
     </div>` : '';
 
-  // CDF generation — appears in Phase 3 after store approves, available to IS/EXECUTIVE
-  const cdfGenBtn = storeSt==='Approved' && !locked4 && canFulfill ? `
+  // CDF generation — only when store has requested changes and submitted adjusted quantities
+  const cdfGenBtn = storeSt==='Changes Requested' && !locked4 && canFulfill ? `
     <div class="wf-actions" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--silver)">
       <button class="btn btn-blue" style="font-weight:700;letter-spacing:.3px"
         onclick="event.stopPropagation();generateFinalCDF('${uid}')">
-        📄 ${r.cdfGeneratedAt ? 'Re-download CDF' : 'Generate &amp; Download CDF'}
+        📄 ${r.cdfGeneratedAt ? 'Re-download Adjusted CDF' : 'Generate Adjusted CDF'}
       </button>
-      ${r.cdfGeneratedAt ? `<span style="font-size:10.5px;color:var(--teal);font-weight:600;margin-left:8px">✓ Generated ${fmtD(r.cdfGeneratedAt.slice(0,10))} by ${esc(r.cdfGeneratedBy||'IS')}</span>` : `<span style="font-size:10.5px;color:#aaa;margin-left:8px">Generate the final CDF to send to the warehouse</span>`}
+      ${r.cdfGeneratedAt ? `<span style="font-size:10.5px;color:var(--teal);font-weight:600;margin-left:8px">✓ Generated ${fmtD(r.cdfGeneratedAt.slice(0,10))} by ${esc(r.cdfGeneratedBy||'IS')}</span>` : `<span style="font-size:10.5px;color:#aaa;margin-left:8px">Uses store-adjusted quantities</span>`}
     </div>` : '';
 
   const panelP4 = `
