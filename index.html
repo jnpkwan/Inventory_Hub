@@ -2600,151 +2600,233 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
 
-  const PAGE_W  = 612;
-  const PAGE_H  = 792;
-  const MARGIN  = 36;
-  const CONTENT_W = PAGE_W - MARGIN * 2;
+  // ── Constants matching Python script geometry ─────────────────────────────
+  const PW     = 612;
+  const PH     = 792;
+  const MM     = 2.835;
+  const MARGIN = 10 * MM;
+  const IW     = PW - 2 * MARGIN;
 
-  const BLUE  = [27,  77, 160];  // #1B4DA0
-  const GREEN = [0,  150,  60];  // #00963C
-  const WHITE = [255, 255, 255];
-  const CARBON= [44,  44,  44];
-  const GREY  = [120, 144, 156];
+  // ── Brand palette (matching Python exactly) ───────────────────────────────
+  const DARK_BLUE  = [0,   34, 102];
+  const BRAND_BLUE = [0,   60, 150];
+  const BRAND_GRN  = [0,  150,  60];
+  const META_BG    = [245,248,254];
+  const META_BDR   = [221,228,240];
+  const ROW_ALT    = [247,249,255];
+  const SIG_BG     = [250,252,255];
+  const WHITE      = [255,255,255];
+  const GREY_TEXT  = [26, 26, 46];
+  const BODY_GREY  = [68, 68, 68];
+  const MID_GREY   = [153,153,153];
+  const LIGHT_GREY = [228,232,240];
 
-  const today = new Date();
-  const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const today   = new Date();
+  const months  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const genDate = `${months[today.getMonth()]} ${String(today.getDate()).padStart(2,'0')}, ${today.getFullYear()}`;
+  const dateTag = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+  const batchTs = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')} ${String(today.getHours()).padStart(2,'0')}:${String(today.getMinutes()).padStart(2,'0')}`;
 
-  // ── HEADER BANNER ────────────────────────────────────────────────────
-  doc.setFillColor(...BLUE);
-  doc.rect(0, 0, PAGE_W, 58, 'F');
+  const poNumber = record.cdf || `CDF-${dateTag}-${record.store}`;
+  const address  = storeInfo.address || '—';
+  const phone    = storeInfo.phone   || '—';
+  const email    = storeInfo.email   || '—';
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function sectionHeading(y, label) {
+    doc.setFillColor(...BRAND_GRN);
+    doc.rect(MARGIN, y, 2.5, 10, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...DARK_BLUE);
+    doc.text(label.toUpperCase(), MARGIN + 7.5, y + 7.5);
+    const labelW = doc.getTextWidth(label.toUpperCase()) + 12;
+    doc.setDrawColor(...LIGHT_GREY);
+    doc.setLineWidth(0.5);
+    doc.line(MARGIN + labelW, y + 5, MARGIN + IW, y + 5);
+    return y + 14;
+  }
+
+  function cropMarks() {
+    const tick = 5; const cm = MARGIN;
+    doc.setDrawColor(204,204,204); doc.setLineWidth(0.25);
+    doc.line(cm,cm,cm+tick,cm); doc.line(cm,cm,cm,cm+tick);
+    doc.line(PW-cm,cm,PW-cm-tick,cm); doc.line(PW-cm,cm,PW-cm,cm+tick);
+    doc.line(cm,PH-cm,cm+tick,PH-cm); doc.line(cm,PH-cm,cm,PH-cm-tick);
+    doc.line(PW-cm,PH-cm,PW-cm-tick,PH-cm); doc.line(PW-cm,PH-cm,PW-cm,PH-cm-tick);
+  }
+
+  function drawBottomFooter() {
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...DARK_BLUE);
+    doc.text('Acacia Home Builders Corporation', PW/2, 22*MM, {align:'center'});
+    doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(136,136,136);
+    doc.text(`${address}   |   ${email}   |   ${phone}`, PW/2, 12*MM, {align:'center'});
+    doc.setFontSize(5.5); doc.setTextColor(187,187,187);
+    doc.text(`Batch: ${batchTs}`, PW-MARGIN, 10*MM, {align:'right'});
+  }
+
+  function drawRunningHeader(storeName) {
+    const barH = 6*MM; const barY = PH - MARGIN - barH;
+    doc.setFillColor(240,244,251); doc.rect(MARGIN, barY, IW, barH, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...DARK_BLUE);
+    doc.text(storeName, MARGIN+6, barY+1.8*MM+5);
+    doc.setFont('helvetica','normal'); doc.setTextColor(...MID_GREY);
+    doc.text('Page 1 of 1', PW-MARGIN-6, barY+1.8*MM+5, {align:'right'});
+  }
+
+  // ── BANNER ────────────────────────────────────────────────────────────────
+  let curY = MARGIN + 6*MM;
+  const bannerH = 13*MM + 20;
+  doc.setFillColor(...DARK_BLUE);
+  doc.rect(MARGIN, curY, IW, bannerH, 'F');
   // Company name
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(...WHITE);
-  doc.text('ACACIA HOME BUILDERS CORP.', MARGIN, 26);
+  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(...WHITE);
+  doc.text('Acacia Home Builders Corporation', MARGIN+10, curY+bannerH-8);
+  // CDF label
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(123,175,212);
+  doc.text('CONCESSION DELIVERY FORM', PW-MARGIN-10, curY+10, {align:'right'});
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...WHITE);
+  doc.text(poNumber, PW-MARGIN-10, curY+10+14, {align:'right'});
+  curY += bannerH;
 
-  // Sub-label
-  doc.setFontSize(7.5);
-  doc.setFont('helvetica', 'normal');
-  doc.text('INVENTORY & DISPATCH HUB', MARGIN, 38);
+  // Green stripe
+  doc.setFillColor(...BRAND_GRN);
+  doc.rect(MARGIN, curY, IW, 3, 'F');
+  curY += 3 + 3*MM;
 
-  // Pre-CDF label (right side)
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text('PRE-CDF #', PAGE_W - MARGIN - 130, 20, { align: 'left' });
-  doc.setFontSize(11);
-  doc.text(record.cdf || '', PAGE_W - MARGIN, 20, { align: 'right' });
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Order Date: ${dateStr}`, PAGE_W - MARGIN, 32, { align: 'right' });
-  doc.text(`Type: ${record.type || 'Regular'}  ·  Route: ${record.route || 'Via SDC'}`, PAGE_W - MARGIN, 44, { align: 'right' });
+  // ── META BLOCK (2-row grid) ───────────────────────────────────────────────
+  const col1W=IW*0.25, col2W=IW*0.50, col3W=IW*0.25;
+  const rowH = 7*MM;
+  const metaRows = [
+    [{label:'CITI HARDWARE LOCATION', value:record.store, w:col1W},
+     {label:'STORE ADDRESS',          value:address,       w:col2W},
+     {label:'ORDER DATE',             value:genDate,       w:col3W}],
+    [{label:'PHONE', value:phone, w:col1W},
+     {label:'EMAIL', value:email, w:col2W+col3W, span:true}],
+  ];
 
-  // ── GREEN STRIPE ─────────────────────────────────────────────────────
-  doc.setFillColor(...GREEN);
-  doc.rect(0, 58, PAGE_W, 5, 'F');
+  metaRows.forEach((row, ri) => {
+    let mx = MARGIN;
+    const mh = rowH + 4;
+    row.forEach((cell, ci) => {
+      doc.setFillColor(...META_BG);
+      doc.setDrawColor(...META_BDR);
+      doc.setLineWidth(0.5);
+      doc.rect(mx, curY, cell.w, mh, 'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...BRAND_BLUE);
+      doc.text(cell.label, mx+10, curY+8);
+      doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...GREY_TEXT);
+      doc.text(String(cell.value||'—'), mx+10, curY+8+12);
+      mx += cell.w;
+    });
+    curY += mh;
+  });
+  curY += 5*MM;
 
-  // ── STORE META BLOCK ─────────────────────────────────────────────────
-  let y = 78;
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...CARBON);
-  doc.text('STORE', MARGIN, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(12);
-  doc.text(record.store || '', MARGIN, y + 14);
+  // ── ORDER ITEMS TABLE ─────────────────────────────────────────────────────
+  curY = sectionHeading(curY, 'Order Items');
+  curY += 2*MM;
 
-  doc.setFontSize(8.5);
-  doc.setTextColor(...GREY);
-  const addr = storeInfo.address || '';
-  const phone = storeInfo.phone  || '';
-  const email = storeInfo.email  || '';
-  if (addr)  doc.text(`📍 ${addr}`,  MARGIN, y + 28);
-  if (phone) doc.text(`📞 ${phone}`, MARGIN, y + 40);
-  if (email) doc.text(`✉️ ${email}`, MARGIN, y + 52);
-
-  y += addr || phone || email ? 68 : 22;
-
-  // Divider
-  doc.setDrawColor(...GREEN);
-  doc.setLineWidth(1);
-  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
-  y += 12;
-
-  // ── ITEMS TABLE ──────────────────────────────────────────────────────
-  const tableRows = lines.map((l, i) => [
-    i + 1,
-    l.barcode      || '',
-    l.productName  || '',
-    l.brand        || '',
-    l.category     || '',
-    l.finalOrder   || 0,
-  ]);
-
-  const totalUnits = lines.reduce((s, l) => s + (l.finalOrder || 0), 0);
+  const colWs = [IW*0.04, IW*0.10, IW*0.11, IW*0.32, IW*0.17, IW*0.13, IW*0.13];
+  const totalUnits = lines.reduce((s,l) => s+(l.finalOrder||0), 0);
 
   doc.autoTable({
-    startY: y,
-    margin: { left: MARGIN, right: MARGIN },
-    head: [['#', 'Barcode', 'Product Name', 'Brand', 'Category', 'Qty']],
-    body: tableRows,
-    foot: [['', '', '', '', 'TOTAL', totalUnits]],
-    theme: 'striped',
-    headStyles: {
-      fillColor: BLUE,
-      textColor: WHITE,
-      fontStyle: 'bold',
-      fontSize: 8,
-    },
-    footStyles: {
-      fillColor: [230, 237, 250],
-      textColor: CARBON,
-      fontStyle: 'bold',
-      fontSize: 9,
-    },
-    bodyStyles: { fontSize: 8, textColor: CARBON },
-    alternateRowStyles: { fillColor: [245, 248, 255] },
+    startY: curY,
+    margin: { left:MARGIN, right:MARGIN },
+    head: [['#','Brand','Category','Product Name','Barcode','Order Qty','Cost']],
+    body: lines.map((l,i) => [i+1, l.brand||'', l.category||'', l.productName||'', l.barcode||'', l.finalOrder||0, '—']),
+    theme: 'plain',
+    headStyles: { fillColor:DARK_BLUE, textColor:WHITE, fontStyle:'bold', fontSize:6.5,
+                  halign:'center', cellPadding:{top:7,bottom:7,left:6,right:6} },
+    bodyStyles: { fontSize:8, textColor:BODY_GREY, cellPadding:{top:5,bottom:5,left:6,right:6},
+                  lineColor:LIGHT_GREY, lineWidth:0.25 },
     columnStyles: {
-      0: { cellWidth: 24,  halign: 'center' },
-      1: { cellWidth: 75,  halign: 'left',   font: 'courier' },
-      2: { cellWidth: 'auto' },
-      3: { cellWidth: 70,  halign: 'left' },
-      4: { cellWidth: 70,  halign: 'left' },
-      5: { cellWidth: 32,  halign: 'center', fontStyle: 'bold' },
+      0: { halign:'center', cellWidth:colWs[0], textColor:MID_GREY },
+      1: { halign:'center', cellWidth:colWs[1] },
+      2: { halign:'center', cellWidth:colWs[2] },
+      3: { halign:'left',   cellWidth:colWs[3] },
+      4: { halign:'center', cellWidth:colWs[4] },
+      5: { halign:'center', cellWidth:colWs[5], fontStyle:'bold', fontSize:9.5, textColor:DARK_BLUE },
+      6: { halign:'center', cellWidth:colWs[6], textColor:MID_GREY },
+    },
+    alternateRowStyles: { fillColor:ROW_ALT },
+    didParseCell(d) { if(d.section==='head'&&d.column.index===3) d.cell.styles.halign='left'; },
+    didDrawCell(d) {
+      if(d.section==='head'&&d.row.index===0) {
+        doc.setDrawColor(...BRAND_GRN); doc.setLineWidth(1.5);
+        doc.line(d.cell.x, d.cell.y+d.cell.height, d.cell.x+d.cell.width, d.cell.y+d.cell.height);
+      }
+      if(d.section==='body'&&d.column.index===5) {
+        doc.setDrawColor(...BRAND_GRN); doc.setLineWidth(1.5);
+        doc.line(d.cell.x, d.cell.y, d.cell.x, d.cell.y+d.cell.height);
+      }
     },
   });
+  curY = doc.lastAutoTable.finalY;
 
-  y = doc.lastAutoTable.finalY + 20;
-
-  // ── SIGNATURE BLOCK ──────────────────────────────────────────────────
-  // Ensure enough space — add page if needed
-  if (y + 80 > PAGE_H - MARGIN) { doc.addPage(); y = MARGIN + 20; }
-
-  const sigW   = (CONTENT_W - 20) / 3;
-  const sigLabels = ['Prepared by', 'Approved by', 'Received by'];
-  sigLabels.forEach((lbl, i) => {
-    const sx = MARGIN + i * (sigW + 10);
-    doc.setDrawColor(...GREY);
-    doc.setLineWidth(0.5);
-    doc.line(sx, y + 40, sx + sigW, y + 40);
-    doc.setFontSize(7.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...GREY);
-    doc.text(lbl.toUpperCase(), sx + sigW / 2, y + 52, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text('Signature / Date', sx + sigW / 2, y + 62, { align: 'center' });
+  // ── TOTALS ────────────────────────────────────────────────────────────────
+  doc.setDrawColor(...DARK_BLUE); doc.setLineWidth(1.5);
+  doc.line(MARGIN, curY, MARGIN+IW, curY);
+  const colW3 = IW/3;
+  const totItems = [
+    {label:'TOTAL SKUs',             value:String(lines.length)},
+    {label:'TOTAL UNITS TO DELIVER', value:String(totalUnits)},
+    {label:'TOTAL COST',             value:'—', muted:true},
+  ];
+  const totH = 7*MM + 8;
+  totItems.forEach((item,i) => {
+    const tx = MARGIN + i*colW3;
+    doc.setFillColor(...META_BG); doc.setDrawColor(...META_BDR); doc.setLineWidth(0.5);
+    doc.rect(tx, curY, colW3, totH, 'FD');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...BRAND_BLUE);
+    doc.text(item.label, tx+12, curY+9);
+    doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    doc.setTextColor(...(item.muted ? MID_GREY : DARK_BLUE));
+    doc.text(item.value, tx+12, curY+9+13);
   });
+  curY += totH + 4*MM;
 
-  // Footer note
-  y += 76;
-  doc.setFontSize(7);
-  doc.setTextColor(...GREY);
-  doc.setFont('helvetica', 'italic');
-  doc.text(`Generated by Acacia HBC Inventory & Dispatch Hub · ${dateStr} · This is a Pre-CDF working document.`, PAGE_W / 2, y, { align: 'center' });
+  // ── COMMENTS ─────────────────────────────────────────────────────────────
+  curY = sectionHeading(curY, 'Comments / Notes');
+  curY += 2*MM;
+  doc.setFillColor(...SIG_BG); doc.setDrawColor(...META_BDR); doc.setLineWidth(0.5);
+  doc.rect(MARGIN, curY, IW, 18*MM, 'FD');
+  curY += 18*MM + 4*MM;
 
-  // ── DOWNLOAD ─────────────────────────────────────────────────────────
-  const filename = `PreCDF_${record.store}_${dateStr.replace(/-/g,'')}.pdf`;
+  // ── SIGNATURES ────────────────────────────────────────────────────────────
+  curY = sectionHeading(curY, 'Authorisation & Signatures');
+  curY += 2*MM;
+  const sigTitles = ['Prepared By','Store Manager','Warehouse Manager'];
+  const sigW = (IW - 8*MM)/3; const gapW = 4*MM; const sigH = 22*MM;
+  sigTitles.forEach((title,i) => {
+    const sx = MARGIN + i*(sigW+gapW);
+    doc.setFillColor(...SIG_BG); doc.setDrawColor(...META_BDR); doc.setLineWidth(0.5);
+    doc.rect(sx, curY, sigW, sigH, 'FD');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...DARK_BLUE);
+    doc.text(title, sx+8, curY+14);
+    doc.setDrawColor(...MID_GREY); doc.setLineWidth(0.5);
+    doc.setLineDashPattern([2,3],0);
+    doc.line(sx+8, curY+sigH-12, sx+sigW-8, curY+sigH-12);
+    doc.setLineDashPattern([],0);
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...MID_GREY);
+    doc.text('Name & Date', sx+8, curY+sigH-5);
+  });
+  curY += sigH + 4*MM;
+
+  // ── FOOTER NOTE ───────────────────────────────────────────────────────────
+  doc.setDrawColor(...LIGHT_GREY); doc.setLineWidth(0.5);
+  doc.line(MARGIN, curY, MARGIN+IW, curY);
+  doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...MID_GREY);
+  doc.text('System-generated by Acacia Home Builders Corporation  ·  CDF-adjusted allocated orders  ·  Retain signed copy for records',
+    PW/2, curY+8, {align:'center'});
+
+  // ── PAGE DECORATIONS ─────────────────────────────────────────────────────
+  drawRunningHeader(record.store);
+  drawBottomFooter();
+  cropMarks();
+
+  // ── DOWNLOAD ─────────────────────────────────────────────────────────────
+  const filename = `AcaciaHBC_CDF_${dateTag}_${record.store}.pdf`;
   doc.save(filename);
 }
 
