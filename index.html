@@ -3941,10 +3941,12 @@ async function p2Generate() {
     p2Log(`✓ Loaded: ${storeCnt} stores · ${skuCnt} SKU/store pairs (filtered to your assigned stores)`, 'log-ok');
     p2SetProgress(60);
 
-    // Bible scope already filtered server-side by Assignments tab.
-    // No need to additionally filter — pass null to use everything the server returned.
-    const scopeStores = null;
-    p2Log(`🔒 Scope: ${storeCnt} accessible store${storeCnt!==1?'s':''} (per Bible Assignments)`, 'log-info');
+    // Scope to stores present in the uploaded Stock Summary.
+    // This means uploading one store's IC file generates only that store's replenishment —
+    // uploading all stores generates all. The Bible assignment filter already ran server-side.
+    const scopeStores = new Set(Object.keys(stockMap).map(s => s.toUpperCase()));
+    const scopeCnt = scopeStores.size;
+    p2Log(`🔒 Scope: ${scopeCnt} store${scopeCnt!==1?'s':''} from Stock Summary upload (${storeCnt} accessible per Bible Assignments)`, 'log-info');
 
     p2Log('🧮 Computing replenishment plan…', 'log-info');
     const plan = p2ComputePlan(stockMap, whsMap, bible, scopeStores);
