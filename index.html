@@ -3380,7 +3380,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
       // the printed name labels who signed). No helper text needed below
       // since this box is pre-filled.
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GREY_DARK);
-      doc.text(preparedByStamp, sx + 9, curY + sigH - 14);
+      doc.text(preparedByStamp, sx + sigW / 2, curY + sigH - 14, { align: 'center' });
     } else {
       // Store Manager / Warehouse Manager: blank line for handwritten signature;
       // helper text guides what to fill in.
