@@ -2044,15 +2044,30 @@ function buildForm(r) {
       ⏸ <strong>Dispatch dates are locked</strong> — confirm actuals in Phase 4 to unlock.
     </div>` : '';
   return `${p6Banner}
-    <div class="frow"><div class="fg">
-      <label>Store Order <span class="req">*</span></label>
-      <input type="text" id="f-cdf" value="${esc(r.cdf||'')}" placeholder="ACMAC-ORDER-20260515">
-    </div><div class="fg">
+    <div class="frow full"><div class="fg">
       <label>Store Name <span class="req">*</span></label>
       <select id="f-store" class="ms">
         <option value="">— Select store —</option>
         ${(S.stores.length ? S.stores : []).map(s=>`<option value="${s}" ${(r.store||'')=== s?'selected':''}>${s}</option>`).join('')}
       </select>
+    </div></div>
+
+    <div class="frow"><div class="fg">
+      <label>Store Order <span class="req">*</span></label>
+      <input type="text" id="f-cdf" value="${esc(r.cdf||'')}" placeholder="ACMAC-ORDER-20260515">
+    </div><div class="fg">
+      <label>CDF Ref ${isEdit && S.user.role !== 'EXECUTIVE'
+        ? '<span style="color:#999;font-weight:400;text-transform:none;font-size:10px">— executives only</span>'
+        : ''}</label>
+      ${isEdit ? `
+        <input type="text" id="f-acaciaRef"
+          value="${esc(r.acaciaRef||'')}"
+          placeholder="e.g. CDF-2026-00123"
+          ${S.user.role !== 'EXECUTIVE' ? 'readonly style="background:#f5f5f7;color:#666;cursor:not-allowed"' : ''}>
+      ` : `
+        <input type="text" value="" placeholder="Set on warehouse handoff" readonly
+          style="background:#f5f5f7;color:#999;cursor:not-allowed">
+      `}
     </div></div>
 
     <div class="frow three"><div class="fg">
@@ -2108,18 +2123,6 @@ function buildForm(r) {
       <label id="cas-lbl">CAS No.</label>
       <input type="text" id="f-cas" value="${esc(r.cas||'')}" placeholder="169070">
     </div></div>
-
-    ${isEdit ? `
-    <div class="frow"><div class="fg">
-      <label>CDF Ref ${S.user.role === 'EXECUTIVE'
-        ? '<span style="color:#999;font-weight:400;text-transform:none;font-size:10px">— editable by executives</span>'
-        : '<span style="color:#999;font-weight:400;text-transform:none;font-size:10px">— read-only (executives only)</span>'}</label>
-      <input type="text" id="f-acaciaRef"
-        value="${esc(r.acaciaRef||'')}"
-        placeholder="e.g. CDF-2026-00123"
-        style="font-family:'DM Mono',monospace;font-weight:600${S.user.role !== 'EXECUTIVE' ? ';background:#f5f5f7;color:#666;cursor:not-allowed' : ''}"
-        ${S.user.role !== 'EXECUTIVE' ? 'readonly' : ''}>
-    </div></div>` : ''}
 
     <div class="frow full"><div class="fg">
       <label>Remarks</label>
