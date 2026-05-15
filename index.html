@@ -3342,9 +3342,19 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   const sigGap = 3*MM;
   const sigH = 26*MM;
 
-  // Name of the user who generated this PDF — appears under "Prepared By".
-  // Falls back gracefully if name is missing.
+  // Name + timestamp of the user who generated this PDF — appears in the
+  // "Prepared By" box just above the dashed signature line, so the signature
+  // is written above the name (signing OVER your printed name, as is standard
+  // on a CDF/PO). Format: "John Doe / March 3, 2026 1:00 PM" using the user's
+  // local timezone (browser default).
   const preparedByName = (S.user && (S.user.name || S.user.username)) || '';
+  const preparedByStamp = (() => {
+    if (!preparedByName) return '';
+    const d = new Date();
+    const datePart = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const timePart = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    return `${preparedByName} / ${datePart} ${timePart}`;
+  })();
 
   sigLabels.forEach((title, i) => {
     const sx = MARGIN + i * (sigW + sigGap);
@@ -3358,20 +3368,25 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     // title
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...DARK_BLUE);
     doc.text(title, sx + 9, curY + 12);
-    // Prepared-by name — only on the first box (i === 0). Other boxes
-    // stay blank for handwritten signatures by Store/Warehouse Manager.
-    if (i === 0 && preparedByName) {
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GREY_DARK);
-      doc.text(preparedByName, sx + 9, curY + 22);
-    }
-    // dashed sign line
+    // dashed sign line (drawn for all three boxes)
     doc.setDrawColor(...GREY_MID); doc.setLineWidth(0.5);
     doc.setLineDashPattern([2, 3], 0);
     doc.line(sx + 9, curY + sigH - 11, sx + sigW - 9, curY + sigH - 11);
     doc.setLineDashPattern([], 0);
-    // name & date hint
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GREY_MID);
-    doc.text('Signature above  ·  Print name & date below', sx + 9, curY + sigH - 4);
+
+    if (i === 0 && preparedByStamp) {
+      // Prepared By: print the name+timestamp just above the dashed line so
+      // the signature is written over the name (standard PO/CDF convention —
+      // the printed name labels who signed). No helper text needed below
+      // since this box is pre-filled.
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GREY_DARK);
+      doc.text(preparedByStamp, sx + 9, curY + sigH - 14);
+    } else {
+      // Store Manager / Warehouse Manager: blank line for handwritten signature;
+      // helper text guides what to fill in.
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GREY_MID);
+      doc.text('Signature above  ·  Print name & date below', sx + 9, curY + sigH - 4);
+    }
   });
   curY += sigH + 4*MM;
 
