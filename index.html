@@ -3182,10 +3182,10 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   curY = sectionHeading(curY, 'Order Items');
   curY += 2*MM;
 
-  // Column widths — Category dropped, columns reordered, Price added.
-  // #  | Brand | Barcode | Product Name | Qty  | Price
-  // 3% | 10%   | 18%     | 40%          | 12%  | 17%
-  const CW = [IW*0.03, IW*0.10, IW*0.18, IW*0.40, IW*0.12, IW*0.17];
+  // Column widths — Category dropped, Price split into Unit Price + Line Total.
+  // #  | Brand | Barcode | Product Name | Qty | Unit Price | Line Total
+  // 3% | 10%   | 18%     | 38%          | 12% | 8%         | 11%
+  const CW = [IW*0.03, IW*0.10, IW*0.18, IW*0.38, IW*0.12, IW*0.08, IW*0.11];
 
   // Price formatter — accepts number, numeric string, or empty.
   // Renders empty string when no price is set on the line, otherwise a
@@ -3199,10 +3199,18 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     return 'PHP ' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
+  // Line total = qty × unit price. Blank when either piece is missing.
+  const lineTotal = (qty, price) => {
+    const q = Number(qty);
+    const p = Number(price);
+    if (!isFinite(q) || !isFinite(p) || q <= 0 || p <= 0) return '';
+    return fmtPrice(q * p);
+  };
+
   doc.autoTable({
     startY: curY,
     margin: { left: MARGIN, right: MARGIN },
-    head: [['#', 'Brand', 'Barcode', 'Product Name', 'Qty', 'Price']],
+    head: [['#', 'Brand', 'Barcode', 'Product Name', 'Qty', 'Unit Price', 'Line Total']],
     body: pdfLines.map((l, i) => [
       i + 1,
       l.brand       || '',
@@ -3210,6 +3218,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
       l.productName || '',
       l.finalOrder  || 0,
       fmtPrice(l.price),
+      lineTotal(l.finalOrder, l.price),
     ]),
     theme: 'plain',
     headStyles: {
@@ -3236,6 +3245,8 @@ async function p3GeneratePDF(record, lines, storeInfo) {
            textColor:DARK_BLUE, fillColor:GRN_PALE },
       5: { halign:'right',  cellWidth:CW[5], font:'helvetica', fontStyle:'normal',
            fontSize:7.5, textColor:GREY_DARK },
+      6: { halign:'right',  cellWidth:CW[6], font:'helvetica', fontStyle:'bold',
+           fontSize:7.5, textColor:DARK_BLUE },
     },
     alternateRowStyles: { fillColor: ROW_EVEN },
     didParseCell(d) {
@@ -3243,6 +3254,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
         if (d.column.index === 3) d.cell.styles.halign = 'left';
         if (d.column.index === 4) d.cell.styles.fillColor = BRAND_GRN;
         if (d.column.index === 5) d.cell.styles.halign = 'right';
+        if (d.column.index === 6) d.cell.styles.halign = 'right';
       }
     },
     didDrawCell(d) {
