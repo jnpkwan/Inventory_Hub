@@ -3342,6 +3342,10 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   const sigGap = 3*MM;
   const sigH = 26*MM;
 
+  // Name of the user who generated this PDF — appears under "Prepared By".
+  // Falls back gracefully if name is missing.
+  const preparedByName = (S.user && (S.user.name || S.user.username)) || '';
+
   sigLabels.forEach((title, i) => {
     const sx = MARGIN + i * (sigW + sigGap);
     // box
@@ -3354,6 +3358,12 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     // title
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...DARK_BLUE);
     doc.text(title, sx + 9, curY + 12);
+    // Prepared-by name — only on the first box (i === 0). Other boxes
+    // stay blank for handwritten signatures by Store/Warehouse Manager.
+    if (i === 0 && preparedByName) {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GREY_DARK);
+      doc.text(preparedByName, sx + 9, curY + 22);
+    }
     // dashed sign line
     doc.setDrawColor(...GREY_MID); doc.setLineWidth(0.5);
     doc.setLineDashPattern([2, 3], 0);
