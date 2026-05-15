@@ -815,7 +815,6 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
               <div class="p1-store-list" id="p2-store-list"></div>
               <div class="p1-actions-row">
                 <button class="p1-btn-dl" onclick="p2Download()">⬇️ Download Order (.xlsx)</button>
-                <button class="p1-btn-dl" style="background:var(--blue)" onclick="p3OpenUploadModal()">📋 Upload to Phase 3</button>
                 <button class="p1-btn-reset" onclick="p2Reset()">🔄 New Order</button>
               </div>
             </div>
@@ -2422,12 +2421,17 @@ function p3OpenUploadModal() {
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
               <span style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Review — CDF Tickets to Create</span>
               <span id="p3-review-count" style="font-size:11px;color:#888"></span>
+              <span id="p3-review-selected" style="margin-left:auto;font-size:11px;color:var(--blue);font-weight:600"></span>
             </div>
             <div id="p3-review-warn" style="display:none;background:var(--amber-pale);border-left:3px solid var(--amber);padding:8px 12px;border-radius:0 6px 6px 0;font-size:11.5px;color:#7A5A00;margin-bottom:10px"></div>
             <div style="overflow-x:auto">
               <table style="width:100%;border-collapse:collapse;font-size:12px" id="p3-review-table">
                 <thead>
                   <tr style="background:var(--blue);color:#fff">
+                    <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px;width:40px">
+                      <input type="checkbox" id="p3-select-all" checked onchange="p3ToggleAllStaged(this.checked)"
+                        style="width:16px;height:16px;cursor:pointer;accent-color:#fff" title="Select / deselect all">
+                    </th>
                     <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Pre-CDF #</th>
                     <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Store</th>
                     <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Lines</th>
@@ -2462,6 +2466,10 @@ function p3OpenUploadModal() {
 function p3CloseUploadModal() {
   const m = document.getElementById('p3-upload-modal');
   if (m) m.style.display = 'none';
+  // Reset staged state so reopen starts clean
+  P3._staged = null;
+  const wrap = document.getElementById('p3-review-wrap');
+  if (wrap) wrap.style.display = 'none';
 }
 
 /* ── Pre-populate review from P2.results (SM-approved Excel upload path) ─ */
@@ -2629,10 +2637,16 @@ function p3RenderReviewTable(staged) {
     return;
   }
 
-  // Check for duplicates against existing records
+  // Initialize selection state on first render — default all selected, except
+  // duplicates which are auto-deselected (can't be re-selected; they'd just skip).
   const existingCDFs = new Set((S.records || []).map(r => r.cdf));
-  const dupes = staged.filter(s => existingCDFs.has(s.cdf));
+  staged.forEach(s => {
+    const isDupe = existingCDFs.has(s.cdf);
+    if (s.selected === undefined) s.selected = !isDupe;
+    if (isDupe) s.selected = false;
+  });
 
+  const dupes = staged.filter(s => existingCDFs.has(s.cdf));
   if (dupes.length) {
     warn.style.display = '';
     warn.textContent = `⚠️ ${dupes.length} CDF reference(s) already exist and will be skipped: ${dupes.map(d => d.cdf).join(', ')}`;
@@ -2644,7 +2658,17 @@ function p3RenderReviewTable(staged) {
 
   tbody.innerHTML = staged.map((s, idx) => {
     const isDupe = existingCDFs.has(s.cdf);
-    return `<tr style="border-bottom:1px solid var(--silver);${isDupe ? 'opacity:.45' : ''}">
+    const isSelected = !!s.selected;
+    // Visual dim: duplicates strongly, deselected (non-dupe) lightly
+    const rowOpacity = isDupe ? '.45' : (isSelected ? '1' : '.55');
+    return `<tr data-staged-idx="${idx}" style="border-bottom:1px solid var(--silver);opacity:${rowOpacity};transition:opacity .12s">
+      <td style="padding:7px 10px;text-align:center">
+        <input type="checkbox" class="p3-row-check" data-idx="${idx}"
+          ${isSelected ? 'checked' : ''} ${isDupe ? 'disabled' : ''}
+          onchange="p3ToggleStaged(${idx}, this.checked)"
+          style="width:16px;height:16px;cursor:${isDupe?'not-allowed':'pointer'};accent-color:var(--blue)"
+          title="${isDupe ? 'Duplicate — will be skipped' : 'Include this store'}">
+      </td>
       <td style="padding:7px 10px;font-family:'DM Mono',monospace;font-size:11px;color:var(--blue)">${esc(s.cdf)}</td>
       <td style="padding:7px 10px;font-weight:600">${esc(s.store)}</td>
       <td style="padding:7px 10px;text-align:center">${s.orderLines.length}</td>
@@ -2665,13 +2689,55 @@ function p3RenderReviewTable(staged) {
           <option value="Unknown" ${s.route==='Unknown'?'selected':''}>Unknown</option>
         </select>
       </td>
-      <td style="padding:7px 10px;text-align:center;font-size:10px;color:${isDupe ? 'var(--red)' : 'var(--amber)'}">
-        ${isDupe ? '⚠ Duplicate' : '⏳ Awaiting SM'}
+      <td style="padding:7px 10px;text-align:center;font-size:10px;color:${isDupe ? 'var(--red)' : isSelected ? 'var(--amber)' : '#999'}">
+        ${isDupe ? '⚠ Duplicate' : isSelected ? '⏳ Awaiting SM' : '⊘ Skipped'}
       </td>
     </tr>`;
   }).join('');
 
   wrap.style.display = '';
+  p3UpdateSelectedCount();
+}
+
+// Toggle the inclusion of a single staged store by index.
+// Re-renders just the affected row's styling via a full table re-render
+// (cheap given the small N — usually <50 stores).
+function p3ToggleStaged(idx, checked) {
+  if (!P3._staged || !P3._staged[idx]) return;
+  P3._staged[idx].selected = !!checked;
+  p3RenderReviewTable(P3._staged);
+}
+
+// Select-all / deselect-all helper. Duplicates remain forcibly deselected.
+function p3ToggleAllStaged(checked) {
+  if (!P3._staged) return;
+  const existingCDFs = new Set((S.records || []).map(r => r.cdf));
+  P3._staged.forEach(s => {
+    if (existingCDFs.has(s.cdf)) { s.selected = false; return; }
+    s.selected = !!checked;
+  });
+  p3RenderReviewTable(P3._staged);
+}
+
+// Update the "N of M selected" caption + disable confirm button when 0.
+function p3UpdateSelectedCount() {
+  const sel = document.getElementById('p3-review-selected');
+  const btn = document.getElementById('p3-confirm-btn');
+  if (!P3._staged) return;
+  const eligible = P3._staged.filter(s => !((S.records||[]).some(r => r.cdf === s.cdf)));
+  const selectedCount = eligible.filter(s => s.selected).length;
+  if (sel) sel.textContent = `${selectedCount} of ${eligible.length} selected`;
+  if (btn) {
+    btn.disabled = selectedCount === 0;
+    btn.style.opacity = selectedCount === 0 ? '.5' : '1';
+    btn.style.cursor  = selectedCount === 0 ? 'not-allowed' : 'pointer';
+  }
+  // Keep select-all checkbox in sync — checked only when ALL eligible are selected.
+  const sa = document.getElementById('p3-select-all');
+  if (sa) {
+    sa.checked = eligible.length > 0 && selectedCount === eligible.length;
+    sa.indeterminate = selectedCount > 0 && selectedCount < eligible.length;
+  }
 }
 
 async function p3ConfirmBatchCreate() {
@@ -2679,13 +2745,27 @@ async function p3ConfirmBatchCreate() {
   const btn = document.getElementById('p3-confirm-btn');
   btn.disabled = true;
 
-  // Check for duplicates upfront
+  // Filter pipeline:
+  //   1) drop duplicates (already exist) — reported as "skipped"
+  //   2) drop unselected stores — reported as "deselected"
+  // Both buckets are surfaced in the final toast so the IA knows exactly
+  // what made it through.
   const existingRefs = new Set((S.records || []).map(r => r.cdf));
-  const toCreate = P3._staged.filter(s => !existingRefs.has(s.cdf));
-  const skippedCount = P3._staged.length - toCreate.length;
+  const notDupes = P3._staged.filter(s => !existingRefs.has(s.cdf));
+  const skippedCount = P3._staged.length - notDupes.length;
+  const toCreate = notDupes.filter(s => s.selected !== false);
+  const deselectedCount = notDupes.length - toCreate.length;
 
   if (!toCreate.length) {
-    toast(`All ${skippedCount} ticket${skippedCount!==1?'s':''} already exist — nothing to create.`);
+    let msg = '';
+    if (skippedCount && !deselectedCount) {
+      msg = `All ${skippedCount} ticket${skippedCount!==1?'s':''} already exist — nothing to create.`;
+    } else if (deselectedCount && !skippedCount) {
+      msg = `All stores are deselected — nothing to create.`;
+    } else {
+      msg = `Nothing to create: ${skippedCount} duplicate${skippedCount!==1?'s':''}, ${deselectedCount} deselected.`;
+    }
+    toast(msg, 'warn');
     btn.disabled = false;
     return;
   }
@@ -2736,8 +2816,9 @@ async function p3ConfirmBatchCreate() {
   renderAll();
 
   let msg = `✅ Created ${created} CDF ticket${created!==1?'s':''} in Phase 3 — Awaiting SM Review.`;
-  if (skippedCount > 0) msg += ` ${skippedCount} duplicate${skippedCount!==1?'s':''} skipped.`;
-  if (failed > 0) msg += ` ⚠ ${failed} failed: ${errors.join(', ')}`;
+  if (skippedCount > 0)    msg += ` ${skippedCount} duplicate${skippedCount!==1?'s':''} skipped.`;
+  if (deselectedCount > 0) msg += ` ${deselectedCount} deselected.`;
+  if (failed > 0)          msg += ` ⚠ ${failed} failed: ${errors.join(', ')}`;
   toast(msg);
 
   btn.disabled = false;
