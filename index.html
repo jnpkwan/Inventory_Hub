@@ -2690,7 +2690,11 @@ async function p3ConfirmBatchCreate() {
   let created = 0, failed = 0, completed = 0;
   const errors = [];
 
-  // Build a per-store fetch closure
+  // Build a per-store fetch closure.
+  // Uses gasPost (POST + text/plain) so large orderLines JSON payloads
+  // aren't blocked by URL length limits — a 22-SKU order with longer
+  // product names easily exceeds Apps Script's ~8 KB GET ceiling and
+  // would fail as "Load failed".
   const fireOne = async (s) => {
     try {
       const payload = {
@@ -2703,12 +2707,7 @@ async function p3ConfirmBatchCreate() {
         status:     'Preparing Order',
         orderLines: JSON.stringify(s.orderLines),
       };
-      const url = new URL(CFG.apiUrl);
-      url.searchParams.set('action', 'addCDF');
-      url.searchParams.set('payload', JSON.stringify(payload));
-      const resp = await fetch(url.toString());
-      const data = await resp.json();
-      if (!data.ok) throw new Error(data.error || 'Failed');
+      await gasPost('addCDF', payload);
       created++;
     } catch(err) {
       failed++;
