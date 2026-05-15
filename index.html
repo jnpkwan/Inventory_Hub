@@ -88,6 +88,7 @@ select.fs:focus{border-color:var(--green);background:#fff;box-shadow:0 0 0 3px r
 .phc-num{font-size:9px;font-weight:800;color:#bbb;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
 .phc-n{font-family:"Montserrat",sans-serif;font-weight:800;font-size:22px;line-height:1;color:var(--carbon)}
 .phc-n.dim{color:#ccc}
+.phc-n-spacer{height:22px}
 .phc-l{font-size:10px;color:#888;margin-top:2px;font-weight:500}
 .phc-sub{font-size:9px;margin-top:3px;font-weight:600;color:#aaa}
 .phc{cursor:pointer;transition:box-shadow .15s,border-color .15s}
@@ -1332,11 +1333,14 @@ function renderSummary(rows) {
   document.getElementById('ph-summary').innerHTML = phCards.map(c=>{
     const activeClass = pf===c.id?' active':'';
     const clickAttr   = c.disabled?'':'data-phase-id="'+c.id+'"';
+    // Phase 1 and Phase 2 are tools, not work queues — the running count
+    // isn't operationally meaningful, so hide the number on those tiles.
+    const showCount   = c.id !== 'p1' && c.id !== 'p2';
     const nStr        = c.dim?'—':c.count;
     const dimClass    = c.dim?' dim':'';
     return '<div class="phc '+c.cls+activeClass+'" '+clickAttr+' title="'+(c.disabled?'Coming soon':'Filter by '+c.label)+'">'
       +'<div class="phc-num">Phase '+c.id[1]+'</div>'
-      +'<div class="phc-n'+dimClass+'">'+nStr+'</div>'
+      +(showCount?'<div class="phc-n'+dimClass+'">'+nStr+'</div>':'<div class="phc-n-spacer"></div>')
       +'<div class="phc-l">'+c.label+'</div>'
       +'<div class="phc-sub">'+c.sub+'</div>'
       +'</div>';
