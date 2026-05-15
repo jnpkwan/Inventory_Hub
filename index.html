@@ -3374,19 +3374,15 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     doc.line(sx + 9, curY + sigH - 11, sx + sigW - 9, curY + sigH - 11);
     doc.setLineDashPattern([], 0);
 
+    // Prepared By box: name+timestamp printed just above the dashed line so
+    // the signature is written over it (the printed name labels who signed).
     if (i === 0 && preparedByStamp) {
-      // Prepared By: print the name+timestamp just above the dashed line so
-      // the signature is written over the name (standard PO/CDF convention —
-      // the printed name labels who signed). No helper text needed below
-      // since this box is pre-filled.
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GREY_DARK);
       doc.text(preparedByStamp, sx + sigW / 2, curY + sigH - 14, { align: 'center' });
-    } else {
-      // Store Manager / Warehouse Manager: blank line for handwritten signature;
-      // helper text guides what to fill in.
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GREY_MID);
-      doc.text('Signature above  ·  Print name & date below', sx + 9, curY + sigH - 4);
     }
+    // Helper text under the dashed line — same on all three boxes.
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GREY_MID);
+    doc.text('Signature over Printed Name', sx + 9, curY + sigH - 4);
   });
   curY += sigH + 4*MM;
 
