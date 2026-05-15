@@ -3184,8 +3184,8 @@ async function p3GeneratePDF(record, lines, storeInfo) {
 
   // Column widths — Category dropped, Price split into Unit Price + Line Total.
   // #  | Brand | Barcode | Product Name | Qty | Unit Price | Line Total
-  // 3% | 10%   | 18%     | 38%          | 12% | 8%         | 11%
-  const CW = [IW*0.03, IW*0.10, IW*0.18, IW*0.38, IW*0.12, IW*0.08, IW*0.11];
+  // 3% | 10%   | 13%     | 38%          | 6%  | 15%        | 15%
+  const CW = [IW*0.03, IW*0.10, IW*0.13, IW*0.38, IW*0.06, IW*0.15, IW*0.15];
 
   // Price formatter — accepts number, numeric string, or empty.
   // Renders empty string when no price is set on the line, otherwise a
@@ -3239,7 +3239,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     columnStyles: {
       0: { halign:'center', cellWidth:CW[0], textColor:GREY_MID, fontSize:7 },
       1: { halign:'center', cellWidth:CW[1] },
-      2: { halign:'center', cellWidth:CW[2], font:'courier', fontSize:7, textColor:GREY_MID },
+      2: { halign:'center', cellWidth:CW[2] },
       3: { halign:'left',   cellWidth:CW[3], fontStyle:'normal' },
       4: { halign:'center', cellWidth:CW[4], fontStyle:'bold', fontSize:10,
            textColor:DARK_BLUE, fillColor:GRN_PALE },
