@@ -2491,7 +2491,7 @@ function p3HandleFileSelect(input) {
  * Falls back to "Allocated Order" if Final Order is missing/zero.
  * Stores parsed data in P3._staged for confirm step.
  */
-const P3 = { _staged: null };
+const P3 = { _staged: null, _priceMap: null, _priceMapAt: 0 };
 
 async function p3ParseUploadedExcel(file) {
   const dz = document.getElementById('p3-upload-dz');
@@ -2867,6 +2867,32 @@ async function generatePDF(uid) {
       }
     }
 
+    // Fetch price lookup from Bible PRODUCT_MASTER tab and enrich each
+    // line with its price. Price is bound at PDF-generation time only —
+    // it is NOT persisted into orderLines on the server, so a future
+    // price change in the Bible will affect future PDFs but not the
+    // already-saved order data.
+    //
+    // Session cache (1 hour) avoids re-fetching for back-to-back PDFs.
+    // Missing barcodes simply produce a blank price cell on the PDF.
+    try {
+      const oneHour = 60 * 60 * 1000;
+      if (!P3._priceMap || (Date.now() - P3._priceMapAt) > oneHour) {
+        const pm = await gasGet('getBibleProductPrices', { username: S.user.username });
+        P3._priceMap = (pm && typeof pm === 'object') ? pm : {};
+        P3._priceMapAt = Date.now();
+      }
+      const priceMap = P3._priceMap;
+      lines = lines.map(l => ({
+        ...l,
+        price: priceMap[String(l.barcode || '').trim()] || ''
+      }));
+    } catch (priceErr) {
+      // Non-fatal: if the price lookup fails, the PDF still generates
+      // with blank prices. Logged for visibility but doesn't block.
+      console.warn('Price lookup failed; PDF will render without prices:', priceErr);
+    }
+
     await p3GeneratePDF(r, lines, storeInfo);
 
     // Mark as Generated
@@ -3124,11 +3150,11 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   const CW = [IW*0.03, IW*0.10, IW*0.18, IW*0.40, IW*0.12, IW*0.17];
 
   // Price formatter — accepts number, numeric string, or empty.
-  // Renders '—' when no price is set on the line, otherwise a peso-formatted value.
+  // Renders empty string when no price is set on the line, otherwise a peso-formatted value.
   const fmtPrice = (p) => {
-    if (p === null || p === undefined || p === '') return '—';
+    if (p === null || p === undefined || p === '') return '';
     const n = Number(p);
-    if (!isFinite(n) || n === 0) return '—';
+    if (!isFinite(n) || n === 0) return '';
     return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
