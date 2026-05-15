@@ -3150,12 +3150,15 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   const CW = [IW*0.03, IW*0.10, IW*0.18, IW*0.40, IW*0.12, IW*0.17];
 
   // Price formatter — accepts number, numeric string, or empty.
-  // Renders empty string when no price is set on the line, otherwise a peso-formatted value.
+  // Renders empty string when no price is set on the line, otherwise a
+  // PHP-prefixed peso value. We use "PHP " rather than the ₱ glyph (U+20B1)
+  // because jsPDF's default Helvetica encoding does not include the peso
+  // symbol — it renders as "±" (plus-minus) via font substitution.
   const fmtPrice = (p) => {
     if (p === null || p === undefined || p === '') return '';
     const n = Number(p);
     if (!isFinite(n) || n === 0) return '';
-    return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return 'PHP ' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   doc.autoTable({
@@ -3193,7 +3196,8 @@ async function p3GeneratePDF(record, lines, storeInfo) {
       3: { halign:'left',   cellWidth:CW[3], fontStyle:'normal' },
       4: { halign:'center', cellWidth:CW[4], fontStyle:'bold', fontSize:10,
            textColor:DARK_BLUE, fillColor:GRN_PALE },
-      5: { halign:'right',  cellWidth:CW[5], fontStyle:'normal' },
+      5: { halign:'right',  cellWidth:CW[5], font:'helvetica', fontStyle:'normal',
+           fontSize:7.5, textColor:GREY_DARK },
     },
     alternateRowStyles: { fillColor: ROW_EVEN },
     didParseCell(d) {
@@ -3210,8 +3214,10 @@ async function p3GeneratePDF(record, lines, storeInfo) {
         doc.line(d.cell.x, d.cell.y + d.cell.height,
                  d.cell.x + d.cell.width, d.cell.y + d.cell.height);
       }
-      // Left border on Qty col (body only)
-      if (d.section === 'body' && d.column.index === 5) {
+      // Green left-border on Qty col (col 4) only — visually pairs with the
+      // green Qty header fill. Previously this drew on col 5 (Price) which
+      // appeared as an intrusive line cutting into the Price column.
+      if (d.section === 'body' && d.column.index === 4) {
         doc.setDrawColor(...BRAND_GRN); doc.setLineWidth(1);
         doc.line(d.cell.x, d.cell.y, d.cell.x, d.cell.y + d.cell.height);
       }
@@ -3226,10 +3232,21 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   doc.setDrawColor(...DARK_BLUE); doc.setLineWidth(1.5);
   doc.line(MARGIN, curY, MARGIN + IW, curY);
 
+  // Compute total cost across all PDF lines: Σ (qty × price). Lines
+  // missing a price (price === '' or non-numeric) contribute zero,
+  // so partial price coverage degrades gracefully rather than breaking
+  // the total. Uses the same PHP-prefixed formatter as the table cells.
+  const totalCost = pdfLines.reduce((sum, l) => {
+    const qty = Number(l.finalOrder) || 0;
+    const price = Number(l.price);
+    if (!isFinite(price) || price <= 0) return sum;
+    return sum + qty * price;
+  }, 0);
+
   const totCols = [
     { label:'TOTAL SKUs',             value: String(pdfLines.length), muted:false },
     { label:'TOTAL UNITS TO DELIVER', value: String(totalUnits),      muted:false },
-    { label:'TOTAL COST',             value: '—',                      muted:true  },
+    { label:'TOTAL COST',             value: fmtPrice(totalCost),     muted:false },
   ];
   const tCW = IW / 3;
   totCols.forEach((col, i) => {
