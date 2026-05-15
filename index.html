@@ -3184,8 +3184,8 @@ async function p3GeneratePDF(record, lines, storeInfo) {
 
   // Column widths — Category dropped, Price split into Unit Price + Line Total.
   // #  | Brand | Barcode | Product Name | Qty | Unit Price | Line Total
-  // 3% | 10%   | 13%     | 38%          | 6%  | 15%        | 15%
-  const CW = [IW*0.03, IW*0.10, IW*0.13, IW*0.38, IW*0.06, IW*0.15, IW*0.15];
+  // 5% | 10%   | 13%     | 36%          | 6%  | 15%        | 15%
+  const CW = [IW*0.05, IW*0.10, IW*0.13, IW*0.36, IW*0.06, IW*0.15, IW*0.15];
 
   // Price formatter — accepts number, numeric string, or empty.
   // Renders empty string when no price is set on the line, otherwise a
