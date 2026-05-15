@@ -3037,22 +3037,31 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   curY = sectionHeading(curY, 'Order Items');
   curY += 2*MM;
 
-  // Column widths — wider Product Name, no Cost column (drop it, it's always —)
-  // #  | Brand | Category | Product Name         | Barcode       | Qty
-  // 3% | 10%   | 13%      | 42%                  | 20%           | 12%
-  const CW = [IW*0.03, IW*0.10, IW*0.13, IW*0.42, IW*0.20, IW*0.12];
+  // Column widths — Category dropped, columns reordered, Price added.
+  // #  | Brand | Barcode | Product Name | Qty  | Price
+  // 3% | 10%   | 18%     | 40%          | 12%  | 17%
+  const CW = [IW*0.03, IW*0.10, IW*0.18, IW*0.40, IW*0.12, IW*0.17];
+
+  // Price formatter — accepts number, numeric string, or empty.
+  // Renders '—' when no price is set on the line, otherwise a peso-formatted value.
+  const fmtPrice = (p) => {
+    if (p === null || p === undefined || p === '') return '—';
+    const n = Number(p);
+    if (!isFinite(n) || n === 0) return '—';
+    return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
 
   doc.autoTable({
     startY: curY,
     margin: { left: MARGIN, right: MARGIN },
-    head: [['#', 'Brand', 'Category', 'Product Name', 'Barcode', 'Qty']],
+    head: [['#', 'Brand', 'Barcode', 'Product Name', 'Qty', 'Price']],
     body: pdfLines.map((l, i) => [
       i + 1,
-      l.brand    || '',
-      l.category || '',
+      l.brand       || '',
+      l.barcode     || '',
       l.productName || '',
-      l.barcode  || '',
-      l.finalOrder || 0,
+      l.finalOrder  || 0,
+      fmtPrice(l.price),
     ]),
     theme: 'plain',
     headStyles: {
@@ -3073,17 +3082,18 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     columnStyles: {
       0: { halign:'center', cellWidth:CW[0], textColor:GREY_MID, fontSize:7 },
       1: { halign:'center', cellWidth:CW[1] },
-      2: { halign:'center', cellWidth:CW[2] },
+      2: { halign:'center', cellWidth:CW[2], font:'courier', fontSize:7, textColor:GREY_MID },
       3: { halign:'left',   cellWidth:CW[3], fontStyle:'normal' },
-      4: { halign:'center', cellWidth:CW[4], font:'courier', fontSize:7, textColor:GREY_MID },
-      5: { halign:'center', cellWidth:CW[5], fontStyle:'bold', fontSize:10,
+      4: { halign:'center', cellWidth:CW[4], fontStyle:'bold', fontSize:10,
            textColor:DARK_BLUE, fillColor:GRN_PALE },
+      5: { halign:'right',  cellWidth:CW[5], fontStyle:'normal' },
     },
     alternateRowStyles: { fillColor: ROW_EVEN },
     didParseCell(d) {
       if (d.section === 'head') {
         if (d.column.index === 3) d.cell.styles.halign = 'left';
-        if (d.column.index === 5) d.cell.styles.fillColor = BRAND_GRN;
+        if (d.column.index === 4) d.cell.styles.fillColor = BRAND_GRN;
+        if (d.column.index === 5) d.cell.styles.halign = 'right';
       }
     },
     didDrawCell(d) {
