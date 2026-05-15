@@ -1670,9 +1670,13 @@ function buildDetail(r) {
 
   // ── Phase 3 panel — Approvals ─────────────────────────────────────────────
   const smBadge  = smSt==='Approved'?'wfs-approved':smSt==='Changes Requested'?'wfs-changes':'wfs-pending';
+  // SM Approve goes straight through — no confirmation modal. The action is
+  // recorded by username + timestamp on the row, so it's auditable, and the
+  // ticket is recoverable via Request Changes if mis-clicked.
+  // (Request Changes still uses the modal because it requires a reason note.)
   const smActions = canApproveSM && smSt!=='Approved' ? `
     <div class="wf-actions">
-      <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','sm','approve')">✓ Approve Order</button>
+      <button class="btn btn-approve" onclick="event.stopPropagation();saveApproval('${uid}','sm','approve')">✓ Approve Order</button>
     </div>` : '';
   const smResubmit = '';
   // PDF badge/button shown inline in the meta row — no extra divider line
@@ -2832,6 +2836,61 @@ async function p3ConfirmBatchCreate() {
    Uses orderLines stored on the CDF record — no re-upload needed.
    ══════════════════════════════════════════════════════════════════════ */
 
+/**
+ * Enrich order lines with prices from the Bible PRODUCT_MASTER tab.
+ *
+ * Price is bound at PDF-generation time only — it is NOT persisted into
+ * orderLines on the server, so future price changes in the Bible will
+ * affect future PDFs but not already-saved order data.
+ *
+ * Session cache (1 hour) avoids re-fetching for back-to-back PDFs.
+ * Missing barcodes produce price='' which fmtPrice renders as a blank
+ * cell — the PDF is never blocked by missing prices.
+ *
+ * Used by BOTH generatePDF (Phase 3 first generation) and
+ * generateFinalCDF (Phase 4 adjusted re-generation). Keep this as the
+ * single source of truth — if a third PDF path is added later, route
+ * it through this helper too.
+ *
+ * @param {Array} lines  order line objects with .barcode
+ * @returns {Array}      same lines with .price added
+ */
+async function p3EnrichLinesWithPrices(lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return lines;
+
+  try {
+    const oneHour = 60 * 60 * 1000;
+    if (!P3._priceMap || (Date.now() - P3._priceMapAt) > oneHour) {
+      const pm = await gasGet('getBibleProductPrices', { username: S.user.username });
+      P3._priceMap = (pm && typeof pm === 'object') ? pm : {};
+      P3._priceMapAt = Date.now();
+    }
+    const priceMap = P3._priceMap;
+    const priceCount = Object.keys(priceMap).length;
+    console.log(`[PDF] Price map loaded: ${priceCount} barcodes`);
+
+    let matched = 0;
+    const enriched = lines.map(l => {
+      const bc = String(l.barcode || '').trim();
+      const price = priceMap[bc];
+      if (price) matched++;
+      return { ...l, price: price || '' };
+    });
+    console.log(`[PDF] Prices merged: ${matched} of ${lines.length} lines matched`);
+
+    if (priceCount === 0) {
+      toast('⚠️ No prices found in PRODUCT_MASTER. PDF will render without prices.', 'err');
+    } else if (matched === 0 && lines.length > 0) {
+      toast(`⚠️ Prices loaded (${priceCount}) but no barcodes matched this order. PDF will render without prices.`, 'err');
+    }
+    return enriched;
+  } catch (priceErr) {
+    console.warn('Price lookup failed; PDF will render without prices:', priceErr);
+    toast('⚠️ Could not load prices: ' + (priceErr.message || 'unknown error') + '. PDF will render without prices.', 'err');
+    return lines;  // unchanged — fmtPrice handles missing prices gracefully
+  }
+}
+
 async function generatePDF(uid) {
   const r = S.records.find(x => (x.id || x.cdf) === uid);
   if (!r) return;
@@ -2867,48 +2926,10 @@ async function generatePDF(uid) {
       }
     }
 
-    // Fetch price lookup from Bible PRODUCT_MASTER tab and enrich each
-    // line with its price. Price is bound at PDF-generation time only —
-    // it is NOT persisted into orderLines on the server, so a future
-    // price change in the Bible will affect future PDFs but not the
-    // already-saved order data.
-    //
-    // Session cache (1 hour) avoids re-fetching for back-to-back PDFs.
-    // Missing barcodes simply produce a blank price cell on the PDF.
-    try {
-      const oneHour = 60 * 60 * 1000;
-      if (!P3._priceMap || (Date.now() - P3._priceMapAt) > oneHour) {
-        const pm = await gasGet('getBibleProductPrices', { username: S.user.username });
-        P3._priceMap = (pm && typeof pm === 'object') ? pm : {};
-        P3._priceMapAt = Date.now();
-      }
-      const priceMap = P3._priceMap;
-      const priceCount = Object.keys(priceMap).length;
-      console.log(`[PDF] Price map loaded: ${priceCount} barcodes`);
-
-      // Merge prices onto lines, matching by trimmed barcode
-      let matched = 0;
-      lines = lines.map(l => {
-        const bc = String(l.barcode || '').trim();
-        const price = priceMap[bc];
-        if (price) matched++;
-        return { ...l, price: price || '' };
-      });
-      console.log(`[PDF] Prices merged: ${matched} of ${lines.length} lines matched`);
-
-      // Surface zero-match situations to the user so silent failures don't
-      // ship blank PDFs without warning.
-      if (priceCount === 0) {
-        toast('⚠️ No prices found in PRODUCT_MASTER. PDF will render without prices.', 'err');
-      } else if (matched === 0 && lines.length > 0) {
-        toast(`⚠️ Prices loaded (${priceCount}) but no barcodes matched this order. PDF will render without prices.`, 'err');
-      }
-    } catch (priceErr) {
-      // Visible warning so the user sees that prices weren't fetched.
-      // PDF generation still proceeds with blank prices.
-      console.warn('Price lookup failed; PDF will render without prices:', priceErr);
-      toast('⚠️ Could not load prices: ' + (priceErr.message || 'unknown error') + '. PDF will render without prices.', 'err');
-    }
+    // Enrich each line with price from Bible PRODUCT_MASTER tab.
+    // Shared helper used by both generatePDF (Phase 3) and
+    // generateFinalCDF (Phase 4) so the two PDF paths stay in sync.
+    lines = await p3EnrichLinesWithPrices(lines);
 
     await p3GeneratePDF(r, lines, storeInfo);
 
@@ -3606,10 +3627,16 @@ async function generateFinalCDF(uid) {
       } catch(e) {}
     }
 
-    await p3GeneratePDF(r, effectiveLines.map(l => ({
-      ...l,
-      finalOrder: l.effectiveQty,   // PDF generator reads finalOrder
-    })), storeInfo);
+    // Enrich lines with prices from Bible PRODUCT_MASTER. Same helper
+    // used by generatePDF — keeps both PDF paths in sync.
+    const pdfLines = await p3EnrichLinesWithPrices(
+      effectiveLines.map(l => ({
+        ...l,
+        finalOrder: l.effectiveQty,   // PDF generator reads finalOrder
+      }))
+    );
+
+    await p3GeneratePDF(r, pdfLines, storeInfo);
 
     // Stamp cdfGeneratedAt on the record
     const patch = {
