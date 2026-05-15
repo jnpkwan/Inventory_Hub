@@ -3239,14 +3239,19 @@ async function p3SaveOrderLines(uid) {
   const lines = P3_EDITS[uid];
   if (!lines) { toast('No changes to save.'); return; }
   try {
-    await apiUpdateCDF(uid, { orderLines: JSON.stringify(lines) });
+    // Strict save — throws if the server didn't persist. Critical here:
+    // a silent server failure followed by loadData() would revert the SM's
+    // edits without any indication, and downstream PDFs / Store panels
+    // would render with the OLD finalOrder values.
+    await apiUpdateCDFStrict(uid, { orderLines: JSON.stringify(lines) });
     delete P3_EDITS[uid];
     S.expandedId = uid;
     await loadData();
     renderAll();
     toast('✅ Order quantities saved.');
   } catch(e) {
-    toast('Save failed: ' + e.message, 'err');
+    // Keep the edit buffer so the user can retry without re-typing.
+    toast('❌ Save failed: ' + e.message + ' — your edits are still here. Try again.', 'err');
   }
 }
 
@@ -3382,14 +3387,16 @@ async function p3SaveStoreOrders(uid) {
   const lines = P3_EDITS[bufKey];
   if (!lines) { toast('No changes to save.'); return; }
   try {
-    await apiUpdateCDF(uid, { orderLines: JSON.stringify(lines) });
+    // Strict save — see p3SaveOrderLines for rationale.
+    await apiUpdateCDFStrict(uid, { orderLines: JSON.stringify(lines) });
     delete P3_EDITS[bufKey];
     S.expandedId = uid;
     await loadData();
     renderAll();
     toast('✅ Store quantities saved.');
   } catch(e) {
-    toast('Save failed: ' + e.message, 'err');
+    // Keep the edit buffer so the user can retry without re-typing.
+    toast('❌ Save failed: ' + e.message + ' — your edits are still here. Try again.', 'err');
   }
 }
 
@@ -3754,6 +3761,21 @@ async function apiUpdateCDF(uid, vals) {
   }
 }
 
+// apiUpdateCDFStrict — like apiUpdateCDF but throws on server failure.
+// Use for critical saves (e.g. order line quantities) where silent server
+// failure followed by loadData() would silently revert the user's edits.
+async function apiUpdateCDFStrict(uid, vals) {
+  const idx = S.records.findIndex(r=>(r.id||r.cdf)===uid);
+  if(idx>=0) S.records[idx]={...S.records[idx],...vals,updatedBy:S.user.username,updatedAt:new Date().toISOString()};
+  if(!S._wfCache) S._wfCache = {};
+  if(!S._wfCache[uid]) S._wfCache[uid] = {};
+  Object.assign(S._wfCache[uid], vals);
+  if(!CFG.offline && CFG.apiUrl) {
+    const id = S.records[idx]?.id||uid;
+    await gasPost('updateCDF', {...vals, id, username:S.user.username});
+  }
+}
+
 async function deleteRecord(uid) {
   const r = S.records.find(x=>(x.id||x.cdf)===uid);
   if(!r) return;
@@ -3807,12 +3829,18 @@ function sortBy(f) {
 
 /* ══════════════════ GAS HTTP ══════════════════ */
 async function gasPost(action, payload) {
-  // Apps Script doesn't handle CORS preflight on POST with application/json.
-  // Solution: send everything as GET with payload encoded as a query param.
+  // Use POST with text/plain content-type. This avoids CORS preflight
+  // (text/plain is in the "simple request" allowlist) while letting us send
+  // payloads of arbitrary size — important for orderLines JSON which can
+  // exceed the URL query string limit on larger orders.
+  // The Apps Script doPost handler reads e.postData.contents.
   const url = new URL(CFG.apiUrl);
   url.searchParams.set('action', action);
-  url.searchParams.set('payload', JSON.stringify(payload));
-  const resp = await fetch(url.toString());
+  const resp = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ ...payload, action })
+  });
   const data = await resp.json();
   if(!data.ok) throw new Error(data.error||'API error');
   return data.data;
@@ -5230,7 +5258,8 @@ function p2BuildExcel(plan) {
     }
   }
 
-  // Freeze pane applied via JSZip post-processing in p2Download()
+  // Freeze panes intentionally omitted — the prior JSZip post-processing
+  // approach corrupted files. Re-add later via ws['!views'] when needed.
 
   // ── STYLING ─────────────────────────────────────────────────────────────
   // Title row
@@ -5437,38 +5466,15 @@ function p2Download() {
   const ts = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
   const fname = `Replenishment_Order_${ts}.xlsx`;
 
-  // xlsx-js-style does not support freeze panes via ws['!freeze'].
-  // Patch the zip directly: inject <pane> into the sheetView XML after write.
+  // Direct writeFile is fast and reliable.
+  // The earlier JSZip-based freeze-pane post-processing produced corrupted
+  // files in some browsers and added significant latency to the download.
+  // If frozen panes are wanted later, they should be applied via
+  // ws['!views'] before XLSX.write — not by patching the generated zip.
   try {
-    const buf  = XLSX.write(P2.reportWB, { type: 'array', bookType: 'xlsx' });
-    const zip  = new JSZip();
-    zip.loadAsync(buf).then(z => {
-      const sheetPath = 'xl/worksheets/sheet1.xml';
-      return z.file(sheetPath).async('string').then(xml => {
-        // Inject freeze pane into <sheetView .../>  or  <sheetView ...>
-        // Row 6 is the first data row (rows 1-5 are headers/title), so ySplit=5, topLeftCell=A6
-        const frozen = '<sheetView workbookViewId="0"><pane ySplit="5" topLeftCell="A6" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft"/></sheetView>';
-        const patched = xml.replace(/<sheetView[^/]*\/>/,  frozen)
-                           .replace(/<sheetView[^>]*><\/sheetView>/, frozen)
-                           .replace(/<sheetView workbookViewId="0"\/>/, frozen);
-        z.file(sheetPath, patched);
-        return z.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
-      });
-    }).then(out => {
-      const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = fname;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    }).catch(() => {
-      // Fallback to standard write if zip patching fails
-      XLSX.writeFile(P2.reportWB, fname);
-    });
-  } catch(e) {
     XLSX.writeFile(P2.reportWB, fname);
+  } catch (e) {
+    toast('Download failed: ' + e.message, 'err');
   }
 }
 
