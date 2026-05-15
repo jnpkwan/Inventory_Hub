@@ -2883,14 +2883,31 @@ async function generatePDF(uid) {
         P3._priceMapAt = Date.now();
       }
       const priceMap = P3._priceMap;
-      lines = lines.map(l => ({
-        ...l,
-        price: priceMap[String(l.barcode || '').trim()] || ''
-      }));
+      const priceCount = Object.keys(priceMap).length;
+      console.log(`[PDF] Price map loaded: ${priceCount} barcodes`);
+
+      // Merge prices onto lines, matching by trimmed barcode
+      let matched = 0;
+      lines = lines.map(l => {
+        const bc = String(l.barcode || '').trim();
+        const price = priceMap[bc];
+        if (price) matched++;
+        return { ...l, price: price || '' };
+      });
+      console.log(`[PDF] Prices merged: ${matched} of ${lines.length} lines matched`);
+
+      // Surface zero-match situations to the user so silent failures don't
+      // ship blank PDFs without warning.
+      if (priceCount === 0) {
+        toast('⚠️ No prices found in PRODUCT_MASTER. PDF will render without prices.', 'err');
+      } else if (matched === 0 && lines.length > 0) {
+        toast(`⚠️ Prices loaded (${priceCount}) but no barcodes matched this order. PDF will render without prices.`, 'err');
+      }
     } catch (priceErr) {
-      // Non-fatal: if the price lookup fails, the PDF still generates
-      // with blank prices. Logged for visibility but doesn't block.
+      // Visible warning so the user sees that prices weren't fetched.
+      // PDF generation still proceeds with blank prices.
       console.warn('Price lookup failed; PDF will render without prices:', priceErr);
+      toast('⚠️ Could not load prices: ' + (priceErr.message || 'unknown error') + '. PDF will render without prices.', 'err');
     }
 
     await p3GeneratePDF(r, lines, storeInfo);
