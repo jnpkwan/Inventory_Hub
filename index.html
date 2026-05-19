@@ -5135,6 +5135,10 @@ async function p2ParseBible(file) {
     if (cMax < 0) cMax = headers.findIndex(h => h.includes('approved') && h.includes('max'));
     if (cMax < 0) cMax = headers.findIndex(h => h.includes('suggested') && h.includes('max'));
     if (cMax < 0) cMax = headers.findIndex(h => h === 'max' || h.includes('max stocking'));
+    // Prefer IA Approved Min over Suggested Min
+    let cMin = headers.findIndex(h => h.includes('ia') && h.includes('min'));
+    if (cMin < 0) cMin = headers.findIndex(h => h.includes('approved') && h.includes('min'));
+    if (cMin < 0) cMin = headers.findIndex(h => h.includes('suggested') && h.includes('min'));
 
     if (cBC < 0 || cMax < 0) continue;
 
@@ -5145,14 +5149,17 @@ async function p2ParseBible(file) {
       const bc = String(r[cBC] || '').trim();
       if (!/^\d{8,}$/.test(bc)) continue;
       const max = parseFloat(r[cMax]) || 0;
-      if (max <= 0) continue;  // skip SKUs with no max set
+      if (max <= 0) continue;  // skip SKUs with no max set (includes Dead SKUs defaulted to 0)
+      const min = cMin >= 0 ? (parseFloat(r[cMin]) || 0) : 0;
+      if (min <= 0 && cMin >= 0) continue;  // IA Approved Min = 0 means store doesn't carry this SKU
       const cdfRaw = parseFloat(r[cCDF]);
+      if (!(isFinite(cdfRaw) && cdfRaw > 0)) continue;  // skip blank/zero CDF Increment — do not dispatch
       productsObj[storeKey][bc] = {
         name:         String(r[cName]  || '').trim(),
         brand:        cBrand >= 0 ? String(r[cBrand] || '').trim() : '',
         category:     cCat >= 0   ? String(r[cCat]   || '').trim() : '',
-        cdfIncrement: (isFinite(cdfRaw) && cdfRaw > 0) ? cdfRaw : 1,
-        cdfDefaulted: !(isFinite(cdfRaw) && cdfRaw > 0),  // flag for output
+        cdfIncrement: cdfRaw,
+        cdfDefaulted: false,
         max:          max,
       };
     }
