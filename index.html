@@ -4871,16 +4871,7 @@ const P2 = {
 };
 
 // Store size → priority weight (fallback "Medium" 1.2× when Bible doesn't carry Size yet)
-// Per-store-size allocation weight. Keys match the Bible STORES tab's Size
-// column values exactly (uppercase, hyphenated). Lookup is normalized via
-// .trim().toUpperCase() at the call site so minor casing variations don't
-// silently fall back to the default.
-//
-// Historical note: the old key set ({ XB, Large, B, Medium, Small }) did not
-// match any label in the Bible — every store silently fell back to the 1.2
-// default. This change makes the weighted proportional split actually apply
-// per-store-size for the first time.
-const P2_SIZE_WEIGHTS = { 'X-SMALL':0.7, 'SMALL':1.0, 'MEDIUM':1.4, 'BIG':1.8, 'X-BIG':2.3 };
+const P2_SIZE_WEIGHTS = { 'XB':2.0, 'Large':1.5, 'B':1.5, 'Medium':1.2, 'Small':1.0 };
 
 /* ── Role helpers ────────────────────────────────────────────────────────── */
 function p2CanEdit() { return p1CanEdit(); /* same rule: IA or EXEC */ }
@@ -5201,13 +5192,7 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
   const rows = [];
   for (const store of stores) {
     const storeMeta = bible.stores[store] || { size:'Medium', leadTime:7, tier:'', region:'' };
-    // Normalize the size label before lookup. Bible values are uppercased
-    // and hyphenated (e.g. "X-BIG", "X-SMALL"); we defensively trim and
-    // uppercase here so any drift in capitalization doesn't silently fall
-    // back to the default. Default falls back to SMALL baseline (1.0)
-    // rather than MEDIUM since an unknown size shouldn't be assumed mid-tier.
-    const sizeKey = String(storeMeta.size || '').trim().toUpperCase();
-    const sizeWt = P2_SIZE_WEIGHTS[sizeKey] || 1.0;
+    const sizeWt = P2_SIZE_WEIGHTS[storeMeta.size] || 1.2;
     const storeStock = stockMap[store] || {};
     const products   = bible.products[store];
 
@@ -5215,39 +5200,26 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
       const p = products[bc];
       const storeInv = storeStock[bc] || 0;
       const inTransit = 0;  // assumed 0 for Build 1
-      const effective = storeInv + inTransit;
-
-      // ── Min/Max trigger ──────────────────────────────────────────────
-      // The engine uses a real min/max model: an order is only generated
-      // when current stock falls strictly BELOW the min threshold. Above
-      // min (even if below max), no order is generated — the SKU is in
-      // the "comfortable range" between min and max. When triggered, the
-      // refill target is still max (not min), so the store is restocked
-      // up to the ceiling and the cycle restarts. This avoids constant
-      // dribble-orders for SKUs that are slightly below max.
-      //
-      // Data invariant: Code.gs guarantees min > 0, max > 0, and min < max
-      // for every SKU that reaches this loop. Invalid rows (min=0, max=0,
-      // or min >= max) are filtered out upstream in _bibleReadStoreProducts.
-      const triggered = effective < p.min;
-
-      const gap   = p.max - effective;
-      const need  = triggered ? Math.max(0, gap) : 0;
-      const ideal = triggered ? p2FloorCDF(need, p.cdfIncrement) : 0;
+      // Use raw storeInv for display, but floor at 0 for order calculation.
+      // Negative inventory is a system discrepancy — it shouldn't inflate order quantities.
+      const effectiveForCalc = Math.max(0, storeInv) + inTransit;
+      const effective = storeInv + inTransit;  // raw — used for display and fill %
+      const gap   = p.max - effectiveForCalc;
+      const need  = Math.max(0, gap);
+      const ideal = p2FloorCDF(need, p.cdfIncrement);
 
       // Compute fill % for WARNING detection
       const fillPct = p.max > 0 ? Math.round((effective / p.max) * 100) : 100;
 
       // Categorize flag pre-warehouse:
       //   OVERSTOCK = effective > max
-      //   WARNING   = triggered but ideal=0 (CDF increment too big relative to gap)
+      //   WARNING   = ideal = 0 but fill < 20% (CDF increment too big relative to gap)
       //   (CLEAR/SHORTFALL/STOCKOUT will be set after warehouse check)
       let earlyFlag = '';
       if (effective > p.max)                      earlyFlag = 'OVERSTOCK';
-      else if (triggered && ideal === 0)          earlyFlag = 'WARNING';
+      else if (ideal === 0 && fillPct < 20)       earlyFlag = 'WARNING';
 
-      // Only include rows that need stock OR are overstock (informational).
-      // Untriggered rows (effective >= min) are silently skipped.
+      // Only include rows that need stock OR are overstock/warning (overstock is informational)
       if (ideal === 0 && earlyFlag === '') continue;
 
       rows.push({
@@ -5257,7 +5229,6 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
         category:     p.category,
         cdfIncrement: p.cdfIncrement,
         cdfDefaulted: p.cdfDefaulted,
-        min:          p.min,
         max:          p.max,
         storeInv,
         inTransit,
@@ -5320,52 +5291,6 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
           r.warehouseSufficient = false;
           r.allocationNote = `Partial — WH has ${whs} (need ${totalIdeal})`;
           r.flag = 'SHORTFALL';
-        });
-
-        // ── Residual sweep ──────────────────────────────────────────────
-        // After the proportional split + CDF floor, some warehouse stock
-        // is typically left over due to rounding. Without this sweep those
-        // whole cartons sit unallocated even though stores still have
-        // unmet need.
-        //
-        // Sweep rules:
-        //   • Walk rows in order of (unmet need × size weight) descending
-        //   • Hand each remaining carton to the next store in line, capped
-        //     at that store's ideal (don't over-fill past what it asked for)
-        //   • Stop when remaining < cdfIncrement or every store is at ideal
-        //
-        // Note: cdfIncrement is per-SKU, so within this group all rows
-        //       share the same carton size. That makes the math simple.
-
-        // Snapshot pre-sweep allocations so we can annotate boosted rows
-        // with the exact delta without recomputing the proportional formula.
-        const preSweep = new Map(group.map(r => [r, r.allocated]));
-
-        const cdf = group[0].cdfIncrement;
-        let allocatedTotal = group.reduce((s, r) => s + r.allocated, 0);
-        let remaining = whs - allocatedTotal;
-
-        while (remaining >= cdf) {
-          // Build a ranked list of rows that still have unmet need.
-          // Re-rank inside the loop because each boost changes unmet need.
-          const eligible = group
-            .map(r => ({ r, unmet: r.ideal - r.allocated }))
-            .filter(x => x.unmet >= cdf)        // must have room for at least one more carton
-            .sort((a, b) => (b.unmet * b.r.sizeWt) - (a.unmet * a.r.sizeWt));
-
-          if (eligible.length === 0) break;     // no store can absorb another carton
-
-          const winner = eligible[0].r;
-          winner.allocated += cdf;
-          remaining -= cdf;
-        }
-
-        // Annotate rows that got a sweep boost (allocation changed vs snapshot).
-        group.forEach(r => {
-          const boost = r.allocated - preSweep.get(r);
-          if (boost > 0) {
-            r.allocationNote = `Partial — WH has ${whs} (need ${totalIdeal}) · residual boost +${boost}`;
-          }
         });
       }
     }
