@@ -2067,7 +2067,7 @@ async function p3InjectLinePrices(uid) {
   try {
     const oneHour = 60 * 60 * 1000;
     if (!P3._priceMap || (Date.now() - P3._priceMapAt) > oneHour) {
-      const pm = await gasGet('getBibleProductPrices', {});
+      const pm = await gasGet('getBibleProductPrices', { username: S.user.username });
       P3._priceMap  = (pm && typeof pm === 'object') ? pm : {};
       P3._priceMapAt = Date.now();
     }
