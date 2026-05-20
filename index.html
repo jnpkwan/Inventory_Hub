@@ -5321,6 +5321,52 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
           r.allocationNote = `Partial — WH has ${whs} (need ${totalIdeal})`;
           r.flag = 'SHORTFALL';
         });
+
+        // ── Residual sweep ──────────────────────────────────────────────
+        // After the proportional split + CDF floor, some warehouse stock
+        // is typically left over due to rounding. Without this sweep those
+        // whole cartons sit unallocated even though stores still have
+        // unmet need.
+        //
+        // Sweep rules:
+        //   • Walk rows in order of (unmet need × size weight) descending
+        //   • Hand each remaining carton to the next store in line, capped
+        //     at that store's ideal (don't over-fill past what it asked for)
+        //   • Stop when remaining < cdfIncrement or every store is at ideal
+        //
+        // Note: cdfIncrement is per-SKU, so within this group all rows
+        //       share the same carton size. That makes the math simple.
+
+        // Snapshot pre-sweep allocations so we can annotate boosted rows
+        // with the exact delta without recomputing the proportional formula.
+        const preSweep = new Map(group.map(r => [r, r.allocated]));
+
+        const cdf = group[0].cdfIncrement;
+        let allocatedTotal = group.reduce((s, r) => s + r.allocated, 0);
+        let remaining = whs - allocatedTotal;
+
+        while (remaining >= cdf) {
+          // Build a ranked list of rows that still have unmet need.
+          // Re-rank inside the loop because each boost changes unmet need.
+          const eligible = group
+            .map(r => ({ r, unmet: r.ideal - r.allocated }))
+            .filter(x => x.unmet >= cdf)        // must have room for at least one more carton
+            .sort((a, b) => (b.unmet * b.r.sizeWt) - (a.unmet * a.r.sizeWt));
+
+          if (eligible.length === 0) break;     // no store can absorb another carton
+
+          const winner = eligible[0].r;
+          winner.allocated += cdf;
+          remaining -= cdf;
+        }
+
+        // Annotate rows that got a sweep boost (allocation changed vs snapshot).
+        group.forEach(r => {
+          const boost = r.allocated - preSweep.get(r);
+          if (boost > 0) {
+            r.allocationNote = `Partial — WH has ${whs} (need ${totalIdeal}) · residual boost +${boost}`;
+          }
+        });
       }
     }
   }
