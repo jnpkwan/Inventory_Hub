@@ -5226,14 +5226,10 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
       // up to the ceiling and the cycle restarts. This avoids constant
       // dribble-orders for SKUs that are slightly below max.
       //
-      // Note: when min === 0, the trigger becomes "below 0" → never.
-      // That matches the convention "min=0 means only reorder when fully
-      // out" only if max > 0 and storeInv reaches 0. We handle that edge
-      // case by treating min=0 as "trigger at storeInv === 0".
-      const minThreshold = p.min || 0;
-      const triggered = (minThreshold > 0)
-        ? (effective < minThreshold)
-        : (effective <= 0);
+      // Data invariant: Code.gs guarantees min > 0, max > 0, and min < max
+      // for every SKU that reaches this loop. Invalid rows (min=0, max=0,
+      // or min >= max) are filtered out upstream in _bibleReadStoreProducts.
+      const triggered = effective < p.min;
 
       const gap   = p.max - effective;
       const need  = triggered ? Math.max(0, gap) : 0;
@@ -5261,7 +5257,7 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
         category:     p.category,
         cdfIncrement: p.cdfIncrement,
         cdfDefaulted: p.cdfDefaulted,
-        min:          minThreshold,
+        min:          p.min,
         max:          p.max,
         storeInv,
         inTransit,
