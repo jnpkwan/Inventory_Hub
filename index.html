@@ -2462,7 +2462,21 @@ async function saveApproval(uid, phase, action) {
   let patch = {};
 
   if(phase==='sm') {
-    if(action==='approve') patch = {smgrStatus:'Approved', smgrNotes:'', smgrApprovedBy:user, smgrApprovedAt:now};
+    if(action==='approve') {
+      // Flush any unsaved SM qty edits before locking in the approval.
+      // Without this, P3_EDITS[uid] is discarded and the store panel
+      // shows original allocated values instead of the SM's edited finalOrder.
+      if(P3_EDITS[uid]) {
+        try {
+          await apiUpdateCDFStrict(uid, { orderLines: JSON.stringify(P3_EDITS[uid]) });
+          delete P3_EDITS[uid];
+        } catch(e) {
+          toast('\u274C Could not save qty edits before approving: ' + e.message, 'err');
+          return;
+        }
+      }
+      patch = {smgrStatus:'Approved', smgrNotes:'', smgrApprovedBy:user, smgrApprovedAt:now};
+    }
     else if(action==='changes') patch = {smgrStatus:'Changes Requested', smgrNotes:note, smgrApprovedBy:user, smgrApprovedAt:now};
     else if(action==='resubmit') patch = {smgrStatus:'', smgrNotes:note||'Revised and resubmitted', smgrApprovedBy:'', smgrApprovedAt:''};
   } else {
