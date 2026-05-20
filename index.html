@@ -1696,13 +1696,25 @@ function buildDetail(r) {
     if (lines.length) {
       const canEditQty = (role === 'EXECUTIVE' || role === 'IS');
       const isLocked   = smSt === 'Approved'; // lock after SM approval
+      const smEditBuf  = P3_EDITS[uid];
+      const smIsDirty  = !!smEditBuf;
+      const smHasSaved = lines.some(l => l.finalOrder !== null && l.finalOrder !== undefined && l.finalOrder !== l.allocated);
       orderLinesHTML = `
-        <div style="margin:10px 0;border:1px solid var(--silver);border-radius:8px;overflow:hidden">
-          <div style="background:var(--mist);padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--silver)">
+        <div style="margin:10px 0;border:1px solid var(--silver);border-radius:8px;overflow:hidden" data-sm-edit-wrap="${uid}">
+          <div style="background:var(--mist);padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--silver);flex-wrap:wrap">
             <span style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Order Lines</span>
             <span style="font-size:10px;color:#999">${lines.length} SKUs · ${lines.reduce((s,l)=>s+(l.finalOrder||l.allocated||0),0)} units total</span>
             <span id="ol-cost-sm-${uid}" style="font-size:10px;color:#aaa;margin-left:8px">— loading prices…</span>
-            ${!isLocked && canEditQty ? `<span style="font-size:10px;color:var(--blue);margin-left:auto">SM edits Final Qty below · <a href="#" onclick="event.preventDefault();p3SaveOrderLines('${uid}')" style="color:var(--blue);font-weight:700">Save Changes</a></span>` : ''}
+            ${!isLocked && canEditQty ? `
+              <span id="p3-sm-dirty-${uid}" style="font-size:10.5px;font-weight:700;margin-left:auto;${smIsDirty?'color:var(--amber)':smHasSaved?'color:var(--green)':'color:#999'}">
+                ${smIsDirty ? '● Unsaved changes' : smHasSaved ? '✓ All saved' : '— No edits yet'}
+              </span>
+              <button class="btn btn-primary" id="p3-sm-save-${uid}"
+                onclick="event.stopPropagation();p3SaveOrderLines('${uid}')"
+                ${smIsDirty?'':'disabled'}
+                style="padding:5px 12px;font-size:10.5px;font-weight:700;background:${smIsDirty?'var(--amber)':'#ccc'};color:#fff;border:none;border-radius:6px;cursor:${smIsDirty?'pointer':'not-allowed'};text-transform:uppercase;letter-spacing:.3px">
+                💾 Save Qty
+              </button>` : ''}
           </div>
           <div style="overflow-x:auto;max-height:260px;overflow-y:auto">
             <table style="width:100%;border-collapse:collapse;font-size:11px">
@@ -2107,12 +2119,14 @@ async function p3InjectLinePrices(uid) {
     smEl.style.fontWeight = smHasPrice ? '700' : '';
   }
 
-  // Patch Store table (SM-approved qty is the basis — storeOrder may not exist yet)
+  // Patch Store table — use storeOrder when set, fall back to SM finalOrder
   let stTotal = 0, stHasPrice = false;
   lines.forEach((l, i) => {
     const price = Number(priceMap[l.barcode]);
     const ok    = Number.isFinite(price) && price > 0;
-    const qty   = Number(l.finalOrder ?? l.allocated ?? 0);
+    const qty   = (l.storeOrder !== null && l.storeOrder !== undefined && l.storeOrder !== '')
+                  ? Number(l.storeOrder)
+                  : Number(l.finalOrder ?? l.allocated ?? 0);
     const lt    = ok && qty > 0 ? price * qty : null;
 
     const pc = document.querySelector(`[data-store-price="${uid}-${i}"]`);
@@ -3550,6 +3564,12 @@ function p3LineChanged(input, uid) {
   const changed = !isEmpty && cur !== orig;
   input.style.borderColor = isEmpty ? 'var(--red)' : changed ? 'var(--blue)' : 'var(--silver)';
   input.style.color = isEmpty ? 'var(--red)' : '';
+
+  // Live-update the dirty badge + save button without re-rendering
+  const dirtyEl = document.getElementById('p3-sm-dirty-' + uid);
+  if (dirtyEl) { dirtyEl.textContent = '● Unsaved changes'; dirtyEl.style.color = 'var(--amber)'; }
+  const saveBtn = document.getElementById('p3-sm-save-' + uid);
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.style.background = 'var(--amber)'; saveBtn.style.cursor = 'pointer'; }
 }
 
 async function p3SaveOrderLines(uid) {
@@ -3686,8 +3706,7 @@ function p3StoreLineChanged(input, uid) {
   input.style.color = isEmpty ? 'var(--red)' : changed ? 'var(--amber)' : '';
 
   // Live-update the dirty badge + save buttons without re-rendering the whole row
-  // (a full renderAll would steal focus from the input the user is typing into).
-  const dirtyEl = document.getElementById('p3-store-dirty-' + uid);
+  // (a full renderAll would steal focus from the input the user is typing into).\n  const dirtyEl = document.getElementById('p3-store-dirty-' + uid);
   if (dirtyEl) {
     dirtyEl.textContent = '● Unsaved changes';
     dirtyEl.style.color = 'var(--amber)';
@@ -3697,6 +3716,36 @@ function p3StoreLineChanged(input, uid) {
     btn.style.background = 'var(--amber)';
     btn.style.cursor = 'pointer';
   });
+
+  // Live-update line total cell and header grand total using cached price map
+  if (P3._priceMap) {
+    const fmtPHP = n => Number.isFinite(n) && n > 0
+      ? 'PHP\u00A0' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : '—';
+    const price = Number(P3._priceMap[P3_EDITS[bufKey][idx]?.barcode]);
+    if (Number.isFinite(price) && price > 0) {
+      const qty = isEmpty ? 0 : Number(storeQty);
+      const lt  = qty > 0 ? price * qty : null;
+      const tc  = document.querySelector(`[data-store-total="${uid}-${idx}"]`);
+      if (tc) { tc.textContent = lt !== null ? fmtPHP(lt) : '—'; tc.style.color = lt !== null ? 'var(--blue)' : '#ccc'; }
+      // Recompute grand total from all store total cells
+      let grand = 0; let hasAny = false;
+      const buf = P3_EDITS[bufKey];
+      buf.forEach((l, i) => {
+        const p = Number(P3._priceMap[l.barcode]);
+        if (!Number.isFinite(p) || p <= 0) return;
+        const q = (l.storeOrder !== null && l.storeOrder !== undefined && l.storeOrder !== '')
+                  ? Number(l.storeOrder) : Number(l.finalOrder ?? l.allocated ?? 0);
+        if (q > 0) { grand += p * q; hasAny = true; }
+      });
+      const hdr = document.getElementById('ol-cost-store-' + uid);
+      if (hdr) {
+        hdr.textContent = hasAny ? '\u00B7 Total: ' + fmtPHP(grand) : '';
+        hdr.style.color = hasAny ? 'var(--blue)' : '';
+        hdr.style.fontWeight = hasAny ? '700' : '';
+      }
+    }
+  }
 }
 
 async function p3SaveStoreOrders(uid) {
