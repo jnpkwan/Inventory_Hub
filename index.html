@@ -5215,7 +5215,18 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
       const p = products[bc];
       const storeInv = storeStock[bc] || 0;
       const inTransit = 0;  // assumed 0 for Build 1
-      const effective = storeInv + inTransit;
+
+      // ── Negative inventory guard ────────────────────────────────────
+      // Store system inventory can sometimes go negative due to posting
+      // errors or reconciliation glitches. We DISPLAY the raw value so
+      // the IA sees the data quality issue, but we CALCULATE orders from
+      // a floor of zero. Otherwise the engine would interpret -5 stock
+      // as a 5-unit deficit and inflate the order to fill phantom units.
+      //
+      //   effective       = raw value (used for display, fill %, OVERSTOCK)
+      //   effectiveForCalc = floored at 0 (used for trigger and order qty)
+      const effective         = storeInv + inTransit;          // raw — surfaces negative inventory in the report
+      const effectiveForCalc  = Math.max(0, storeInv) + inTransit;  // for order math
 
       // ── Min/Max trigger ──────────────────────────────────────────────
       // The engine uses a real min/max model: an order is only generated
@@ -5229,9 +5240,9 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
       // Data invariant: Code.gs guarantees min > 0, max > 0, and min < max
       // for every SKU that reaches this loop. Invalid rows (min=0, max=0,
       // or min >= max) are filtered out upstream in _bibleReadStoreProducts.
-      const triggered = effective < p.min;
+      const triggered = effectiveForCalc < p.min;
 
-      const gap   = p.max - effective;
+      const gap   = p.max - effectiveForCalc;
       const need  = triggered ? Math.max(0, gap) : 0;
       const ideal = triggered ? p2FloorCDF(need, p.cdfIncrement) : 0;
 
