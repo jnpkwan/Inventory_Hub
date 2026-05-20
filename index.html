@@ -1747,11 +1747,11 @@ function buildDetail(r) {
                             oninput="p3LineChanged(this,'${uid}')">`
                         : `<span style="color:${isEmpty||isZero?'var(--red)':'inherit'}">${isEmpty?'—':final}</span>`}
                     </td>
+                    <td data-sm-price="${uid}-${i}" style="padding:5px 10px;text-align:right;font-size:10px;color:#aaa;white-space:nowrap">…</td>
+                    <td data-sm-total="${uid}-${i}" style="padding:5px 10px;text-align:right;font-size:10px;font-weight:700;color:#aaa;white-space:nowrap">…</td>
                     <td style="padding:5px 10px;font-size:10px;color:${isEmpty||isZero?'var(--red)':l.flag==='STOCKOUT'?'var(--red)':l.flag==='SHORTFALL'?'var(--amber)':'#aaa'}">
                       ${isEmpty||isZero ? '⚠ No Qty' : esc(l.flag||'')}
                     </td>
-                    <td data-sm-price="${uid}-${i}" style="padding:5px 10px;text-align:right;font-size:10px;color:#aaa;white-space:nowrap">…</td>
-                    <td data-sm-total="${uid}-${i}" style="padding:5px 10px;text-align:right;font-size:10px;font-weight:700;color:#aaa;white-space:nowrap">…</td>
                   </tr>`;
                 }).join('')}
               </tbody>
