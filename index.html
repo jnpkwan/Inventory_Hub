@@ -4871,7 +4871,16 @@ const P2 = {
 };
 
 // Store size → priority weight (fallback "Medium" 1.2× when Bible doesn't carry Size yet)
-const P2_SIZE_WEIGHTS = { 'XB':2.0, 'Large':1.5, 'B':1.5, 'Medium':1.2, 'Small':1.0 };
+// Per-store-size allocation weight. Keys match the Bible STORES tab's Size
+// column values exactly (uppercase, hyphenated). Lookup is normalized via
+// .trim().toUpperCase() at the call site so minor casing variations don't
+// silently fall back to the default.
+//
+// Historical note: the old key set ({ XB, Large, B, Medium, Small }) did not
+// match any label in the Bible — every store silently fell back to the 1.2
+// default. This change makes the weighted proportional split actually apply
+// per-store-size for the first time.
+const P2_SIZE_WEIGHTS = { 'X-SMALL':0.7, 'SMALL':1.0, 'MEDIUM':1.4, 'BIG':1.8, 'X-BIG':2.3 };
 
 /* ── Role helpers ────────────────────────────────────────────────────────── */
 function p2CanEdit() { return p1CanEdit(); /* same rule: IA or EXEC */ }
@@ -5192,7 +5201,13 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
   const rows = [];
   for (const store of stores) {
     const storeMeta = bible.stores[store] || { size:'Medium', leadTime:7, tier:'', region:'' };
-    const sizeWt = P2_SIZE_WEIGHTS[storeMeta.size] || 1.2;
+    // Normalize the size label before lookup. Bible values are uppercased
+    // and hyphenated (e.g. "X-BIG", "X-SMALL"); we defensively trim and
+    // uppercase here so any drift in capitalization doesn't silently fall
+    // back to the default. Default falls back to SMALL baseline (1.0)
+    // rather than MEDIUM since an unknown size shouldn't be assumed mid-tier.
+    const sizeKey = String(storeMeta.size || '').trim().toUpperCase();
+    const sizeWt = P2_SIZE_WEIGHTS[sizeKey] || 1.0;
     const storeStock = stockMap[store] || {};
     const products   = bible.products[store];
 
@@ -5201,22 +5216,42 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
       const storeInv = storeStock[bc] || 0;
       const inTransit = 0;  // assumed 0 for Build 1
       const effective = storeInv + inTransit;
+
+      // ── Min/Max trigger ──────────────────────────────────────────────
+      // The engine uses a real min/max model: an order is only generated
+      // when current stock falls strictly BELOW the min threshold. Above
+      // min (even if below max), no order is generated — the SKU is in
+      // the "comfortable range" between min and max. When triggered, the
+      // refill target is still max (not min), so the store is restocked
+      // up to the ceiling and the cycle restarts. This avoids constant
+      // dribble-orders for SKUs that are slightly below max.
+      //
+      // Note: when min === 0, the trigger becomes "below 0" → never.
+      // That matches the convention "min=0 means only reorder when fully
+      // out" only if max > 0 and storeInv reaches 0. We handle that edge
+      // case by treating min=0 as "trigger at storeInv === 0".
+      const minThreshold = p.min || 0;
+      const triggered = (minThreshold > 0)
+        ? (effective < minThreshold)
+        : (effective <= 0);
+
       const gap   = p.max - effective;
-      const need  = Math.max(0, gap);
-      const ideal = p2FloorCDF(need, p.cdfIncrement);
+      const need  = triggered ? Math.max(0, gap) : 0;
+      const ideal = triggered ? p2FloorCDF(need, p.cdfIncrement) : 0;
 
       // Compute fill % for WARNING detection
       const fillPct = p.max > 0 ? Math.round((effective / p.max) * 100) : 100;
 
       // Categorize flag pre-warehouse:
       //   OVERSTOCK = effective > max
-      //   WARNING   = ideal = 0 but fill < 20% (CDF increment too big relative to gap)
+      //   WARNING   = triggered but ideal=0 (CDF increment too big relative to gap)
       //   (CLEAR/SHORTFALL/STOCKOUT will be set after warehouse check)
       let earlyFlag = '';
       if (effective > p.max)                      earlyFlag = 'OVERSTOCK';
-      else if (ideal === 0 && fillPct < 20)       earlyFlag = 'WARNING';
+      else if (triggered && ideal === 0)          earlyFlag = 'WARNING';
 
-      // Only include rows that need stock OR are overstock/warning (overstock is informational)
+      // Only include rows that need stock OR are overstock (informational).
+      // Untriggered rows (effective >= min) are silently skipped.
       if (ideal === 0 && earlyFlag === '') continue;
 
       rows.push({
@@ -5226,6 +5261,7 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
         category:     p.category,
         cdfIncrement: p.cdfIncrement,
         cdfDefaulted: p.cdfDefaulted,
+        min:          minThreshold,
         max:          p.max,
         storeInv,
         inTransit,
