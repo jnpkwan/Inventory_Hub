@@ -603,8 +603,6 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
         <span id="user-nm"></span>
         <span id="user-role-badge" style="font-size:9.5px;color:#888"></span>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="exportCSV()">⬇ <span id="export-btn-lbl">Export</span></button>
-      <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add CDF</button>
       <button class="btn btn-outline btn-sm" onclick="doLogout()" title="Sign out">⏻</button>
     </div>
   </div>
@@ -1050,10 +1048,6 @@ function startApp() {
   av.style.background = ROLE_COLORS[u.role] || '#555';
   document.getElementById('user-nm').textContent = u.name || u.username;
   document.getElementById('user-role-badge').textContent = u.role;
-
-  // Hide Add CDF button for COORDINATOR role — read-only access
-  const addBtn = document.querySelector('button[onclick="openAddModal()"]');
-  if (addBtn) addBtn.style.display = u.role === 'COORDINATOR' ? 'none' : '';
 
   // Default hide-received: on for IS/COORDINATOR, off for EXECUTIVE
   S.hideReceived = (u.role === 'IS' || u.role === 'COORDINATOR');
