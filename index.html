@@ -4333,12 +4333,15 @@ const P1_YELLOW_VALUE = 500;
 /* ── Role helpers ────────────────────────────────────────────────────────── */
 function p1CanEdit()      { return S.user && (S.user.role === 'IS' || S.user.role === 'EXECUTIVE'); }
 function p1AssignedSet()  {
-  // Returns Set of uppercase store names this user is assigned to, or null = all
+  // Returns Set of uppercase store names this user is assigned to, or null = all stores.
+  // null means "no filter" — applies to EXECUTIVE and to IS users with blank/wildcard assignedStores.
   if (!S.user) return null;
   if (S.user.role === 'EXECUTIVE') return null;
   const raw = (S.user.assignedStores || '').trim();
-  if (!raw || raw === '*') return null;
-  return new Set(raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
+  if (!raw || raw === '*') return null;           // blank or wildcard → no filter
+  const stores = raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+  if (!stores.length) return null;               // nothing parsed → no filter
+  return new Set(stores);
 }
 
 /* ── Workspace render — main entry from renderAll ────────────────────────── */
