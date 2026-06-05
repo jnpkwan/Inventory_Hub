@@ -743,9 +743,9 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
           </div>
           <div class="p1-card-b" id="p2-workspace-body">
 
-            <!-- IN-TRANSIT NOTICE -->
-            <div style="background:#FFFBEA;border-left:3px solid var(--amber);padding:9px 12px;margin-bottom:14px;font-size:11.5px;color:#7A5A00;border-radius:0 6px 6px 0">
-              ℹ️ <strong>In-Transit assumed 0 for this build.</strong> Acacia's per-SKU in-transit export is still being built. Pending CDFs may cause slight over-ordering — i-adjust manually kung kailangan. Magagawa natin proper integration once available.
+            <!-- IN-TRANSIT NOTICE — hidden once transit file is uploaded -->
+            <div id="p2-transit-notice" style="background:#FFFBEA;border-left:3px solid var(--amber);padding:9px 12px;margin-bottom:14px;font-size:11.5px;color:#7A5A00;border-radius:0 6px 6px 0">
+              ℹ️ <strong>In-Transit not provided.</strong> Upload the <strong>Concession By Items</strong> report below (optional) so the engine can deduct pending deliveries from order quantities. Without it, in-transit is assumed 0 and the engine may over-order for SKUs already en route.
             </div>
 
             <!-- STEP 1: Stock Summary -->
@@ -778,9 +778,24 @@ input::placeholder,textarea::placeholder{color:#C0C0C0;font-size:12.5px}
               <div id="p2-whs-pills" class="p1-pills"></div>
             </div>
 
-            <!-- STEP 3: Min/Max Bible -->
+            <!-- STEP 3: In-Transit (optional) -->
+            <div class="p1-step" id="p2-card-3" style="border-style:dashed;opacity:.9">
+              <div class="p1-step-lbl"><span class="p1-step-num" style="background:#888">3</span> Step 3 of 3 — <em>Optional</em></div>
+              <h3>Upload In-Transit Report 🚚</h3>
+              <p class="p1-desc">Galing sa Acacia system. Filename: <strong>ConcessionByItems_MultipleBranches_…</strong></p>
+              <div class="p1-drop" id="p2-dz-transit" ondrop="p2DropFile(event,'transit')" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)">
+                <input type="file" id="p2-file-transit" accept=".xlsx,.xls" onchange="p2PickFile(this,'transit')" style="display:none">
+                <div class="p1-drop-icon">🚚</div>
+                <h4>Drag the Concession By Items report here</h4>
+                <p>Checking + Dispatched SKUs will be counted as in-transit</p>
+                <button class="btn-browse" onclick="document.getElementById('p2-file-transit').click()">📂 Choose File</button>
+              </div>
+              <div id="p2-transit-pills" class="p1-pills"></div>
+            </div>
+
+            <!-- STEP 4: Min/Max Bible -->
             <!-- BIBLE STATUS — auto-fetched from Google Sheets, no upload needed -->
-            <div class="p1-step" id="p2-card-3" style="background:#F4FBF6;border-color:#B8E5C4">
+            <div class="p1-step" id="p2-card-4" style="background:#F4FBF6;border-color:#B8E5C4">
               <div class="p1-step-lbl" style="color:var(--green)"><span class="p1-step-num" style="background:var(--green)">📕</span> Min/Max Bible — auto-loaded</div>
               <h3>Loaded directly from the central Bible Sheet</h3>
               <p class="p1-desc" id="p2-bible-status">Checking last sync time…</p>
@@ -5018,6 +5033,7 @@ function p1Download() {
 const P2 = {
   stockFile:   null,
   whsFile:     null,
+  transitFile: null,
   reportWB:    null,
   results:     null,      // {totalUnits, totalLines, stockouts, shortfalls, stores:[{store, lines, units, stockouts}]}
   storesInfo:  null,      // {STORE_NAME: {address, phone, email, size, region, tier}} — cached from bible after generate
@@ -5149,9 +5165,15 @@ function p2PickFile(input, kind) { if (input.files[0]) p2SetFile(kind, input.fil
 
 function p2SetFile(kind, file) {
   const map = {
-    stock: { state:'stockFile', dz:'p2-dz-stock', pills:'p2-stock-pills', card:'p2-card-1', icon:'📋' },
-    whs:   { state:'whsFile',   dz:'p2-dz-whs',   pills:'p2-whs-pills',   card:'p2-card-2', icon:'🏭' },
+    stock:    { state:'stockFile',   dz:'p2-dz-stock',    pills:'p2-stock-pills',   card:'p2-card-1', icon:'📋' },
+    whs:      { state:'whsFile',     dz:'p2-dz-whs',      pills:'p2-whs-pills',     card:'p2-card-2', icon:'🏭' },
+    transit:  { state:'transitFile', dz:'p2-dz-transit',  pills:'p2-transit-pills', card:'p2-card-3', icon:'🚚' },
   }[kind];
+  // Transit upload: dismiss the amber notice and mark the card green
+  if (kind === 'transit') {
+    const notice = document.getElementById('p2-transit-notice');
+    if (notice) notice.style.display = 'none';
+  }
   if (!map) return;
   P2[map.state] = file;
   document.getElementById(map.dz).classList.add('has-files');
@@ -5175,10 +5197,11 @@ function p2Log(msg, cls='log-info') {
 function p2SetProgress(pct) { document.getElementById('p2-bar').style.width = pct + '%'; }
 
 function p2Reset() {
-  P2.stockFile = null; P2.whsFile = null; P2.reportWB = null; P2.results = null; P2.storesInfo = null;
-  ['p2-stock-pills','p2-whs-pills'].forEach(id => document.getElementById(id).innerHTML = '');
-  ['p2-dz-stock','p2-dz-whs'].forEach(id => document.getElementById(id).classList.remove('has-files'));
-  ['p2-card-1','p2-card-2'].forEach(id => document.getElementById(id).classList.remove('done'));
+  P2.stockFile = null; P2.whsFile = null; P2.transitFile = null; P2.reportWB = null; P2.results = null; P2.storesInfo = null;
+  ['p2-stock-pills','p2-whs-pills','p2-transit-pills'].forEach(id => document.getElementById(id).innerHTML = '');
+  ['p2-dz-stock','p2-dz-whs','p2-dz-transit'].forEach(id => document.getElementById(id).classList.remove('has-files'));
+  ['p2-card-1','p2-card-2','p2-card-3'].forEach(id => document.getElementById(id).classList.remove('done'));
+  const tn = document.getElementById('p2-transit-notice'); if (tn) tn.style.display = '';
   document.getElementById('p2-progress').classList.remove('show');
   document.getElementById('p2-results').classList.remove('show');
   document.getElementById('p2-log').innerHTML = '';
@@ -5219,6 +5242,61 @@ async function p2ParseWarehouse(file) {
     if (!/^\d{8,}$/.test(bc)) continue;
     const qty = parseFloat(r[qtyCol]) || 0;
     out[bc] = (out[bc] || 0) + qty;  // sum dupes
+  }
+  return out;
+}
+
+/**
+ * In-Transit parser — Concession By Items report
+ * Columns (row 3, 0-indexed): Date | CDF No | Total CDF | Branch Name | Status |
+ *   Qty (Warehouse) | Code | Qty Approved | Item/EBS Barcode | Unit | Price | Amount
+ *
+ * Rules:
+ *   - Include rows where Status is "Checking" or "Dispatched"
+ *   - Exclude "Received" (already counted in store inventory)
+ *   - Sum Qty Approved per Branch × Barcode pair
+ *
+ * Returns: { BRANCH_UPPER: { barcode: totalQtyInTransit } }
+ */
+async function p2ParseInTransit(file) {
+  const ab = await p1ReadAB(file);
+  const wb = XLSX.read(ab, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  // Find header row — must contain both 'status' and 'branch name'
+  let hdrIdx = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const joined = rows[i].map(v => String(v).toLowerCase()).join('|');
+    if (joined.includes('status') && joined.includes('branch name')) { hdrIdx = i; break; }
+  }
+  if (hdrIdx < 0) throw new Error('Hindi mahanap ang header sa In-Transit report. Siguraduhing Concession By Items ang file.');
+
+  const headers  = rows[hdrIdx].map(h => String(h).trim().toLowerCase());
+  const branchCol = headers.findIndex(h => h === 'branch name');
+  const statusCol = headers.findIndex(h => h === 'status');
+  const codeCol   = headers.findIndex(h => h === 'code');
+  const qtyCol    = headers.findIndex(h => h.includes('qty approved'));
+  if (branchCol < 0 || statusCol < 0 || codeCol < 0 || qtyCol < 0) {
+    throw new Error('In-Transit report missing required columns (Branch Name, Status, Code, Qty Approved).');
+  }
+
+  const ACTIVE_STATUSES = new Set(['checking', 'dispatched']);
+  const out = {};  // { BRANCH: { barcode: qty } }
+
+  for (let i = hdrIdx + 1; i < rows.length; i++) {
+    const r      = rows[i];
+    const status = String(r[statusCol] || '').trim().toLowerCase();
+    if (!ACTIVE_STATUSES.has(status)) continue;  // skip Received and blank rows
+
+    const branch  = String(r[branchCol] || '').trim().toUpperCase();
+    const barcode = String(r[codeCol]   || '').trim();
+    const qty     = parseFloat(r[qtyCol]) || 0;
+
+    if (!branch || !barcode || qty <= 0) continue;
+
+    if (!out[branch]) out[branch] = {};
+    out[branch][barcode] = (out[branch][barcode] || 0) + qty;
   }
   return out;
 }
@@ -5346,7 +5424,7 @@ function p2FloorCDF(value, cdf) {
  * @param scopeStores Set<UPPERCASE store name>  filter (IA's assigned stores)
  * @returns Array of row objects + summary stats
  */
-function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
+function p2ComputePlan(stockMap, whsMap, bible, scopeStores, transitMap={}) {
   // Determine which stores to process — intersection of Bible products and scope
   const bibleStores = Object.keys(bible.products);
   const stores = bibleStores.filter(s => !scopeStores || scopeStores.has(s));
@@ -5368,7 +5446,9 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
     for (const bc in products) {
       const p = products[bc];
       const storeInv = storeStock[bc] || 0;
-      const inTransit = 0;  // assumed 0 for Build 1
+      // In-transit: sum of Checking + Dispatched CDFs for this store/SKU pair.
+      // Received CDFs are excluded — those units are already in the store inventory count.
+      const inTransit = (transitMap[store] && transitMap[store][bc]) ? transitMap[store][bc] : 0;
 
       // ── Negative inventory guard ────────────────────────────────────
       // Store system inventory can sometimes go negative due to posting
@@ -5565,7 +5645,7 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores) {
 
 /* ── EXCEL BUILDER ───────────────────────────────────────────────────────── */
 
-function p2BuildExcel(plan) {
+function p2BuildExcel(plan, transitMap={}) {
   // PRE-CDF REPLENISHMENT ORDER — lean working document.
   // Single sheet. Sales Manager reviews here and edits the "Final Order" column
   // before the pre-CDF PDF is generated (Phase 3, generate_cdfs.py).
@@ -5659,7 +5739,9 @@ function p2BuildExcel(plan) {
   const footnoteStart = aoa.length + 1;
   aoa.push([]);
   const notes = [
-    '• In-Transit assumed 0 — Acacia per-SKU in-transit export pending.',
+    transitMap && Object.keys(transitMap).length
+      ? '• In-Transit: Checking + Dispatched CDFs included from uploaded Concession By Items report. Received CDFs excluded (already in store inventory).'
+      : '• In-Transit: No Concession By Items report uploaded — assumed 0 for all SKUs.',
     '• Warehouse-short allocation weighted by size: XB 2.0× · Large/B 1.5× · Medium 1.2× · Small 1.0×.',
     '• Amber row = partial warehouse coverage.  Red row = no stock available.',
     '• "Final Order" defaults to "Allocated Order". Sales Manager edits this column to override before pre-CDF PDF is generated.',
@@ -5844,6 +5926,20 @@ async function p2Generate() {
     p2Log(`✓ Loaded: ${Object.keys(whsMap).length} warehouse SKUs`, 'log-ok');
     p2SetProgress(45);
 
+    // In-Transit — optional; skip gracefully if not provided
+    let transitMap = {};
+    if (P2.transitFile) {
+      p2Log('🚚 Loading In-Transit Report…', 'log-info');
+      transitMap = await p2ParseInTransit(P2.transitFile);
+      const transitStores  = Object.keys(transitMap).length;
+      const transitSkus    = Object.values(transitMap).reduce((s, m) => s + Object.keys(m).length, 0);
+      const transitUnits   = Object.values(transitMap).reduce((s, m) => s + Object.values(m).reduce((a, b) => a + b, 0), 0);
+      p2Log(`✓ In-Transit: ${transitStores} store${transitStores!==1?'s':''} · ${transitSkus} SKUs · ${transitUnits.toLocaleString()} units (Checking + Dispatched only)`, 'log-ok');
+    } else {
+      p2Log('⚠️ In-Transit report not provided — assuming 0 in-transit for all SKUs.', 'log-warn');
+    }
+    p2SetProgress(50);
+
     p2Log('📕 Fetching Min/Max Bible from Google Sheets…', 'log-info');
     if (CFG.offline || !CFG.apiUrl) {
       throw new Error('Offline mode — Bible fetch requires connection to Apps Script.');
@@ -5865,13 +5961,13 @@ async function p2Generate() {
     p2Log(`🔒 Scope: ${scopeCnt} store${scopeCnt!==1?'s':''} from Stock Summary upload (${storeCnt} accessible per Bible Assignments)`, 'log-info');
 
     p2Log('🧮 Computing replenishment plan…', 'log-info');
-    const plan = p2ComputePlan(stockMap, whsMap, bible, scopeStores);
+    const plan = p2ComputePlan(stockMap, whsMap, bible, scopeStores, transitMap);
     p2Log(`✓ Plan: ${plan.totalLines} lines · ${plan.totalUnits} units · ${plan.stockouts} stockouts · ${plan.shortfalls} shortfalls`, 'log-ok');
     p2SetProgress(80);
 
     P2.results = plan;
     P2.storesInfo = bible.stores;  // cache for Phase 3 PDF generation
-    P2.reportWB = p2BuildExcel(plan);
+    P2.reportWB = p2BuildExcel(plan, transitMap);
     p2SetProgress(92);
 
     // Log run to Apps Script
@@ -5887,7 +5983,9 @@ async function p2Generate() {
         stockouts:   plan.stockouts,
         shortfalls:  plan.shortfalls,
         stores:      plan.storesTouched.join(','),
-        notes:       'In-Transit=0 (Build 1)',
+        notes:       transitMap && Object.keys(transitMap).length
+                     ? 'In-Transit: Concession By Items uploaded (Checking+Dispatched counted)'
+                     : 'In-Transit=0 (no transit file uploaded)',
       };
       if (!CFG.offline && CFG.apiUrl) {
         await gasPost('logPhase2Run', payload);
