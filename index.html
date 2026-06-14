@@ -5960,6 +5960,22 @@ async function p2Generate() {
     const scopeCnt = scopeStores.size;
     p2Log(`🔒 Scope: ${scopeCnt} store${scopeCnt!==1?'s':''} from Stock Summary upload (${storeCnt} accessible per Bible Assignments)`, 'log-info');
 
+    // ── In-Transit branch name mismatch check ────────────────────────────────
+    // Cross-reference transit branch names against Bible store names.
+    // A mismatch means the engine silently uses inTransit=0 for that branch —
+    // surface it here so the IA can catch it before the plan is generated.
+    if (transitMap && Object.keys(transitMap).length) {
+      const bibleStoreNames = new Set(Object.keys(bible.products).map(s => s.toUpperCase()));
+      const unmatched = Object.keys(transitMap).filter(b => !bibleStoreNames.has(b.toUpperCase()));
+      if (unmatched.length) {
+        unmatched.forEach(b => {
+          p2Log(`⚠️ In-Transit: Branch "${b}" not found in Bible — in-transit for this branch will be ignored. Check if store name matches the Bible exactly.`, 'log-warn');
+        });
+      } else {
+        p2Log(`✓ In-Transit: All branch names matched to Bible stores.`, 'log-ok');
+      }
+    }
+
     p2Log('🧮 Computing replenishment plan…', 'log-info');
     const plan = p2ComputePlan(stockMap, whsMap, bible, scopeStores, transitMap);
     p2Log(`✓ Plan: ${plan.totalLines} lines · ${plan.totalUnits} units · ${plan.stockouts} stockouts · ${plan.shortfalls} shortfalls`, 'log-ok');
