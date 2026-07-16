@@ -1537,7 +1537,7 @@ function renderSummary(rows) {
     subHTML = '<div class="sub-summary">'
       +'<div class="sub-label">Phase 3 — Approvals breakdown</div>'
       +uploadCard
-      +mkSub('p3_await', '🔍','Awaiting SM Review',     smAwait,   '#F9A825')  // amber — action needed
+      +mkSub('p3_await', '🔍','Awaiting IA Review',     smAwait,   '#F9A825')  // amber — action needed
       +mkSub('p3_pdf',   '📄','PDF Pending',            pdfPend,   '#F9A825')  // amber — action needed
       +mkSub('p3_coord', '📤','Awaiting Coordinator',   coordAwait,'#F9A825')  // amber — action needed
       +mkSub('p3_stchg', '🏪','Store Changes Requested',storeChg,  '#C0392B')  // red — blocked
@@ -1621,7 +1621,7 @@ function getWorkflowStatus(r) {
   const fl = r.fulfillStatus||'';
   const pdf= r.pdfStatus||'';
   // Phase 3 — SM Approval
-  if(sm==='')                    return {label:'🔍 Awaiting SM Review',   cls:'wb-action'};
+  if(sm==='')                    return {label:'🔍 Awaiting IA Review',   cls:'wb-action'};
   if(sm==='Approved'&&pdf!=='Generated') return {label:'📄 PDF Pending',  cls:'wb-action'};
   // Phase 3 — Store Approval
   if(st==='')                    return {label:'📤 Awaiting Coordinator', cls:'wb-action'};
@@ -1937,7 +1937,7 @@ function buildDetail(r) {
           <span style="font-size:18px">📎</span>
           <div style="flex:1">
             <div style="font-size:11.5px;font-weight:700;color:#7A5500;margin-bottom:2px">No order lines attached to this ticket</div>
-            <div style="font-size:11px;color:#9A6900">Upload the replenishment Excel to attach order lines — the SM will then be able to review and approve quantities.</div>
+            <div style="font-size:11px;color:#9A6900">Upload the replenishment Excel to attach order lines — the IA will then be able to review and approve quantities.</div>
           </div>
           ${canAttach ? `<div>
             <input type="file" id="ol-attach-${uid}" accept=".xlsx,.xls" style="display:none"
@@ -1956,7 +1956,7 @@ function buildDetail(r) {
       <div class="wf-panel">
         <div class="wf-panel-hd">
           <span class="wf-phase-num" style="background:#7B1FA2">3</span>
-          <span class="wf-panel-title">Sales Manager Approval</span>
+          <span class="wf-panel-title">Inventory Associate Review</span>
           <span class="wf-status-badge ${smBadge}">${smSt||'Awaiting Review'}</span>
         </div>
         <div class="wf-panel-bd">
@@ -2010,7 +2010,7 @@ function buildDetail(r) {
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Barcode</th>
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Product</th>
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Category</th>
-                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">SM Approved</th>
+                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">IA Approved</th>
                   <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:${storeSt==='Changes Requested'?'#7a5500':'#1a3a7a'}">Store Qty</th>
                   <th style="padding:6px 10px;text-align:right;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;opacity:.85">Unit Price</th>
                   <th style="padding:6px 10px;text-align:right;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;opacity:.85">Line Total</th>
@@ -2115,7 +2115,7 @@ function buildDetail(r) {
         <div class="wf-panel-hd">
           <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">3</span>
           <span class="wf-panel-title">Store Manager Approval</span>
-          <span class="wf-status-badge ${locked4?'wfs-pending':storeBadge}">${locked4?'Locked — awaiting SM approval':(storeSt||'Awaiting Coordinator')}</span>
+          <span class="wf-status-badge ${locked4?'wfs-pending':storeBadge}">${locked4?'Locked — awaiting IA approval':(storeSt||'Awaiting Coordinator')}</span>
         </div>
         <div class="wf-panel-bd">
           ${storeSt==='Changes Requested'&&r.storeNotes?`<div class="wf-note">🏪 Store: ${esc(r.storeNotes)}</div>`:''}
@@ -2579,7 +2579,7 @@ function openApprovalModal(uid, phase, action) {
   const isChanges = action==='changes';
 
   const titles = {
-    sm: { approve:'Approve Order — Sales Manager', changes:'Request Changes — Sales Manager', resubmit:'Resubmit to Sales Manager' },
+    sm: { approve:'Approve Order — Inventory Associate', changes:'Request Changes — Inventory Associate', resubmit:'Resubmit to Inventory Associate' },
     store: { approve:'Confirm Store Approval', changes:'Log Store Change Request' }
   };
 
@@ -2589,7 +2589,7 @@ function openApprovalModal(uid, phase, action) {
   if(isResubmit) {
     body = `
       <div class="fg"><label>Resubmit Note <span style="color:#aaa;font-weight:400;text-transform:none">(optional)</span></label>
-        <textarea id="wf-note" placeholder="Note to Sales Manager about what was revised…"></textarea>
+        <textarea id="wf-note" placeholder="Note to Inventory Associate about what was revised…"></textarea>
       </div>`;
   } else if(isChanges) {
     const lbl = isSM ? 'Changes Required' : 'Store Manager Notes';
@@ -2610,7 +2610,7 @@ function openApprovalModal(uid, phase, action) {
       </div>` : '';
     body = `
       <div class="alert alert-info" style="margin-bottom:0">
-        ${isSM ? '👔 You are approving this order as Sales Manager. CDF generation will be unlocked.' : '🤝 You are confirming the store manager approved this CDF.'}
+        ${isSM ? '👔 You are approving this order as Inventory Associate. CDF generation will be unlocked.' : '🤝 You are confirming the store manager approved this CDF.'}
       </div>${coordLbl}`;
   }
 
@@ -2690,7 +2690,7 @@ function p3OpenUploadModal() {
           <button onclick="p3CloseUploadModal()" style="margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:#888">✕</button>
         </div>
         <div style="padding:20px 24px">
-          <p style="font-size:12px;color:#666;margin-bottom:14px">Upload the Phase 2 replenishment Excel. One CDF ticket will be auto-created per store and placed in <strong>Awaiting SM Review</strong>. The SM will review and approve quantities directly on each ticket.</p>
+          <p style="font-size:12px;color:#666;margin-bottom:14px">Upload the Phase 2 replenishment Excel. One CDF ticket will be auto-created per store and placed in <strong>Awaiting IA Review</strong>. The IA will review and approve quantities directly on each ticket.</p>
 
           <!-- Drop zone -->
           <div id="p3-upload-dz" style="border:2px dashed var(--silver);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:16px"
@@ -2699,7 +2699,7 @@ function p3OpenUploadModal() {
             <input type="file" id="p3-file-input" accept=".xlsx,.xls" style="display:none" onchange="p3HandleFileSelect(this)">
             <div style="font-size:28px;margin-bottom:8px">📄</div>
             <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:12px">Drop Replenishment Excel here</div>
-            <div style="font-size:11px;color:#999;margin-top:4px">Phase 2 output file — the SM will review and edit quantities on the ticket</div>
+            <div style="font-size:11px;color:#999;margin-top:4px">Phase 2 output file — the IA will review and edit quantities on the ticket</div>
           </div>
 
           <!-- Review table (hidden until file parsed) -->
@@ -3101,7 +3101,7 @@ async function p3ConfirmBatchCreate() {
   await loadData();
   renderAll();
 
-  let msg = `✅ Created ${created} CDF ticket${created!==1?'s':''} in Phase 3 — Awaiting SM Review.`;
+  let msg = `✅ Created ${created} CDF ticket${created!==1?'s':''} in Phase 3 — Awaiting IA Review.`;
   if (skippedCount > 0)    msg += ` ${skippedCount} duplicate${skippedCount!==1?'s':''} skipped.`;
   if (deselectedCount > 0) msg += ` ${deselectedCount} deselected.`;
   if (failed > 0)          msg += ` ⚠ ${failed} failed: ${errors.join(', ')}`;
