@@ -1886,7 +1886,7 @@ function buildDetail(r) {
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Category</th>
                   <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Max</th>
                   <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">CDF Inc</th>
-                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">IA Submitted</th>
+                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">System Generated</th>
                   <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:${isLocked?'':'#1a3a7a'}">Final Qty</th>
                   <th style="padding:6px 10px;text-align:right;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;opacity:.85">Unit Price</th>
                   <th style="padding:6px 10px;text-align:right;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;opacity:.85">Line Total</th>
@@ -2011,7 +2011,7 @@ function buildDetail(r) {
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Product</th>
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Category</th>
                   <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">IA Approved</th>
-                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:${storeSt==='Changes Requested'?'#7a5500':'#1a3a7a'}">Store Qty</th>
+                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:#1a3a7a">Store Qty</th>
                   <th style="padding:6px 10px;text-align:right;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;opacity:.85">Unit Price</th>
                   <th style="padding:6px 10px;text-align:right;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;opacity:.85">Line Total</th>
                 </tr>
@@ -2976,7 +2976,7 @@ function p3RenderReviewTable(staged) {
         </select>
       </td>
       <td style="padding:7px 10px;text-align:center;font-size:10px;color:${isDupe ? 'var(--red)' : isSelected ? 'var(--amber)' : '#999'}">
-        ${isDupe ? '⚠ Duplicate' : isSelected ? '⏳ Awaiting SM' : '⊘ Skipped'}
+        ${isDupe ? '⚠ Duplicate' : isSelected ? '⏳ Awaiting IA' : '⊘ Skipped'}
       </td>
     </tr>`;
   }).join('');
