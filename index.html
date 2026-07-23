@@ -4723,8 +4723,43 @@ function p1InferStoreName(filename) {
   return n.trim();
 }
 
+/**
+ * Loose comparison key for branch names — strips case, spaces and punctuation.
+ * "SAN FELIPE - ILAGAN", "SAN FELIPE ILAGAN" and "SAN_FELIPE_ILAGAN" all reduce to
+ * the same key, so separator drift can't silently zero out a match. Letters and
+ * digits must still agree, so two genuinely different stores never collide.
+ */
+function p1BranchKey(s) {
+  return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+}
+
+/**
+ * Reads the "Location:" value from an IC sheet's metadata block (rows above the
+ * column header). The Acacia system writes this itself, so it matches the Stock
+ * Summary "Branch" string exactly — including separators like " - " that a
+ * filename cannot carry. Returns '' when absent so the caller falls back.
+ */
+function p1ReadLocation(ws) {
+  if (!ws) return '';
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+  for (let i=0; i<rows.length && i<12; i++) {
+    const r = rows[i] || [];
+    // Stop at the column-header row — it carries a "Location" *column title*
+    // whose neighbour is "Category", not the store name.
+    if (r.some(v => { const s = String(v).trim().toLowerCase(); return s.includes('barcode') || s === 'sku'; })) break;
+    for (let j=0; j<r.length; j++) {
+      if (String(r[j]).trim().toLowerCase().replace(/:\s*$/,'') === 'location') {
+        for (let k=j+1; k<r.length; k++) {
+          const v = String(r[k]).trim();
+          if (v) return v.toUpperCase();
+        }
+      }
+    }
+  }
+  return '';
+}
+
 async function p1ParseICFile(file) {
-  const storeName = p1InferStoreName(file.name);
   const ab = await p1ReadAB(file);
   const wb = XLSX.read(ab, {type:'array'});
 
@@ -4735,6 +4770,12 @@ async function p1ParseICFile(file) {
   const damages = (wb.SheetNames.length > 1)
     ? p1ParseQtySheet(wb.Sheets[wb.SheetNames[1]], 'damaged')
     : {};
+
+  // Store name: prefer the "Location:" value written inside the file by the Acacia
+  // system — it matches the Stock Summary "Branch" exactly. The filename cannot:
+  // it drops separators (" - ") and may carry underscores instead of spaces.
+  const storeName = p1ReadLocation(wb.Sheets[wb.SheetNames[0]])
+                 || p1InferStoreName(file.name);
 
   return { storeName, physical, damages };
 }
@@ -4801,7 +4842,13 @@ function p1ParseQtySheet(ws, qtyHint='qty') {
 }
 
 function p1Reconcile(storeName, stockData, physical, damages={}) {
-  const sysRows = stockData.filter(r => r['Branch'] === storeName);
+  // Exact match first (unchanged behaviour when the strings already agree);
+  // fall back to the punctuation-insensitive key so " - " vs " " can't zero it out.
+  let sysRows = stockData.filter(r => r['Branch'] === storeName);
+  if (!sysRows.length) {
+    const key = p1BranchKey(storeName);
+    sysRows = stockData.filter(r => p1BranchKey(r['Branch']) === key);
+  }
   const allBarcodes = new Set([
     ...sysRows.map(r => r['Product Code']),
     ...Object.keys(physical),
@@ -5084,6 +5131,12 @@ async function p1Generate() {
       p1SetProgress(20 + Math.round((i/P1.icFiles.length)*60));
       try {
         const {storeName, physical, damages} = await p1ParseICFile(f);
+        // No silent failures: a branch that matches nothing yields an all-"Unknown
+        // Product" report that still looks successful. Say so, and name the options.
+        if (!stockData.some(r => p1BranchKey(r['Branch']) === p1BranchKey(storeName))) {
+          const avail = [...new Set(stockData.map(r => r['Branch']).filter(Boolean))];
+          p1Log(`⚠️ Walang katugmang Branch sa Stock Summary para sa "${storeName}" — lahat ng SKU ay magiging "Unknown Product" (System Qty 0). Available branches: ${avail.join(' · ') || '(wala)'}`, 'log-warn');
+        }
         const rows = p1Reconcile(storeName, stockData, physical, damages);
         const red    = rows.filter(r => r.flag === 'RED').length;
         const yellow = rows.filter(r => r.flag === 'YELLOW').length;
