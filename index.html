@@ -4841,7 +4841,7 @@ function p1ParseQtySheet(ws, qtyHint='qty') {
   return out;
 }
 
-function p1Reconcile(storeName, stockData, physical, damages={}) {
+function p1Reconcile(storeName, stockData, physical, damages={}, bibleNames={}) {
   // Exact match first (unchanged behaviour when the strings already agree);
   // fall back to the punctuation-insensitive key so " - " vs " " can't zero it out.
   let sysRows = stockData.filter(r => r['Branch'] === storeName);
@@ -4862,7 +4862,8 @@ function p1Reconcile(storeName, stockData, physical, damages={}) {
     const physQty = counted ? physical[bc] : null;
     const damagedQty = damages[bc] || 0;
     const price = sysRow ? sysRow['Sale Price'] : 0;
-    const name = sysRow ? sysRow['Product Name'] : 'Unknown Product';
+    const name = sysRow ? sysRow['Product Name']
+                        : (bibleNames[bc] || 'Unknown Product');
     const variance = counted ? (physQty - sysQty) : null;
     const absVariance = counted ? Math.abs(variance) : 0;
     const valueGap = counted ? (absVariance * price) : 0;
@@ -4872,11 +4873,15 @@ function p1Reconcile(storeName, stockData, physical, damages={}) {
     else if (absVariance > P1_YELLOW_UNIT || valueGap > P1_YELLOW_VALUE) flag = 'YELLOW';
     else flag = 'GREEN';
     let suggestedAction, adjType, adjQty;
+    // A SKU with no Stock Summary row is not the same as one the system says is 0.
+    // Say which it is, so the IA doesn't hunt for a posting error that never existed.
+    const inSystem = !!sysRow;
+    const upReason = inSystem ? 'system undercounts' : 'no Acacia record for this branch';
     if (!counted) { adjType='N/A'; adjQty=0; suggestedAction='Skipped — not part of this batch count'; }
-    else if (variance > 0) { adjType='Adj In';  adjQty=variance;  suggestedAction=`Adj In ${variance} units (system undercounts)`; }
+    else if (variance > 0) { adjType='Adj In';  adjQty=variance;  suggestedAction=`Adj In ${variance} units (${upReason})`; }
     else if (variance < 0) { adjType='Adj Out'; adjQty=-variance; suggestedAction=`Adj Out ${-variance} units (system overcounts)`; }
     else { adjType='Match'; adjQty=0; suggestedAction='No adjustment needed'; }
-    results.push({ bc, name, sysQty, physQty, counted, damagedQty, variance, absVariance, valueGap, flag, suggestedAction, adjType, adjQty, price });
+    results.push({ bc, name, sysQty, physQty, counted, damagedQty, variance, absVariance, valueGap, flag, suggestedAction, adjType, adjQty, price, inSystem });
   });
   const order = {RED:0, YELLOW:1, GREEN:2};
   results.sort((a,b) => order[a.flag]-order[b.flag] || a.name.localeCompare(b.name));
@@ -5123,6 +5128,32 @@ async function p1Generate() {
     p1Log(`✓ Loaded: ${stockData.length.toLocaleString()} rows`, 'log-ok');
     p1SetProgress(20);
 
+    // ── Bible product names ──────────────────────────────────────────────────
+    // The Stock Summary is a MOVEMENT report: a SKU with no transaction history
+    // at a branch has no row at all, so reconciliation cannot name it. That is
+    // normal for phased-out items, which stores still hold and still sell.
+    // Pull names from the Bible so those rows read properly instead of
+    // "Unknown Product". Names are global, so one barcode→name map across all
+    // stores is enough. Best-effort only: if the fetch fails, Phase 1 carries on
+    // exactly as before rather than blocking the reconciliation.
+    const bibleNames = {};
+    try {
+      const bible = await gasGet('getBibleProductsForUser', { username: S.user.username });
+      if (bible && bible.products) {
+        Object.values(bible.products).forEach(skus => {
+          for (const bc in skus) {
+            if (!bibleNames[bc] && skus[bc] && skus[bc].name) bibleNames[bc] = skus[bc].name;
+          }
+        });
+      }
+      const cnt = Object.keys(bibleNames).length;
+      if (cnt) p1Log(`✓ Bible: ${cnt.toLocaleString()} product names available for SKUs missing from Stock Summary`, 'log-ok');
+      else p1Log('⚠️ Bible returned no products — SKUs missing from Stock Summary will show "Unknown Product".', 'log-warn');
+    } catch (e) {
+      p1Log(`⚠️ Hindi ma-fetch ang Bible (${e.message}) — SKUs missing from Stock Summary will show "Unknown Product". Tuloy pa rin ang reconciliation.`, 'log-warn');
+    }
+    p1SetProgress(25);
+
     const allResults = [];
     let totalRed=0, totalYellow=0, totalGreen=0;
     for (let i=0;i<P1.icFiles.length;i++) {
@@ -5135,9 +5166,14 @@ async function p1Generate() {
         // Product" report that still looks successful. Say so, and name the options.
         if (!stockData.some(r => p1BranchKey(r['Branch']) === p1BranchKey(storeName))) {
           const avail = [...new Set(stockData.map(r => r['Branch']).filter(Boolean))];
-          p1Log(`⚠️ Walang katugmang Branch sa Stock Summary para sa "${storeName}" — lahat ng SKU ay magiging "Unknown Product" (System Qty 0). Available branches: ${avail.join(' · ') || '(wala)'}`, 'log-warn');
+          p1Log(`⚠️ Walang katugmang Branch sa Stock Summary para sa "${storeName}" — lahat ng SKU ay walang System Qty (0) at mababasa lang ang pangalan mula sa Bible. Available branches: ${avail.join(' · ') || '(wala)'}`, 'log-warn');
         }
-        const rows = p1Reconcile(storeName, stockData, physical, damages);
+        const rows = p1Reconcile(storeName, stockData, physical, damages, bibleNames);
+        const noRec = rows.filter(r => !r.inSystem).length;
+        if (noRec) {
+          const named = rows.filter(r => !r.inSystem && r.name !== 'Unknown Product').length;
+          p1Log(`ℹ️ ${storeName}: ${noRec} SKU${noRec!==1?'s':''} counted with no Acacia record for this branch — ${named} named from the Bible, ${noRec-named} still unknown.`, 'log-info');
+        }
         const red    = rows.filter(r => r.flag === 'RED').length;
         const yellow = rows.filter(r => r.flag === 'YELLOW').length;
         const green  = rows.filter(r => r.flag === 'GREEN').length;
@@ -5631,7 +5667,24 @@ function p2FloorCDF(value, cdf) {
 function p2ComputePlan(stockMap, whsMap, bible, scopeStores, transitMap={}) {
   // Determine which stores to process — intersection of Bible products and scope
   const bibleStores = Object.keys(bible.products);
-  const stores = bibleStores.filter(s => !scopeStores || scopeStores.has(s));
+
+  // Bible store names are typed by hand; Acacia branch names come from the export.
+  // Index the Acacia-derived maps by a case- and punctuation-insensitive key so a
+  // casing or spacing difference can't silently zero out a store's inventory.
+  // This MUST move together with the scope filter below: normalizing the filter
+  // alone would let a mismatched store through, leave stockMap[store] undefined,
+  // and make every SKU read as empty — producing a full max-quantity order.
+  // The `store` string itself is never rewritten: it stays the raw Bible name so
+  // the generated Excel and downstream Phase 3 matching are unchanged.
+  const indexByBranchKey = src => {
+    const out = {};
+    for (const k in src) out[p1BranchKey(k)] = src[k];
+    return out;
+  };
+  const stockByKey   = indexByBranchKey(stockMap);
+  const transitByKey = indexByBranchKey(transitMap);
+
+  const stores = bibleStores.filter(s => !scopeStores || scopeStores.has(p1BranchKey(s)));
 
   // Step 1: per store × SKU compute Need + Ideal Order
   const rows = [];
@@ -5644,7 +5697,7 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores, transitMap={}) {
     // rather than MEDIUM since an unknown size shouldn't be assumed mid-tier.
     const sizeKey = String(storeMeta.size || '').trim().toUpperCase();
     const sizeWt = P2_SIZE_WEIGHTS[sizeKey] || 1.0;
-    const storeStock = stockMap[store] || {};
+    const storeStock = stockByKey[p1BranchKey(store)] || {};
     const products   = bible.products[store];
 
     for (const bc in products) {
@@ -5652,7 +5705,8 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores, transitMap={}) {
       const storeInv = storeStock[bc] || 0;
       // In-transit: sum of Checking + Dispatched CDFs for this store/SKU pair.
       // Received CDFs are excluded — those units are already in the store inventory count.
-      const inTransit = (transitMap[store] && transitMap[store][bc]) ? transitMap[store][bc] : 0;
+      const storeTransit = transitByKey[p1BranchKey(store)];
+      const inTransit = (storeTransit && storeTransit[bc]) ? storeTransit[bc] : 0;
 
       // ── Negative inventory guard ────────────────────────────────────
       // Store system inventory can sometimes go negative due to posting
@@ -6160,17 +6214,26 @@ async function p2Generate() {
     // Scope to stores present in the uploaded Stock Summary.
     // This means uploading one store's IC file generates only that store's replenishment —
     // uploading all stores generates all. The Bible assignment filter already ran server-side.
-    const scopeStores = new Set(Object.keys(stockMap).map(s => s.toUpperCase()));
+    const scopeStores = new Set(Object.keys(stockMap).map(p1BranchKey));
     const scopeCnt = scopeStores.size;
     p2Log(`🔒 Scope: ${scopeCnt} store${scopeCnt!==1?'s':''} from Stock Summary upload (${storeCnt} accessible per Bible Assignments)`, 'log-info');
+
+    // A branch in the Stock Summary with no Bible entry generates nothing at all.
+    // After branch-key normalization that can no longer be a casing artifact, so
+    // it means the store is genuinely missing from the Bible — say so.
+    {
+      const bibleKeys = new Set(Object.keys(bible.products).map(p1BranchKey));
+      const orphan = Object.keys(stockMap).filter(b => !bibleKeys.has(p1BranchKey(b)));
+      orphan.forEach(b => p2Log(`⚠️ Branch "${b}" is in the Stock Summary but not in your Bible stores — walang mage-generate na order para dito. Check the Bible STORES/ASSIGNMENTS tabs.`, 'log-warn'));
+    }
 
     // ── In-Transit branch name mismatch check ────────────────────────────────
     // Cross-reference transit branch names against Bible store names.
     // A mismatch means the engine silently uses inTransit=0 for that branch —
     // surface it here so the IA can catch it before the plan is generated.
     if (transitMap && Object.keys(transitMap).length) {
-      const bibleStoreNames = new Set(Object.keys(bible.products).map(s => s.toUpperCase()));
-      const unmatched = Object.keys(transitMap).filter(b => !bibleStoreNames.has(b.toUpperCase()));
+      const bibleStoreNames = new Set(Object.keys(bible.products).map(p1BranchKey));
+      const unmatched = Object.keys(transitMap).filter(b => !bibleStoreNames.has(p1BranchKey(b)));
       if (unmatched.length) {
         unmatched.forEach(b => {
           p2Log(`⚠️ In-Transit: Branch "${b}" not found in Bible — in-transit for this branch will be ignored. Check if store name matches the Bible exactly.`, 'log-warn');
