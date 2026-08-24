@@ -5558,7 +5558,8 @@ async function p2ParseInTransit(file) {
 
 /**
  * Min/Max Bible:
- *   - STORES tab: row 4 header — Store | Region | Tier | Default Lead Time | Override Lead Time | (optional Size)
+ *   - STORES tab: row 4 header — Store | Island | Region | Default Lead Time | Override Lead Time | Size | Address | Phone | Email
+ *     (Tier was replaced by Size. Header row is located by "store" + "size".)
  *   - One tab per store: row 4 header — Barcode | Product Name | Brand | Category | CDF Increment | … | IA Approved Max | …
  *
  * Returns: {
@@ -5578,7 +5579,7 @@ async function p2ParseBible(file) {
     let hdrIdx = -1;
     for (let i=0;i<rows.length;i++) {
       const joined = rows[i].map(v => String(v).toLowerCase()).join('|');
-      if (joined.includes('store') && joined.includes('tier')) { hdrIdx = i; break; }
+      if (joined.includes('store') && joined.includes('size')) { hdrIdx = i; break; }
     }
     if (hdrIdx >= 0) {
       const headers = rows[hdrIdx].map(h => String(h).trim().toLowerCase());
@@ -5921,10 +5922,9 @@ function p2ComputePlan(stockMap, whsMap, bible, scopeStores, transitMap={}) {
 function p2BuildExcel(plan, transitMap={}) {
   // PRE-CDF REPLENISHMENT ORDER — lean working document.
   // Single sheet. Sales Manager reviews here and edits the "Final Order" column
-  // before the pre-CDF PDF is generated (Phase 3, generate_cdfs.py).
-  // The "Final Order" column is what Phase 3 SHOULD read going forward —
-  // currently generate_cdfs.py reads "Allocated Order". When Phase 3 is wired,
-  // change the generator to prefer "Final Order" then fall back to "Allocated Order".
+  // before the pre-CDF PDF is generated in Phase 3.
+  // Phase 3 reads "Final Order" and falls back to "Allocated Order" when it is
+  // missing or zero (see p3ParseUploadedExcel).
   const wb = XLSX.utils.book_new();
 
   // Filter: only rows the SM actually needs to act on
