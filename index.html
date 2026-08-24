@@ -2911,6 +2911,77 @@ function p3PopulateReviewFromPlan() {
   p3RenderReviewTable(P3._staged);
 }
 
+/**
+ * Finds an existing CDF for this store that is still safe to add lines to.
+ * Only tickets still sitting in Awaiting IA Review (smgrStatus blank) qualify —
+ * once an order is approved, PDF'd or dispatched, appending would invalidate a
+ * decision someone already made. Newest first, so a same-day re-upload lands on
+ * the ticket the IA is actually looking at.
+ */
+function p3FindOpenCDF(store) {
+  const target = String(store || '').trim().toUpperCase();
+  return (S.records || [])
+    .filter(r => String(r.store || '').trim().toUpperCase() === target
+              && !String(r.smgrStatus || '').trim())
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0] || null;
+}
+
+/** Parses a record's stored orderLines JSON. Returns [] on anything unparseable. */
+function p3ReadOrderLines(rec) {
+  try {
+    const v = rec && rec.orderLines;
+    if (!v) return [];
+    const arr = typeof v === 'string' ? JSON.parse(v) : v;
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+/**
+ * Merges incoming lines into existing ones, keyed on barcode.
+ * Quantities ADD — a manual top-up on an existing order means "we need this
+ * much more", typically a customer special order on top of replenishment.
+ * Existing product metadata wins; only the numbers move.
+ */
+function p3MergeOrderLines(existing, incoming) {
+  const out = existing.map(l => ({ ...l }));
+  const byBarcode = new Map(out.map((l, i) => [String(l.barcode || '').trim(), i]));
+  let merged = 0, added = 0;
+  incoming.forEach(nl => {
+    const bc = String(nl.barcode || '').trim();
+    if (!bc) return;
+    const at = byBarcode.get(bc);
+    if (at === undefined) {
+      out.push({ ...nl });
+      byBarcode.set(bc, out.length - 1);
+      added++;
+    } else {
+      const cur = out[at];
+      cur.finalOrder = (parseFloat(cur.finalOrder) || 0) + (parseFloat(nl.finalOrder) || 0);
+      cur.allocated  = (parseFloat(cur.allocated)  || 0) + (parseFloat(nl.allocated)  || 0);
+      merged++;
+    }
+  });
+  return { lines: out, merged, added };
+}
+
+/** Returns a CDF id that isn't already taken, suffixing -2, -3 … as needed. */
+function p3UniqueCdfId(base) {
+  const taken = new Set((S.records || []).map(r => r.cdf));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 100; n++) {
+    const candidate = `${base}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now().toString().slice(-5)}`;
+}
+
+/** Sets how a staged store is applied: 'append' onto an open ticket, or 'new'. */
+function p3SetStagedMode(idx, mode) {
+  if (!P3._staged || !P3._staged[idx]) return;
+  P3._staged[idx].mode = mode;
+  p3RenderReviewTable(P3._staged);
+}
+
 function p3RenderReviewTable(staged) {
   const wrap  = document.getElementById('p3-review-wrap');
   const tbody = document.getElementById('p3-review-tbody');
@@ -2923,19 +2994,31 @@ function p3RenderReviewTable(staged) {
     return;
   }
 
-  // Initialize selection state on first render — default all selected, except
-  // duplicates which are auto-deselected (can't be re-selected; they'd just skip).
-  const existingCDFs = new Set((S.records || []).map(r => r.cdf));
+  // Resolve what each staged store will actually do.
+  //   append — an open ticket exists for this store; add these lines to it
+  //   new    — no open ticket, or the IA chose a separate order
+  // A same-store, same-day upload used to be a dead "duplicate" row. It now
+  // defaults to appending, because that is nearly always the intent.
   staged.forEach(s => {
-    const isDupe = existingCDFs.has(s.cdf);
-    if (s.selected === undefined) s.selected = !isDupe;
-    if (isDupe) s.selected = false;
+    s._open = p3FindOpenCDF(s.store);
+    if (s.mode === undefined) s.mode = s._open ? 'append' : 'new';
+    if (!s._open) s.mode = 'new';
+    if (s.selected === undefined) s.selected = true;
+    s._newCdf = s.mode === 'new' ? p3UniqueCdfId(s.cdf) : s.cdf;
+    if (s._open && s.mode === 'append') {
+      const cur = p3ReadOrderLines(s._open);
+      const m = p3MergeOrderLines(cur, s.orderLines);
+      s._preview = m;
+    } else {
+      s._preview = null;
+    }
   });
 
-  const dupes = staged.filter(s => existingCDFs.has(s.cdf));
-  if (dupes.length) {
+  const appending = staged.filter(s => s.selected && s.mode === 'append');
+  if (appending.length) {
     warn.style.display = '';
-    warn.textContent = `⚠️ ${dupes.length} CDF reference(s) already exist and will be skipped: ${dupes.map(d => d.cdf).join(', ')}`;
+    warn.textContent = `➕ ${appending.length} store${appending.length!==1?'s':''} will be ADDED to an existing open ticket — quantities are summed. `
+      + `Uploading the same file twice will double those lines, so check the totals below before confirming.`;
   } else {
     warn.style.display = 'none';
   }
@@ -2943,24 +3026,40 @@ function p3RenderReviewTable(staged) {
   count.textContent = `${staged.length} store${staged.length !== 1 ? 's' : ''}`;
 
   tbody.innerHTML = staged.map((s, idx) => {
-    const isDupe = existingCDFs.has(s.cdf);
     const isSelected = !!s.selected;
-    // Visual dim: duplicates strongly, deselected (non-dupe) lightly
-    const rowOpacity = isDupe ? '.45' : (isSelected ? '1' : '.55');
+    const isAppend = isSelected && s.mode === 'append';
+    const rowOpacity = isSelected ? '1' : '.55';
+    // When appending, show the resulting totals — not the incoming ones — so a
+    // doubled upload is obvious before it is committed.
+    const shownLines = isAppend && s._preview ? s._preview.lines.length : s.orderLines.length;
+    const shownUnits = isAppend && s._preview
+      ? s._preview.lines.reduce((a, l) => a + (parseFloat(l.finalOrder) || 0), 0)
+      : s.totalUnits;
+    const lineNote = isAppend && s._preview
+      ? `<div style="font-size:9.5px;color:#777">+${s._preview.added} new · ${s._preview.merged} summed</div>` : '';
+    const cdfCell = isAppend
+      ? `${esc(s._open.cdf)}<div style="font-size:9.5px;color:#777">existing ticket</div>`
+      : esc(s._newCdf);
+    const modeCell = s._open
+      ? `<select onchange="p3SetStagedMode(${idx}, this.value)" style="font-size:11px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa">
+           <option value="append" ${s.mode==='append'?'selected':''}>Add to existing</option>
+           <option value="new" ${s.mode==='new'?'selected':''}>Separate order</option>
+         </select>`
+      : `<span style="font-size:10px;color:var(--amber)">⏳ Awaiting IA</span>`;
     return `<tr data-staged-idx="${idx}" style="border-bottom:1px solid var(--silver);opacity:${rowOpacity};transition:opacity .12s">
       <td style="padding:7px 10px;text-align:center">
         <input type="checkbox" class="p3-row-check" data-idx="${idx}"
-          ${isSelected ? 'checked' : ''} ${isDupe ? 'disabled' : ''}
+          ${isSelected ? 'checked' : ''}
           onchange="p3ToggleStaged(${idx}, this.checked)"
-          style="width:16px;height:16px;cursor:${isDupe?'not-allowed':'pointer'};accent-color:var(--blue)"
-          title="${isDupe ? 'Duplicate — will be skipped' : 'Include this store'}">
+          style="width:16px;height:16px;cursor:pointer;accent-color:var(--blue)"
+          title="Include this store">
       </td>
-      <td style="padding:7px 10px;font-family:'DM Mono',monospace;font-size:11px;color:var(--blue)">${esc(s.cdf)}</td>
+      <td style="padding:7px 10px;font-family:'DM Mono',monospace;font-size:11px;color:var(--blue)">${cdfCell}</td>
       <td style="padding:7px 10px;font-weight:600">${esc(s.store)}</td>
-      <td style="padding:7px 10px;text-align:center">${s.orderLines.length}</td>
-      <td style="padding:7px 10px;text-align:center;font-weight:700">${s.totalUnits}</td>
+      <td style="padding:7px 10px;text-align:center">${shownLines}${lineNote}</td>
+      <td style="padding:7px 10px;text-align:center;font-weight:700">${shownUnits}</td>
       <td style="padding:7px 10px">
-        <select onchange="P3._staged[${idx}].type=this.value" style="font-size:11.5px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa;${isDupe?'pointer-events:none':''}">
+        <select onchange="P3._staged[${idx}].type=this.value" style="font-size:11.5px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa;${isAppend?'pointer-events:none;opacity:.5':''}">
           <option value="Regular" ${s.type==='Regular'?'selected':''}>Regular</option>
           <option value="Spare Parts" ${s.type==='Spare Parts'?'selected':''}>Spare Parts</option>
           <option value="Shopee" ${s.type==='Shopee'?'selected':''}>Shopee</option>
@@ -2968,15 +3067,15 @@ function p3RenderReviewTable(staged) {
         </select>
       </td>
       <td style="padding:7px 10px">
-        <select onchange="P3._staged[${idx}].route=this.value" style="font-size:11.5px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa;${isDupe?'pointer-events:none':''}">
+        <select onchange="P3._staged[${idx}].route=this.value" style="font-size:11.5px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa;${isAppend?'pointer-events:none;opacity:.5':''}">
           <option value="Via SDC" ${s.route==='Via SDC'?'selected':''}>Via SDC</option>
           <option value="Direct" ${s.route==='Direct'?'selected':''}>Direct</option>
           <option value="Via CDC" ${s.route==='Via CDC'?'selected':''}>Via CDC</option>
           <option value="Unknown" ${s.route==='Unknown'?'selected':''}>Unknown</option>
         </select>
       </td>
-      <td style="padding:7px 10px;text-align:center;font-size:10px;color:${isDupe ? 'var(--red)' : isSelected ? 'var(--amber)' : '#999'}">
-        ${isDupe ? '⚠ Duplicate' : isSelected ? '⏳ Awaiting IA' : '⊘ Skipped'}
+      <td style="padding:7px 10px;text-align:center;font-size:10px">
+        ${isSelected ? modeCell : '<span style="color:#999">⊘ Skipped</span>'}
       </td>
     </tr>`;
   }).join('');
@@ -2994,14 +3093,11 @@ function p3ToggleStaged(idx, checked) {
   p3RenderReviewTable(P3._staged);
 }
 
-// Select-all / deselect-all helper. Duplicates remain forcibly deselected.
+// Select-all / deselect-all helper. Every staged store is selectable now —
+// a store with an existing ticket appends rather than being blocked.
 function p3ToggleAllStaged(checked) {
   if (!P3._staged) return;
-  const existingCDFs = new Set((S.records || []).map(r => r.cdf));
-  P3._staged.forEach(s => {
-    if (existingCDFs.has(s.cdf)) { s.selected = false; return; }
-    s.selected = !!checked;
-  });
+  P3._staged.forEach(s => { s.selected = !!checked; });
   p3RenderReviewTable(P3._staged);
 }
 
@@ -3010,7 +3106,9 @@ function p3UpdateSelectedCount() {
   const sel = document.getElementById('p3-review-selected');
   const btn = document.getElementById('p3-confirm-btn');
   if (!P3._staged) return;
-  const eligible = P3._staged.filter(s => !((S.records||[]).some(r => r.cdf === s.cdf)));
+  // Every staged store is actionable now — appending is a valid outcome, so
+  // there is no longer an ineligible "duplicate" bucket.
+  const eligible = P3._staged;
   const selectedCount = eligible.filter(s => s.selected).length;
   if (sel) sel.textContent = `${selectedCount} of ${eligible.length} selected`;
   if (btn) {
@@ -3031,27 +3129,16 @@ async function p3ConfirmBatchCreate() {
   const btn = document.getElementById('p3-confirm-btn');
   btn.disabled = true;
 
-  // Filter pipeline:
-  //   1) drop duplicates (already exist) — reported as "skipped"
-  //   2) drop unselected stores — reported as "deselected"
-  // Both buckets are surfaced in the final toast so the IA knows exactly
-  // what made it through.
-  const existingRefs = new Set((S.records || []).map(r => r.cdf));
-  const notDupes = P3._staged.filter(s => !existingRefs.has(s.cdf));
-  const skippedCount = P3._staged.length - notDupes.length;
-  const toCreate = notDupes.filter(s => s.selected !== false);
-  const deselectedCount = notDupes.length - toCreate.length;
+  // Split into the two outcomes:
+  //   append — merge lines onto an existing open ticket (updateCDF)
+  //   new    — create a fresh ticket (addCDF), id suffixed if the base is taken
+  const selected = P3._staged.filter(s => s.selected !== false);
+  const deselectedCount = P3._staged.length - selected.length;
+  const toAppend = selected.filter(s => s.mode === 'append' && s._open);
+  const toCreate = selected.filter(s => s.mode !== 'append' || !s._open);
 
-  if (!toCreate.length) {
-    let msg = '';
-    if (skippedCount && !deselectedCount) {
-      msg = `All ${skippedCount} ticket${skippedCount!==1?'s':''} already exist — nothing to create.`;
-    } else if (deselectedCount && !skippedCount) {
-      msg = `All stores are deselected — nothing to create.`;
-    } else {
-      msg = `Nothing to create: ${skippedCount} duplicate${skippedCount!==1?'s':''}, ${deselectedCount} deselected.`;
-    }
-    toast(msg, 'warn');
+  if (!selected.length) {
+    toast('All stores are deselected — nothing to do.', 'warn');
     btn.disabled = false;
     return;
   }
@@ -3060,8 +3147,30 @@ async function p3ConfirmBatchCreate() {
   // then send the next batch. 8x faster than sequential at 40 stores while
   // staying well below Apps Script's ~30-concurrent-executions ceiling.
   const BATCH_SIZE = 5;
-  let created = 0, failed = 0, completed = 0;
+  let created = 0, appended = 0, failed = 0, completed = 0;
   const errors = [];
+  const total = toCreate.length + toAppend.length;
+
+  // Appending re-reads the ticket's stored lines and merges on barcode with
+  // quantities summed, then writes the whole array back via updateCDF —
+  // an endpoint that already accepts orderLines, so no backend change.
+  const appendOne = async (s) => {
+    try {
+      const merged = p3MergeOrderLines(p3ReadOrderLines(s._open), s.orderLines);
+      await gasPost('updateCDF', {
+        username:   S.user.username,
+        id:         s._open.id,
+        orderLines: JSON.stringify(merged.lines),
+      });
+      appended++;
+    } catch (err) {
+      failed++;
+      errors.push(`${s.store}: ${err.message}`);
+    } finally {
+      completed++;
+      btn.textContent = `⏳ Applying ${completed} of ${total}…`;
+    }
+  };
 
   // Build a per-store fetch closure.
   // Uses gasPost (POST + text/plain) so large orderLines JSON payloads
@@ -3072,7 +3181,7 @@ async function p3ConfirmBatchCreate() {
     try {
       const payload = {
         username:   S.user.username,
-        cdf:        s.cdf,
+        cdf:        s._newCdf || s.cdf,
         store:      s.store,
         month:      s.month,
         type:       s.type,
@@ -3087,22 +3196,27 @@ async function p3ConfirmBatchCreate() {
       errors.push(`${s.store}: ${err.message}`);
     } finally {
       completed++;
-      btn.textContent = `⏳ Creating ${completed} of ${toCreate.length}…`;
+      btn.textContent = `⏳ Applying ${completed} of ${total}…`;
     }
   };
 
-  // Process in waves of BATCH_SIZE
+  // Appends run first and sequentially-batched before creates, so a store that
+  // somehow appears in both lists lands on the existing ticket, not a new one.
+  for (let i = 0; i < toAppend.length; i += BATCH_SIZE) {
+    await Promise.all(toAppend.slice(i, i + BATCH_SIZE).map(appendOne));
+  }
   for (let i = 0; i < toCreate.length; i += BATCH_SIZE) {
-    const wave = toCreate.slice(i, i + BATCH_SIZE);
-    await Promise.all(wave.map(fireOne));
+    await Promise.all(toCreate.slice(i, i + BATCH_SIZE).map(fireOne));
   }
 
   p3CloseUploadModal();
   await loadData();
   renderAll();
 
-  let msg = `✅ Created ${created} CDF ticket${created!==1?'s':''} in Phase 3 — Awaiting IA Review.`;
-  if (skippedCount > 0)    msg += ` ${skippedCount} duplicate${skippedCount!==1?'s':''} skipped.`;
+  let parts = [];
+  if (created)  parts.push(`created ${created} new ticket${created!==1?'s':''}`);
+  if (appended) parts.push(`added lines to ${appended} existing ticket${appended!==1?'s':''}`);
+  let msg = parts.length ? `✅ Phase 3 — ${parts.join(' · ')}.` : '⚠ Nothing was applied.';
   if (deselectedCount > 0) msg += ` ${deselectedCount} deselected.`;
   if (failed > 0)          msg += ` ⚠ ${failed} failed: ${errors.join(', ')}`;
   toast(msg);
