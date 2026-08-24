@@ -4709,7 +4709,6 @@ async function p1ParseStockSummary(file) {
     obj['Product Code']  = String(obj['Product Code'] || '').trim();
     obj['Product Name']  = String(obj['Product Name'] || '').trim();
     obj['Stock On Hand'] = parseFloat(obj['Stock On Hand']) || 0;
-    obj['Sale Price']    = parseFloat(obj['Sale Price'])    || 0;
     data.push(obj);
   }
   return data;
@@ -4841,7 +4840,7 @@ function p1ParseQtySheet(ws, qtyHint='qty') {
   return out;
 }
 
-function p1Reconcile(storeName, stockData, physical, damages={}, bibleNames={}) {
+function p1Reconcile(storeName, stockData, physical, damages={}, bibleNames={}, biblePrices={}) {
   // Exact match first (unchanged behaviour when the strings already agree);
   // fall back to the punctuation-insensitive key so " - " vs " " can't zero it out.
   let sysRows = stockData.filter(r => r['Branch'] === storeName);
@@ -4861,7 +4860,11 @@ function p1Reconcile(storeName, stockData, physical, damages={}, bibleNames={}) 
     const counted = physical[bc] !== undefined;
     const physQty = counted ? physical[bc] : null;
     const damagedQty = damages[bc] || 0;
-    const price = sysRow ? sysRow['Sale Price'] : 0;
+    // Price comes from the Bible, not the Stock Summary — the Acacia export
+    // dropped its Sale Price column, and the Bible is the single source of truth.
+    // Not gated on sysRow: a SKU absent from the Stock Summary still has a real
+    // price, so a high-value discrepancy is still valued correctly.
+    const price = parseFloat(biblePrices[bc]) || 0;
     const name = sysRow ? sysRow['Product Name']
                         : (bibleNames[bc] || 'Unknown Product');
     const variance = counted ? (physQty - sysQty) : null;
@@ -5128,15 +5131,18 @@ async function p1Generate() {
     p1Log(`✓ Loaded: ${stockData.length.toLocaleString()} rows`, 'log-ok');
     p1SetProgress(20);
 
-    // ── Bible product names ──────────────────────────────────────────────────
-    // The Stock Summary is a MOVEMENT report: a SKU with no transaction history
-    // at a branch has no row at all, so reconciliation cannot name it. That is
-    // normal for phased-out items, which stores still hold and still sell.
-    // Pull names from the Bible so those rows read properly instead of
-    // "Unknown Product". Names are global, so one barcode→name map across all
-    // stores is enough. Best-effort only: if the fetch fails, Phase 1 carries on
-    // exactly as before rather than blocking the reconciliation.
+    // ── Bible product names + prices ─────────────────────────────────────────
+    // Two things come from the Bible, which is the single source of truth for both:
+    //  1. Names — the Stock Summary is a MOVEMENT report, so a SKU with no
+    //     transaction history at a branch has no row and cannot be named from it.
+    //     Normal for phased-out items, which stores still hold and still sell.
+    //  2. Prices — the Acacia export dropped its Sale Price column, and price
+    //     drives the ₱500 half of the YELLOW rule (§ p1Reconcile). Without it,
+    //     a 1–2 unit variance on a ₱28,500 vault would silently read GREEN.
+    // Best-effort: if either fetch fails, Phase 1 still reconciles rather than
+    // blocking — but it says loudly what has been lost.
     const bibleNames = {};
+    let   biblePrices = {};
     try {
       const bible = await gasGet('getBibleProductsForUser', { username: S.user.username });
       if (bible && bible.products) {
@@ -5150,7 +5156,16 @@ async function p1Generate() {
       if (cnt) p1Log(`✓ Bible: ${cnt.toLocaleString()} product names available for SKUs missing from Stock Summary`, 'log-ok');
       else p1Log('⚠️ Bible returned no products — SKUs missing from Stock Summary will show "Unknown Product".', 'log-warn');
     } catch (e) {
-      p1Log(`⚠️ Hindi ma-fetch ang Bible (${e.message}) — SKUs missing from Stock Summary will show "Unknown Product". Tuloy pa rin ang reconciliation.`, 'log-warn');
+      p1Log(`⚠️ Hindi ma-fetch ang Bible products (${e.message}) — SKUs missing from Stock Summary will show "Unknown Product". Tuloy pa rin ang reconciliation.`, 'log-warn');
+    }
+    try {
+      const pm = await gasGet('getBibleProductPrices', { username: S.user.username });
+      biblePrices = (pm && typeof pm === 'object') ? pm : {};
+      const pc = Object.keys(biblePrices).length;
+      if (pc) p1Log(`✓ Bible: ${pc.toLocaleString()} product prices loaded (drives the ₱${P1_YELLOW_VALUE.toLocaleString()} YELLOW rule)`, 'log-ok');
+      else p1Log(`⚠️ Bible returned no prices — the ₱${P1_YELLOW_VALUE.toLocaleString()} value rule is INACTIVE this run. Variances will flag on unit count only, so a small variance on an expensive item may read GREEN.`, 'log-warn');
+    } catch (e) {
+      p1Log(`⚠️ Hindi ma-fetch ang Bible prices (${e.message}) — the ₱${P1_YELLOW_VALUE.toLocaleString()} value rule is INACTIVE this run. Unit-count flagging only.`, 'log-warn');
     }
     p1SetProgress(25);
 
@@ -5168,7 +5183,7 @@ async function p1Generate() {
           const avail = [...new Set(stockData.map(r => r['Branch']).filter(Boolean))];
           p1Log(`⚠️ Walang katugmang Branch sa Stock Summary para sa "${storeName}" — lahat ng SKU ay walang System Qty (0) at mababasa lang ang pangalan mula sa Bible. Available branches: ${avail.join(' · ') || '(wala)'}`, 'log-warn');
         }
-        const rows = p1Reconcile(storeName, stockData, physical, damages, bibleNames);
+        const rows = p1Reconcile(storeName, stockData, physical, damages, bibleNames, biblePrices);
         const noRec = rows.filter(r => !r.inSystem).length;
         if (noRec) {
           const named = rows.filter(r => !r.inSystem && r.name !== 'Unknown Product').length;
