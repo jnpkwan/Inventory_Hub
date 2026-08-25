@@ -2912,18 +2912,18 @@ function p3PopulateReviewFromPlan() {
 }
 
 /**
- * Finds an existing CDF for this store that is still safe to add lines to.
- * Only tickets still sitting in Awaiting IA Review (smgrStatus blank) qualify —
- * once an order is approved, PDF'd or dispatched, appending would invalidate a
- * decision someone already made. Newest first, so a same-day re-upload lands on
- * the ticket the IA is actually looking at.
+ * Returns every existing CDF for this store that is still safe to add lines to.
+ * Only tickets sitting in Awaiting IA Review (smgrStatus blank) qualify — once an
+ * order is approved, PDF'd or dispatched, appending would invalidate a decision
+ * someone already made. Ordered oldest first so the list reads in the same order
+ * the tickets were numbered (…-20260825, …-2, …-3).
  */
-function p3FindOpenCDF(store) {
+function p3FindOpenCDFs(store) {
   const target = String(store || '').trim().toUpperCase();
   return (S.records || [])
     .filter(r => String(r.store || '').trim().toUpperCase() === target
               && !String(r.smgrStatus || '').trim())
-    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0] || null;
+    .sort((a, b) => String(a.createdAt || a.cdf || '').localeCompare(String(b.createdAt || b.cdf || '')));
 }
 
 /** Parses a record's stored orderLines JSON. Returns [] on anything unparseable. */
@@ -2975,10 +2975,16 @@ function p3UniqueCdfId(base) {
   return `${base}-${Date.now().toString().slice(-5)}`;
 }
 
-/** Sets how a staged store is applied: 'append' onto an open ticket, or 'new'. */
-function p3SetStagedMode(idx, mode) {
+/**
+ * Sets how a staged store is applied. Value is either 'new' (separate order)
+ * or the record id of the specific open ticket to append to — a store can have
+ * several open at once, so the id, not a boolean, is what gets stored.
+ */
+function p3SetStagedMode(idx, value) {
   if (!P3._staged || !P3._staged[idx]) return;
-  P3._staged[idx].mode = mode;
+  const s = P3._staged[idx];
+  if (value === 'new') { s.mode = 'new'; s.targetId = null; }
+  else                 { s.mode = 'append'; s.targetId = value; }
   p3RenderReviewTable(P3._staged);
 }
 
@@ -2995,23 +3001,26 @@ function p3RenderReviewTable(staged) {
   }
 
   // Resolve what each staged store will actually do.
-  //   append — an open ticket exists for this store; add these lines to it
-  //   new    — no open ticket, or the IA chose a separate order
-  // A same-store, same-day upload used to be a dead "duplicate" row. It now
-  // defaults to appending, because that is nearly always the intent.
+  //   append — add these lines to one specific open ticket for that store
+  //   new    — create a separate order, id suffixed if the base is taken
+  // A store can have several open tickets at once, so the IA picks which one;
+  // the newest is pre-selected because that is usually the one in play.
   staged.forEach(s => {
-    s._open = p3FindOpenCDF(s.store);
-    if (s.mode === undefined) s.mode = s._open ? 'append' : 'new';
-    if (!s._open) s.mode = 'new';
+    s._opens = p3FindOpenCDFs(s.store);
+    if (s.mode === undefined) s.mode = s._opens.length ? 'append' : 'new';
+    if (!s._opens.length) { s.mode = 'new'; s.targetId = null; }
+    if (s.mode === 'append') {
+      // Default to the newest open ticket; keep the IA's pick if still valid.
+      if (!s.targetId || !s._opens.some(r => r.id === s.targetId)) {
+        s.targetId = s._opens[s._opens.length - 1].id;
+      }
+    }
+    s._target = s.mode === 'append' ? s._opens.find(r => r.id === s.targetId) : null;
     if (s.selected === undefined) s.selected = true;
     s._newCdf = s.mode === 'new' ? p3UniqueCdfId(s.cdf) : s.cdf;
-    if (s._open && s.mode === 'append') {
-      const cur = p3ReadOrderLines(s._open);
-      const m = p3MergeOrderLines(cur, s.orderLines);
-      s._preview = m;
-    } else {
-      s._preview = null;
-    }
+    s._preview = s._target
+      ? p3MergeOrderLines(p3ReadOrderLines(s._target), s.orderLines)
+      : null;
   });
 
   const appending = staged.filter(s => s.selected && s.mode === 'append');
@@ -3027,7 +3036,7 @@ function p3RenderReviewTable(staged) {
 
   tbody.innerHTML = staged.map((s, idx) => {
     const isSelected = !!s.selected;
-    const isAppend = isSelected && s.mode === 'append';
+    const isAppend = isSelected && s.mode === 'append' && s._target;
     const rowOpacity = isSelected ? '1' : '.55';
     // When appending, show the resulting totals — not the incoming ones — so a
     // doubled upload is obvious before it is committed.
@@ -3038,12 +3047,14 @@ function p3RenderReviewTable(staged) {
     const lineNote = isAppend && s._preview
       ? `<div style="font-size:9.5px;color:#777">+${s._preview.added} new · ${s._preview.merged} summed</div>` : '';
     const cdfCell = isAppend
-      ? `${esc(s._open.cdf)}<div style="font-size:9.5px;color:#777">existing ticket</div>`
+      ? `${esc(s._target.cdf)}<div style="font-size:9.5px;color:#777">existing ticket</div>`
       : esc(s._newCdf);
-    const modeCell = s._open
-      ? `<select onchange="p3SetStagedMode(${idx}, this.value)" style="font-size:11px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa">
-           <option value="append" ${s.mode==='append'?'selected':''}>Add to existing</option>
-           <option value="new" ${s.mode==='new'?'selected':''}>Separate order</option>
+    // One option per open ticket, so a store with several (…-2, …-3) lets the
+    // IA say exactly which one the lines join. Line count disambiguates them.
+    const modeCell = s._opens.length
+      ? `<select onchange="p3SetStagedMode(${idx}, this.value)" style="font-size:11px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa;max-width:230px">
+           ${s._opens.map(r => `<option value="${esc(r.id)}" ${s.targetId===r.id&&s.mode==='append'?'selected':''}>Add to ${esc(r.cdf)} (${p3ReadOrderLines(r).length} lines)</option>`).join('')}
+           <option value="new" ${s.mode==='new'?'selected':''}>Separate new order</option>
          </select>`
       : `<span style="font-size:10px;color:var(--amber)">⏳ Awaiting IA</span>`;
     return `<tr data-staged-idx="${idx}" style="border-bottom:1px solid var(--silver);opacity:${rowOpacity};transition:opacity .12s">
@@ -3134,8 +3145,8 @@ async function p3ConfirmBatchCreate() {
   //   new    — create a fresh ticket (addCDF), id suffixed if the base is taken
   const selected = P3._staged.filter(s => s.selected !== false);
   const deselectedCount = P3._staged.length - selected.length;
-  const toAppend = selected.filter(s => s.mode === 'append' && s._open);
-  const toCreate = selected.filter(s => s.mode !== 'append' || !s._open);
+  const toAppend = selected.filter(s => s.mode === 'append' && s._target);
+  const toCreate = selected.filter(s => s.mode !== 'append' || !s._target);
 
   if (!selected.length) {
     toast('All stores are deselected — nothing to do.', 'warn');
@@ -3156,10 +3167,10 @@ async function p3ConfirmBatchCreate() {
   // an endpoint that already accepts orderLines, so no backend change.
   const appendOne = async (s) => {
     try {
-      const merged = p3MergeOrderLines(p3ReadOrderLines(s._open), s.orderLines);
+      const merged = p3MergeOrderLines(p3ReadOrderLines(s._target), s.orderLines);
       await gasPost('updateCDF', {
         username:   S.user.username,
-        id:         s._open.id,
+        id:         s._target.id,
         orderLines: JSON.stringify(merged.lines),
       });
       appended++;
