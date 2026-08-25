@@ -2362,7 +2362,7 @@ function buildForm(r) {
     </div><div class="fg">
       <label>Route <span class="req">*</span></label>
       <select class="ms" id="f-route-m" onchange="updateRouteFields()">
-        ${!isEdit?'<option value="">— Select route —</option>':''}
+        ${['Direct','Via SDC','Via CDC'].includes(r.route) ? '' : '<option value="">— Select route —</option>'}
         ${['Direct','Via SDC','Via CDC'].map(v=>`<option value="${v}" ${r.route===v?'selected':''}>${v}</option>`).join('')}
       </select>
     </div></div>
@@ -2723,7 +2723,6 @@ function p3OpenUploadModal() {
                     <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Lines</th>
                     <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Units</th>
                     <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Type</th>
-                    <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Route</th>
                     <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Status</th>
                   </tr>
                 </thead>
@@ -2855,7 +2854,10 @@ async function p3ParseUploadedExcel(file) {
       cdf:        `${store}-ORDER-${dateStr}`,
       month:      monthName,
       type:       'Regular',
-      route:      'Via SDC',
+      // Route is unknown at upload time — the IA sets it in Phase 4 at dispatch.
+      // 'Unknown' is the codebase's existing not-yet-chosen sentinel and, unlike a
+      // blank, survives addCDF's `body.route || 'Via SDC'` default on the server.
+      route:      'Unknown',
       orderLines: lines,
       totalUnits: lines.reduce((s, l) => s + l.finalOrder, 0),
     }));
@@ -2903,7 +2905,8 @@ function p3PopulateReviewFromPlan() {
     cdf:        `${store}-ORDER-${dateStr}`,
     month:      monthName,
     type:       'Regular',
-    route:      'Via SDC',
+    // Route is unknown at upload time — set by the IA in Phase 4 at dispatch.
+    route:      'Unknown',
     orderLines: lines,
     totalUnits: lines.reduce((s, l) => s + l.finalOrder, 0),
   }));
@@ -3075,14 +3078,6 @@ function p3RenderReviewTable(staged) {
           <option value="Spare Parts" ${s.type==='Spare Parts'?'selected':''}>Spare Parts</option>
           <option value="Shopee" ${s.type==='Shopee'?'selected':''}>Shopee</option>
           <option value="Supplies" ${s.type==='Supplies'?'selected':''}>Supplies</option>
-        </select>
-      </td>
-      <td style="padding:7px 10px">
-        <select onchange="P3._staged[${idx}].route=this.value" style="font-size:11.5px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa;${isAppend?'pointer-events:none;opacity:.5':''}">
-          <option value="Via SDC" ${s.route==='Via SDC'?'selected':''}>Via SDC</option>
-          <option value="Direct" ${s.route==='Direct'?'selected':''}>Direct</option>
-          <option value="Via CDC" ${s.route==='Via CDC'?'selected':''}>Via CDC</option>
-          <option value="Unknown" ${s.route==='Unknown'?'selected':''}>Unknown</option>
         </select>
       </td>
       <td style="padding:7px 10px;text-align:center;font-size:10px">
@@ -3582,7 +3577,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   const d1 = IW * 0.22, d2 = IW * 0.38, d3 = IW * 0.40;
   drawMetaCell(MARGIN,          curY, d1, metaRowH, 'PHONE', phone);
   drawMetaCell(MARGIN + d1,     curY, d2, metaRowH, 'EMAIL', email);
-  drawMetaCell(MARGIN + d1+d2,  curY, d3, metaRowH, 'ROUTE / TYPE', `${record.route || 'Via SDC'}  ·  ${record.type || 'Regular'}`);
+  drawMetaCell(MARGIN + d1+d2,  curY, d3, metaRowH, 'ROUTE / TYPE', `${(record.route && record.route !== 'Unknown') ? record.route : '—'}  ·  ${record.type || 'Regular'}`);
   curY += metaRowH + 5*MM;
 
   // ── ORDER ITEMS TABLE ─────────────────────────────────────────────────────
@@ -4315,6 +4310,17 @@ async function saveRecord() {
     if(!vals.type)  { toast('Type is required','err'); return; }
     if(!vals.route || vals.route==='Unknown') { toast('Route is required','err'); return; }
     if(!vals.dWhs)  { toast('WHS date is required','err'); return; }
+  }
+  // Auto-created tickets arrive with route 'Unknown' — the IA doesn't know the
+  // routing at upload time. That's fine while the ticket sits in review, but the
+  // moment any dispatch date is logged the route has to be a real one, or the
+  // hub-date fields and the CDF PDF are describing a route nobody chose.
+  if(!isNew) {
+    const anyDispatchDate = !!(vals.dWhs || vals.dSdc || vals.dDirect || vals.dCdc
+                            || vals.dSdc2 || vals.dCdc2 || vals.dRecv);
+    if(anyDispatchDate && (!vals.route || vals.route==='Unknown')) {
+      toast('Pumili muna ng Route bago mag-log ng dispatch dates.','err'); return;
+    }
   }
   // Date sequence validation — always enforced on edit and add
   const d = (v) => v ? new Date(v) : null;
