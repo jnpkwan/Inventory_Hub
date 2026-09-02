@@ -266,7 +266,13 @@ select.fs:focus{border-color:var(--green); background-color:var(--white); box-sh
   animation:fadeIn .3s var(--ease-out);
 }
 #sub-summary:empty{display:none; margin:0; padding:0; border:none; box-shadow:none}
-.sub-sticky:not(:empty){position:sticky; top:calc(62px + var(--toolbar-bottom,0px)); z-index:140}
+.sub-sticky:not(:empty){
+  position:sticky; top:calc(62px + var(--toolbar-bottom,0px)); z-index:140;
+  /* Opaque, or table rows scroll visibly through the filter row beneath the
+     cards — that row is a bare flex div with no background of its own. */
+  background:var(--fog); padding-bottom:8px;
+  box-shadow:0 8px 10px -8px rgba(16,33,59,.10);
+}
 .sub-label{font-family:"Montserrat",sans-serif; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:var(--slate); margin-bottom:4px; grid-column:1/-1}
 .ssc{
   position:relative; overflow:hidden; cursor:pointer;
@@ -659,7 +665,7 @@ select.ms{appearance:none; -webkit-appearance:none; background-image:url("data:i
   .phc{padding:13px 14px}
   .phc-n{font-size:26px}
   .sub-summary{grid-template-columns:repeat(2,1fr)}
-  .sub-sticky:not(:empty){position:static}
+  .sub-sticky:not(:empty){position:static; background:none; box-shadow:none; padding-bottom:0}
   .summary{grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px}
   .sc{padding:11px 11px}
   .sn{font-size:21px}
@@ -1600,12 +1606,19 @@ function renderSummary(rows) {
       +mkSub('p4_whs',  '🏭','WHS Prepare Order',    pendWhs,               '#F9A825')  // amber — action needed
       +mkSub('p4_act',  '📋','Awaiting Actual Count', awaitAct,              '#F9A825')  // amber — action needed
       // One card per status, driven off STATUS_META rather than a hand-picked
-      // list. Previously only four of the six were rendered, so a record sitting
-      // in 'Preparing Order' or 'Completed' was counted in the header but shown
-      // nowhere — which is why the cards summed to one less than the total.
-      // Generating them guarantees the status cards always add up to the header.
-      +P4_STATUS_ORDER.map(k => mkSub(P4_STATUS_SF[k], STATUS_META[k].icon, k, cnt[k], STATUS_META[k].dot)).join('')
-      +mkSub('p4_attn', '🚨','Needs Attention',       attn,                  '#C0392B')  // red — blocked
+      // list, so a status can never exist without a card and the status cards
+      // always add up to the phase header.
+      // Needs Attention is spliced in after On Hold — it is an age overlay, not
+      // a status bucket, so it does not belong in the sum, but this is where it
+      // reads best in the workflow. Falls back to the end if On Hold ever moves.
+      +(() => {
+        const cards = P4_STATUS_ORDER.map(k =>
+          mkSub(P4_STATUS_SF[k], STATUS_META[k].icon, k, cnt[k], STATUS_META[k].dot));
+        const at = P4_STATUS_ORDER.indexOf('On Hold');
+        cards.splice(at >= 0 ? at + 1 : cards.length, 0,
+          mkSub('p4_attn', '🚨', 'Needs Attention', attn, '#C0392B'));   // red — blocked
+        return cards.join('');
+      })()
       // Only rendered when non-zero: a record whose status is not one of the six
       // is a data error, and it needs to be reachable so someone can fix it.
       +(oddStatus ? mkSub('p4_odd', '❓','Unrecognised Status', oddStatus,    '#C0392B') : '')
