@@ -1438,6 +1438,7 @@ function getFiltered() {
       if(sf==='p4_hold')   { if(r.status!=='On Hold')             return false; }
       if(sf==='p4_tr')     { if(r.status!=='In Transit')          return false; }
       if(sf==='p4_recv')   { if(r.status!=='Received')            return false; }
+      if(sf==='p4_odd')    { if(STATUS_META[r.status])            return false; }
       if(sf==='p4_attn')   { if(!S._attnIds||!S._attnIds.has(uid)) return false; }
     }
     // Legacy statusFilter (dispatch card clicks from within expanded row)
@@ -1551,7 +1552,15 @@ function renderSummary(rows) {
     const pendWhs  = all.filter(r=>r.storeStatus==='Approved'&&!(r.fulfillStatus)).length;
     const awaitAct = all.filter(r=>r.fulfillStatus==='Sent to WHS').length;
     const cnt={}; Object.keys(STATUS_META).forEach(k=>cnt[k]=0);
-    all.filter(r=>r.storeStatus==='Approved').forEach(r=>{if(cnt[r.status]!==undefined)cnt[r.status]++;});
+    // Every Phase 4 record has exactly one status, so these six buckets should
+    // account for all of them. `cnt[r.status]!==undefined` silently dropped any
+    // value outside STATUS_META — a blank, or something a legacy import carried
+    // in — which is why the status cards summed to one less than the header.
+    // Count the strays so a mismatch reports itself instead of hiding.
+    let oddStatus = 0;
+    all.filter(r=>r.storeStatus==='Approved').forEach(r=>{
+      if(cnt[r.status]!==undefined) cnt[r.status]++; else oddStatus++;
+    });
     const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
     // One-time legacy migration. EXECUTIVE only: it writes straight into Phase 4,
     // bypassing Phases 1–3, so it must never be reachable by an IA or coordinator.
@@ -1571,6 +1580,9 @@ function renderSummary(rows) {
       +mkSub('p4_hold', '⏸', 'On Hold',              cnt['On Hold'],         '#78909C')  // grey — paused
       +mkSub('p4_attn', '🚨','Needs Attention',       attn,                  '#C0392B')  // red — blocked
       +mkSub('p4_recv', '✅','Received',              cnt['Received'],        '#22A749')  // green — done
+      // Only rendered when non-zero: a record whose status is not one of the six
+      // is a data error, and it needs to be reachable so someone can fix it.
+      +(oddStatus ? mkSub('p4_odd', '❓','Unrecognised Status', oddStatus,    '#C0392B') : '')
       +'</div>'
       // ── Phase 4 filter controls row ──────────────────────────────────────────
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 2px 0">'
