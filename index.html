@@ -1061,6 +1061,9 @@ const S = {
   statusFilter: '',
   searchTerm:   '',   // kept in state: the search input lives inside #sub-summary,
                       // which gets rebuilt wholesale, so the DOM value is not durable
+  attnDays:     30,   // "no movement for N days" threshold. One source for both the
+                      // Needs Attention card and the row overdue highlight, which
+                      // previously used 7 (hardcoded) and the spinner respectively.
   phaseFilter:  'p3', // default to Phase 3 (Approvals) on load
   subFilter:    '',   // sub-card key within active phase
   sortField:    'dWhs',
@@ -1480,7 +1483,7 @@ function renderSummary(rows) {
       .filter(d=>d&&d.match(/^\d{4}-\d{2}-\d{2}/));
     if(!dates.length) return false;
     const latest=dates.map(d=>new Date(d)).filter(d=>!isNaN(d)).sort((a,b)=>b-a)[0];
-    return latest && (today-latest)/(1000*60*60*24)>7;
+    return latest && (today-latest)/(1000*60*60*24) > (S.attnDays||30);
   });
   S._attnIds = new Set(needsAttn.map(r=>r.id||r.cdf));
   S._dispatchCards = buildDispatchCards(all, needsAttn);
@@ -1608,7 +1611,7 @@ function renderSummary(rows) {
         +'<div class="sw" style="min-width:180px;max-width:260px"><input type="text" id="search" placeholder="Search store or CDF…" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
         +'<select class="fs" id="f-route" onchange="renderAll()"><option value="">All Routes</option><option value="Direct">Direct</option><option value="Via SDC">Via SDC</option><option value="Via CDC">Via CDC</option></select>'
         +'<select class="fs" id="f-type" onchange="renderAll()"><option value="">All Types</option><option value="Regular">Regular</option><option value="Spare Parts">Spare Parts</option><option value="Shopee">Shopee</option><option value="Supplies">Supplies</option></select>'
-        +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="7" min="1" max="60" onchange="renderAll()"> days</div>'
+        +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="'+(S.attnDays||30)+'" min="1" max="180" onchange="S.attnDays=parseInt(this.value)||30; renderAll()"> days</div>'
         +'<button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records"><span class="tog-dot"></span> Hide Received</button>'
       +'</div>';
   }
@@ -1644,7 +1647,7 @@ function buildDispatchCards(rows, needsAttn) {
     {k:'Pending Dispatch', cls:'c-pd',   n:cnt['Pending Dispatch'], l:'Pending Dispatch', d:''},
     {k:'On Hold',          cls:'c-hold', n:cnt['On Hold'],          l:'On Hold',          d:''},
     {k:'In Transit',       cls:'c-tr',   n:cnt['In Transit'],       l:'In Transit',       d:''},
-    {k:'__attn',           cls:'c-attn', n:needsAttn.length,        l:'Needs Attention',  d:'> 7 days no movement'},
+    {k:'__attn',           cls:'c-attn', n:needsAttn.length,        l:'Needs Attention',  d:`> ${S.attnDays||30} days no movement`},
     {k:'Received',         cls:'c-recv', n:cnt['Received'],         l:'Received',         d:total?Math.round(cnt['Received']/total*100)+'%':'0%'},
   ];
 }
@@ -2953,6 +2956,16 @@ async function p4ConfirmMigrate() {
         username:S.user.username, id:created.id,
         smgrStatus:'Approved',  smgrApprovedBy:S.user.username,  smgrApprovedAt:ts,
         storeStatus:'Approved', storeUpdatedBy:S.user.username,  storeUpdatedAt:ts,
+        // These goods have already left the warehouse, so the fulfilment step is
+        // done. Leaving fulfillStatus blank would (a) pile all of them into the
+        // WHS Prepare Order queue, telling the warehouse to prepare orders that
+        // already shipped, and (b) leave every record's dispatch dates LOCKED —
+        // p6Locked only opens for 'Actuals Logged' or 'Partial' — so the IA
+        // could not edit a leg date or mark anything Received.
+        // `status` is deliberately NOT sent: the Status column in the file is
+        // the source of truth for which card the ticket lands in.
+        fulfillStatus:'Actuals Logged', fulfillBy:S.user.username, fulfillAt:ts,
+        fulfillNotes: stamp,
         coordNotes: stamp,
       });
       done++;
@@ -4838,7 +4851,7 @@ function exportCSV() {
 function isOverdue(r) {
   if(r.status!=='In Transit'&&r.status!=='Pending Dispatch'&&r.status!=='Preparing Order') return false;
   if(!r.dWhs) return false;
-  return (Date.now()-new Date(r.dWhs))/ 86400000 > (parseInt(document.getElementById('dd')?.value)||7);
+  return (Date.now()-new Date(r.dWhs))/ 86400000 > (S.attnDays||30);
 }
 
 function tdDays(r) {
