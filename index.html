@@ -56,7 +56,7 @@
   --ease-out:cubic-bezier(.16,1,.3,1);
   --spring:cubic-bezier(.34,1.56,.64,1);
 
-  --toolbar-bottom:60px;
+  --toolbar-bottom:0px;   /* sticky-bar removed; kept as a var so the sub-sticky offset stays one place */
 }
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -256,7 +256,7 @@ select.fs:focus{border-color:var(--green); background-color:var(--white); box-sh
   animation:fadeIn .3s var(--ease-out);
 }
 #sub-summary:empty{display:none; margin:0; padding:0; border:none; box-shadow:none}
-.sub-sticky:not(:empty){position:sticky; top:calc(62px + var(--toolbar-bottom,60px)); z-index:140}
+.sub-sticky:not(:empty){position:sticky; top:calc(62px + var(--toolbar-bottom,0px)); z-index:140}
 .sub-label{font-family:"Montserrat",sans-serif; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:var(--slate); margin-bottom:4px; grid-column:1/-1}
 .ssc{
   position:relative; overflow:hidden; cursor:pointer;
@@ -759,13 +759,9 @@ select.ms{appearance:none; -webkit-appearance:none; background-image:url("data:i
 </header>
 
 <main>
-  <div class="sticky-bar">
-  <div class="controls">
-    <div class="crow">
-      <div class="sync-info" id="sync-info"></div>
-    </div>
-  </div>
-  </div><!-- /sticky-bar -->
+  <!-- sticky-bar removed with the month filter; sync state shows in the header pill.
+       #sync-info is kept off-screen so setConn() has somewhere to write. -->
+  <div class="sync-info" id="sync-info" style="display:none"></div>
   <div class="ph-summary" id="ph-summary"></div>
   <div id="sub-summary" class="sub-sticky"></div>
 
@@ -1053,6 +1049,8 @@ const S = {
   records:      [],
   month:        _nowMonth,
   statusFilter: '',
+  searchTerm:   '',   // kept in state: the search input lives inside #sub-summary,
+                      // which gets rebuilt wholesale, so the DOM value is not durable
   phaseFilter:  'p3', // default to Phase 3 (Approvals) on load
   subFilter:    '',   // sub-card key within active phase
   sortField:    'dWhs',
@@ -1242,7 +1240,7 @@ function startApp() {
   // Measure toolbar bottom for sub-card sticky position
   function setToolbarBottom() {
     const bar = document.querySelector('.sticky-bar');
-    if(bar) document.documentElement.style.setProperty('--toolbar-bottom', bar.offsetHeight + 'px');
+    document.documentElement.style.setProperty('--toolbar-bottom', bar ? bar.offsetHeight + 'px' : '0px');
   }
   setTimeout(setToolbarBottom, 150);
   window.addEventListener('resize', setToolbarBottom);
@@ -1386,6 +1384,23 @@ function renderAll() {
 }
 
 
+/**
+ * Search input handler.
+ * It must NOT call renderAll(): that does `subEl.innerHTML = subHTML`, which
+ * destroys and recreates the search box itself. On every keystroke the input
+ * was being replaced with a fresh empty one, losing the value and the caret —
+ * which is why typing in it appeared to do nothing.
+ * Only the table and its counts depend on the search term, so re-render those.
+ */
+function onSearchInput() {
+  S.expandedId = null;
+  const filtered = getFiltered();
+  renderTable(filtered);
+  const total = S.records.length;
+  const rc = document.getElementById('rc');
+  if (rc) rc.textContent = filtered.length < total ? filtered.length + ' shown' : '';
+}
+
 function toggleHideReceived() {
   S.hideReceived = !S.hideReceived;
   S.expandedId = null;
@@ -1395,7 +1410,7 @@ function toggleHideReceived() {
 }
 
 function getFiltered() {
-  const search = (document.getElementById('search')?.value || '').toLowerCase();
+  const search = String(S.searchTerm ?? (document.getElementById('search')?.value || '')).toLowerCase();
   const fRoute = document.getElementById('f-route')?.value || '';
   const fType  = document.getElementById('f-type')?.value  || '';
   return S.records.filter(r => {
@@ -1559,7 +1574,7 @@ function renderSummary(rows) {
       +'</div>'
       // ── Phase 4 filter controls row ──────────────────────────────────────────
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 2px 0">'
-        +'<div class="sw" style="min-width:160px;max-width:220px"><span class="si">🔍</span><input type="text" id="search" placeholder="Store or CDF ref… (⌘K)" oninput="renderAll()"></div>'
+        +'<div class="sw" style="min-width:160px;max-width:220px"><span class="si">🔍</span><input type="text" id="search" placeholder="Store or CDF ref… (⌘K)" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
         +'<select class="fs" id="f-route" onchange="renderAll()"><option value="">All Routes</option><option value="Direct">Direct</option><option value="Via SDC">Via SDC</option><option value="Via CDC">Via CDC</option></select>'
         +'<select class="fs" id="f-type" onchange="renderAll()"><option value="">All Types</option><option value="Regular">Regular</option><option value="Spare Parts">Spare Parts</option><option value="Shopee">Shopee</option><option value="Supplies">Supplies</option></select>'
         +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="7" min="1" max="60" onchange="renderAll()"> days</div>'
