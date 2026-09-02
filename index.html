@@ -1076,6 +1076,14 @@ const STATUS_META = {
 
 const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', IS:'#22A749', COORDINATOR:'#00695C'};
 
+// Phase 4 status cards. Every key in STATUS_META gets a card, so the breakdown
+// always accounts for every record in the phase. Workflow order, not alphabetical.
+const P4_STATUS_ORDER = ['Preparing Order','Pending Dispatch','In Transit','On Hold','Received','Completed'];
+const P4_STATUS_SF = {
+  'Preparing Order':'p4_prep', 'Pending Dispatch':'p4_pd', 'In Transit':'p4_tr',
+  'On Hold':'p4_hold', 'Received':'p4_recv', 'Completed':'p4_comp'
+};
+
 /* ══════════════════ OFFLINE DATA ══════════════════ */
 const OFFLINE_DATA = [];
 
@@ -1434,11 +1442,10 @@ function getFiltered() {
       if(sf==='p3_stchg')    { if(st!=='Changes Requested')         return false; }
       if(sf==='p4_whs')    { if(st!=='Approved'||fl!=='')         return false; }
       if(sf==='p4_act')    { if(fl!=='Sent to WHS')               return false; }
-      if(sf==='p4_pd')     { if(r.status!=='Pending Dispatch')    return false; }
-      if(sf==='p4_hold')   { if(r.status!=='On Hold')             return false; }
-      if(sf==='p4_tr')     { if(r.status!=='In Transit')          return false; }
-      if(sf==='p4_recv')   { if(r.status!=='Received')            return false; }
       if(sf==='p4_odd')    { if(STATUS_META[r.status])            return false; }
+      // Every generated status card filters to its own status.
+      const sfStatus = Object.keys(P4_STATUS_SF).find(k => P4_STATUS_SF[k] === sf);
+      if(sfStatus)         { if(r.status !== sfStatus)            return false; }
       if(sf==='p4_attn')   { if(!S._attnIds||!S._attnIds.has(uid)) return false; }
     }
     // Legacy statusFilter (dispatch card clicks from within expanded row)
@@ -1575,11 +1582,13 @@ function renderSummary(rows) {
       +migCard
       +mkSub('p4_whs',  '🏭','WHS Prepare Order',    pendWhs,               '#F9A825')  // amber — action needed
       +mkSub('p4_act',  '📋','Awaiting Actual Count', awaitAct,              '#F9A825')  // amber — action needed
-      +mkSub('p4_pd',   '📬','Pending Dispatch',      cnt['Pending Dispatch'],'#F9A825')  // amber — action needed
-      +mkSub('p4_tr',   '🚚','In Transit',            cnt['In Transit'],      '#1B4DA0')  // blue — moving
-      +mkSub('p4_hold', '⏸', 'On Hold',              cnt['On Hold'],         '#78909C')  // grey — paused
+      // One card per status, driven off STATUS_META rather than a hand-picked
+      // list. Previously only four of the six were rendered, so a record sitting
+      // in 'Preparing Order' or 'Completed' was counted in the header but shown
+      // nowhere — which is why the cards summed to one less than the total.
+      // Generating them guarantees the status cards always add up to the header.
+      +P4_STATUS_ORDER.map(k => mkSub(P4_STATUS_SF[k], STATUS_META[k].icon, k, cnt[k], STATUS_META[k].dot)).join('')
       +mkSub('p4_attn', '🚨','Needs Attention',       attn,                  '#C0392B')  // red — blocked
-      +mkSub('p4_recv', '✅','Received',              cnt['Received'],        '#22A749')  // green — done
       // Only rendered when non-zero: a record whose status is not one of the six
       // is a data error, and it needs to be reachable so someone can fix it.
       +(oddStatus ? mkSub('p4_odd', '❓','Unrecognised Status', oddStatus,    '#C0392B') : '')
