@@ -1548,8 +1548,17 @@ function renderSummary(rows) {
     const cnt={}; Object.keys(STATUS_META).forEach(k=>cnt[k]=0);
     all.filter(r=>r.storeStatus==='Approved').forEach(r=>{if(cnt[r.status]!==undefined)cnt[r.status]++;});
     const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
+    // One-time legacy migration. EXECUTIVE only: it writes straight into Phase 4,
+    // bypassing Phases 1–3, so it must never be reachable by an IA or coordinator.
+    const migCard = (S.user?.role==='EXECUTIVE')
+      ? '<div class="ssc" style="border-color:var(--blue);cursor:pointer" onclick="p4OpenMigrateModal()">'
+          +'<div class="ssc-n" style="color:var(--blue)">📦</div>'
+          +'<div class="ssc-l" style="color:var(--blue);font-weight:700">Migrate Dispatched CDFs</div>'
+        +'</div>'
+      : '';
     subHTML = '<div class="sub-summary">'
       +'<div class="sub-label">Phase 4 — Fulfillment &amp; Dispatch breakdown</div>'
+      +migCard
       +mkSub('p4_whs',  '🏭','WHS Prepare Order',    pendWhs,               '#F9A825')  // amber — action needed
       +mkSub('p4_act',  '📋','Awaiting Actual Count', awaitAct,              '#F9A825')  // amber — action needed
       +mkSub('p4_pd',   '📬','Pending Dispatch',      cnt['Pending Dispatch'],'#F9A825')  // amber — action needed
@@ -2676,6 +2685,248 @@ function r_coordNote(uid) {
    ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Upload modal open/close ─────────────────────────────────────────── */
+/* ── PHASE 4 — ONE-TIME LEGACY CDF MIGRATION ───────────────────────────────
+   Loads CDFs that were already dispatched under the old paper/Excel tracking
+   straight into Phase 4. These never passed through Phases 1–3 and carry no
+   order lines, because the goods have already shipped. EXECUTIVE only.
+   Every imported record is stamped in Remarks so it stays obvious later why it
+   has no approval trail.
+   ------------------------------------------------------------------------ */
+const P4M = { staged: null };
+
+function p4OpenMigrateModal() {
+  if (S.user?.role !== 'EXECUTIVE') { toast('Migration is restricted to EXECUTIVE users.', 'err'); return; }
+  let m = document.getElementById('p4-migrate-modal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'p4-migrate-modal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:800;align-items:center;justify-content:center;padding:20px';
+    m.innerHTML = `
+      <div style="background:#fff;border-radius:14px;width:100%;max-width:900px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)">
+        <div style="padding:20px 24px 14px;border-bottom:1px solid var(--silver);display:flex;align-items:center;gap:10px">
+          <span style="font-family:'Montserrat',sans-serif;font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.8px">📦 Migrate Dispatched CDFs into Phase 4</span>
+          <button onclick="p4CloseMigrateModal()" style="margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:#888">✕</button>
+        </div>
+        <div style="padding:20px 24px">
+          <p style="font-size:12px;color:#666;margin-bottom:14px">One-time load of CDFs already dispatched under the old tracking. Records land directly in <strong>Phase 4 — Fulfillment &amp; Dispatch</strong>, marked approved, with no order lines. Anything already in the Hub is skipped, so re-running is safe.</p>
+          <div id="p4-mig-dz" style="border:2px dashed var(--silver);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:16px"
+            ondrop="p4MigDrop(event)" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)"
+            onclick="document.getElementById('p4-mig-input').click()">
+            <input type="file" id="p4-mig-input" accept=".xlsx,.xls" style="display:none" onchange="p4MigSelect(this)">
+            <div style="font-size:28px;margin-bottom:8px">📄</div>
+            <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:12px">Drop the filled CDF Migration Template here</div>
+            <div style="font-size:11px;color:#999;margin-top:4px">Store, CDF Number and Date Prepared are required on every row</div>
+          </div>
+          <div id="p4-mig-warn" style="display:none;background:var(--sage);border-left:3px solid var(--amber);border-radius:6px;padding:10px 12px;font-size:11.5px;margin-bottom:12px"></div>
+          <div id="p4-mig-summary" style="display:none;font-size:12px;margin-bottom:12px"></div>
+          <div id="p4-mig-tablewrap" style="display:none;max-height:320px;overflow-y:auto;border:1px solid var(--silver);border-radius:8px">
+            <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+              <thead style="position:sticky;top:0;background:var(--mist)">
+                <tr>
+                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">CDF</th>
+                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Store</th>
+                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Route</th>
+                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Status</th>
+                  <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Prepared</th>
+                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Note</th>
+                </tr>
+              </thead>
+              <tbody id="p4-mig-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div style="padding:14px 24px 20px;border-top:1px solid var(--silver);display:flex;gap:10px;justify-content:flex-end">
+          <button onclick="p4CloseMigrateModal()" style="padding:9px 18px;border:1px solid var(--silver);background:#fff;border-radius:8px;font-size:12px;cursor:pointer">Cancel</button>
+          <button id="p4-mig-btn" onclick="p4ConfirmMigrate()" disabled
+            style="padding:9px 20px;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;opacity:.5">Import into Phase 4</button>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+  }
+  document.getElementById('p4-mig-warn').style.display='none';
+  document.getElementById('p4-mig-summary').style.display='none';
+  document.getElementById('p4-mig-tablewrap').style.display='none';
+  const b=document.getElementById('p4-mig-btn'); b.disabled=true; b.style.opacity='.5';
+  b.textContent='Import into Phase 4';
+  P4M.staged=null;
+  m.style.display='flex';
+}
+function p4CloseMigrateModal(){ const m=document.getElementById('p4-migrate-modal'); if(m) m.style.display='none'; }
+function p4MigDrop(e){ e.preventDefault(); p1DragLeave(e); const f=e.dataTransfer.files[0]; if(f) p4ParseMigrationFile(f); }
+function p4MigSelect(el){ const f=el.files[0]; if(f) p4ParseMigrationFile(f); }
+
+/** Excel dates arrive as serials or Date objects depending on how they were typed. */
+function p4ToISODate(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (v instanceof Date) return v.toISOString().slice(0,10);
+  if (typeof v === 'number') {                      // Excel serial, 1900 epoch
+    const d = new Date(Date.UTC(1899,11,30) + v*86400000);
+    return isNaN(d) ? '' : d.toISOString().slice(0,10);
+  }
+  const s = String(v).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const d = new Date(s);
+  return isNaN(d) ? '' : d.toISOString().slice(0,10);
+}
+
+const P4M_MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
+                    'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+
+async function p4ParseMigrationFile(file) {
+  const dz = document.getElementById('p4-mig-dz');
+  dz.style.background='var(--blue-pale)'; dz.style.borderColor='var(--blue)';
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+    const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes('MIGRATION')) || wb.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header:1, defval:'' });
+
+    // Match on DISTINCT CELLS, not a joined string: the instruction banner above
+    // the table is one merged cell that mentions both "Store" and "CDF Number",
+    // and a joined-substring test latches onto it instead of the real header.
+    const normCell = v => String(v).replace(/\u2605/g,'').trim().toLowerCase();
+    let hdrIdx = -1;
+    for (let i=0;i<Math.min(12,rows.length);i++){
+      const cells = rows[i].map(normCell);
+      if (cells.some(c=>c==='store') && cells.some(c=>c.startsWith('cdf number'))) { hdrIdx=i; break; }
+    }
+    if (hdrIdx < 0) throw new Error('Could not find the header row. Use the CDF Migration Template unchanged.');
+    const headers = rows[hdrIdx].map(v=>String(v).trim());
+    const col = n => headers.findIndex(h=>h.toLowerCase().includes(n.toLowerCase()));
+    const C = {
+      store:col('Store'), cdf:col('CDF Number'), prep:col('Date Prepared'),
+      route:col('Route'), status:col('Status'), type:col('Type'),
+      leg1:col('WHS →'), leg2:col('Hub →'),
+      boxes:col('Boxes'), truck:col('Truck'), cas:col('CAS'),
+      aref:col('Acacia Ref'), remarks:col('Remarks'),
+    };
+    if (C.store<0 || C.cdf<0) throw new Error('Missing the Store or CDF Number column.');
+
+    const existing = new Set((S.records||[]).map(r=>String(r.cdf||'').trim()));
+    const staged = [], problems = [];
+    const seen = new Set();
+    for (let i=hdrIdx+1;i<rows.length;i++){
+      const r = rows[i];
+      const cdf   = String(r[C.cdf]||'').trim();
+      const store = String(r[C.store]||'').trim().toUpperCase();
+      if (!cdf && !store) continue;
+      if (!cdf)   { problems.push(`row ${i+1}: no CDF number`); continue; }
+      if (!store) { problems.push(`${cdf}: no store`); continue; }
+      if (seen.has(cdf))     { problems.push(`${cdf}: duplicated inside the file`); continue; }
+      if (existing.has(cdf)) { problems.push(`${cdf}: already in the Hub — skipped`); continue; }
+      seen.add(cdf);
+      const prep = p4ToISODate(r[C.prep]);
+      const route = String(r[C.route]||'').trim() || 'Unknown';
+      const leg1 = p4ToISODate(r[C.leg1]), leg2 = p4ToISODate(r[C.leg2]);
+      staged.push({
+        cdf, store, route,
+        status: String(r[C.status]||'').trim() || 'In Transit',
+        type:   String(r[C.type]||'').trim()   || 'Regular',
+        month:  prep ? P4M_MONTHS[parseInt(prep.slice(5,7),10)-1] : currentMonthNameJS(),
+        dWhs: prep,
+        // Which leg column a date belongs to depends on the route.
+        dDirect: route==='Direct' ? leg1 : '',
+        dSdc:    route==='Via SDC' ? leg1 : '',
+        dCdc:    route==='Via CDC' ? leg1 : '',
+        dSdc2:   route==='Via SDC' ? leg2 : '',
+        dCdc2:   route==='Via CDC' ? leg2 : '',
+        boxes: String(r[C.boxes]||'').trim(), truck: String(r[C.truck]||'').trim(),
+        cas:   String(r[C.cas]||'').trim(),   acaciaRef: String(r[C.aref]||'').trim(),
+        remarks: String(r[C.remarks]||'').trim(),
+      });
+    }
+    if (!staged.length) throw new Error('No importable rows found.' + (problems.length?` (${problems.length} skipped)`:''));
+
+    P4M.staged = staged;
+    const noRoute = staged.filter(s=>s.route==='Unknown').length;
+    const toStoreNoDetail = staged.filter(s=>{
+      const toStore = s.route==='Direct' ? s.dDirect : (s.dSdc2||s.dCdc2);
+      return toStore && !(s.boxes && s.truck && s.cas);
+    }).length;
+
+    const warn = document.getElementById('p4-mig-warn');
+    const bits = [];
+    if (problems.length) bits.push(`${problems.length} row${problems.length!==1?'s':''} skipped: ${problems.slice(0,4).join('; ')}${problems.length>4?'…':''}`);
+    if (noRoute) bits.push(`${noRoute} have no Route — they import as “Unknown” and the IA must pick one before logging any dispatch date.`);
+    if (toStoreNoDetail) bits.push(`${toStoreNoDetail} have a to-store date without Boxes/Truck/CAS — the IA must fill all three before those can be saved or marked Received.`);
+    if (bits.length){ warn.style.display=''; warn.innerHTML = '⚠️ ' + bits.join('<br>⚠️ '); }
+    else warn.style.display='none';
+
+    document.getElementById('p4-mig-summary').style.display='';
+    document.getElementById('p4-mig-summary').innerHTML =
+      `<strong>${staged.length}</strong> CDF${staged.length!==1?'s':''} ready to import into Phase 4 · `
+      + `${staged.filter(s=>s.status==='In Transit').length} In Transit · `
+      + `${staged.filter(s=>s.status==='Pending Dispatch').length} Pending Dispatch`;
+
+    document.getElementById('p4-mig-tbody').innerHTML = staged.map(s=>`
+      <tr style="border-bottom:1px solid var(--silver)">
+        <td style="padding:6px 10px;font-family:'DM Mono',monospace;font-size:11px;color:var(--blue)">${esc(s.cdf)}</td>
+        <td style="padding:6px 10px;font-weight:600">${esc(s.store)}</td>
+        <td style="padding:6px 10px;${s.route==='Unknown'?'color:var(--amber)':''}">${esc(s.route)}</td>
+        <td style="padding:6px 10px">${esc(s.status)}</td>
+        <td style="padding:6px 10px;text-align:center">${esc(s.dWhs||'—')}</td>
+        <td style="padding:6px 10px;font-size:10.5px;color:#777">${esc(s.remarks||'')}</td>
+      </tr>`).join('');
+    document.getElementById('p4-mig-tablewrap').style.display='';
+    const b=document.getElementById('p4-mig-btn'); b.disabled=false; b.style.opacity='1';
+    b.textContent=`✓ Import ${staged.length} into Phase 4`;
+  } catch(err) {
+    toast('Migration file error: ' + err.message, 'err');
+  } finally {
+    dz.style.background=''; dz.style.borderColor='var(--silver)';
+  }
+}
+
+function currentMonthNameJS(){ return P4M_MONTHS[new Date().getMonth()]; }
+
+async function p4ConfirmMigrate() {
+  if (!P4M.staged || !P4M.staged.length) return;
+  if (S.user?.role !== 'EXECUTIVE') { toast('Migration is restricted to EXECUTIVE users.','err'); return; }
+  const btn = document.getElementById('p4-mig-btn');
+  btn.disabled = true; btn.style.opacity='.6';
+
+  const stamp = `Migrated from legacy CDF tracking ${new Date().toISOString().slice(0,10)}`;
+  let done=0, failed=0, completed=0; const errors=[];
+  const total = P4M.staged.length;
+
+  // addCDF cannot set the approval fields (buildCDFRecord hardcodes them blank),
+  // so each record is created and then approved. Both endpoints already exist —
+  // no backend change. storeStatus='Approved' is what puts it in Phase 4.
+  const importOne = async (s) => {
+    try {
+      const created = await gasPost('addCDF', {
+        username:S.user.username, cdf:s.cdf, store:s.store, month:s.month,
+        type:s.type, route:s.route, status:s.status,
+        dWhs:s.dWhs, dSdc:s.dSdc, dDirect:s.dDirect, dCdc:s.dCdc,
+        dSdc2:s.dSdc2, dCdc2:s.dCdc2,
+        boxes:s.boxes, truck:s.truck, cas:s.cas, acaciaRef:s.acaciaRef,
+        remarks: s.remarks ? `${s.remarks} · ${stamp}` : stamp,
+      });
+      const ts = new Date().toISOString();
+      await gasPost('updateCDF', {
+        username:S.user.username, id:created.id,
+        smgrStatus:'Approved',  smgrApprovedBy:S.user.username,  smgrApprovedAt:ts,
+        storeStatus:'Approved', storeUpdatedBy:S.user.username,  storeUpdatedAt:ts,
+        coordNotes: stamp,
+      });
+      done++;
+    } catch(err) {
+      failed++; errors.push(`${s.cdf}: ${err.message}`);
+    } finally {
+      completed++; btn.textContent = `⏳ Importing ${completed} of ${total}…`;
+    }
+  };
+  for (let i=0;i<P4M.staged.length;i+=4) {
+    await Promise.all(P4M.staged.slice(i,i+4).map(importOne));
+  }
+
+  await loadData();
+  p4CloseMigrateModal();
+  let msg = `✅ Migrated ${done} CDF${done!==1?'s':''} into Phase 4.`;
+  if (failed) msg += ` ⚠ ${failed} failed: ${errors.slice(0,3).join(', ')}${errors.length>3?'…':''}`;
+  toast(msg);
+}
+
 function p3OpenUploadModal() {
   // Build the modal on first open
   let m = document.getElementById('p3-upload-modal');
