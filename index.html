@@ -1641,11 +1641,10 @@ function renderSummary(rows) {
     const phEl = document.getElementById('ph-summary');
     phEl.parentNode.insertBefore(subEl, phEl.nextSibling);
   }
-  if(pf && subHTML) {
-    subHTML += '<div style="grid-column:1/-1;text-align:right;margin-top:2px">'
-      +'<span onclick="clearPhaseFilter()" style="font-size:10px;color:#bbb;cursor:pointer;user-select:none">✕ Clear filter</span>'
-      +'</div>';
-  }
+  // "Clear filter" removed: a phase is always selected (p3 by default) and
+  // setPhaseFilter deliberately does not toggle off, so the no-phase state was
+  // only ever reachable through that link and had no use. Sub-cards and status
+  // cards still clear themselves — both toggle on a second click.
 
   subEl.innerHTML = subHTML;
   subEl.onclick = function(e) {
