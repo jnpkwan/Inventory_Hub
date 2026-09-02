@@ -195,13 +195,23 @@ main{max-width:1440px; margin:0 auto; padding:0 28px 56px}
 .mtab.active{background:var(--blue); color:#fff; box-shadow:var(--sh-blue)}
 .sep{width:1px; height:24px; background:var(--silver); margin:0 3px}
 .sw{position:relative; flex:1; min-width:200px; max-width:300px}
-.sw input{
-  width:100%; background:var(--mist); border:1.5px solid transparent; border-radius:var(--r);
-  font-family:"DM Sans",sans-serif; font-size:13px; padding:9px 12px 9px 34px; outline:none;
-  transition:border-color .2s var(--ease), background .2s var(--ease), box-shadow .2s var(--ease);
+/* input[type=text] on line ~456 has the same (0,1,1) specificity as a bare
+   `.sw input`, so it won a tie on source order and clobbered the left padding —
+   which dropped the icon on top of the text. The attribute selector here lifts
+   this to (0,2,1) so it wins outright. Icon is a background SVG, matching how
+   select.fs draws its chevron, so there is no absolutely-positioned span to
+   collide with the text at all. */
+.sw input[type=text]{
+  width:100%; background-color:var(--mist); border:1.5px solid transparent; border-radius:var(--r);
+  font-family:"DM Sans",sans-serif; font-size:13px; font-weight:500; color:var(--carbon);
+  padding:9px 12px 9px 34px; outline:none;
+  line-height:normal;   /* must be stated: the base input[type=text] rule sets 1.4, which made this 3px taller than the select.fs dropdowns beside it */
+  transition:border-color .2s var(--ease), background-color .2s var(--ease), box-shadow .2s var(--ease);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 14 14'%3E%3Ccircle cx='6' cy='6' r='4.25' stroke='%237C8896' stroke-width='1.5' fill='none'/%3E%3Cpath d='M9.4 9.4L12.6 12.6' stroke='%237C8896' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:left 11px center;
 }
-.sw input:focus{border-color:var(--green); background:var(--white); box-shadow:var(--ring-green)}
-.si{position:absolute; left:11px; top:50%; transform:translateY(-50%); color:#A6B0BD; font-size:13px; pointer-events:none}
+.sw input[type=text]:hover{border-color:var(--silver-d); background-color:var(--white)}
+.sw input[type=text]:focus{border-color:var(--green); background-color:var(--white); box-shadow:var(--ring-green)}
 select.fs{
   background:var(--mist); border:1.5px solid transparent; border-radius:var(--r);
   font-family:"DM Sans",sans-serif; font-size:13px; font-weight:500; padding:9px 32px 9px 12px; outline:none; cursor:pointer; color:var(--carbon);
@@ -1595,7 +1605,7 @@ function renderSummary(rows) {
       +'</div>'
       // ── Phase 4 filter controls row ──────────────────────────────────────────
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 2px 0">'
-        +'<div class="sw" style="min-width:160px;max-width:220px"><span class="si">🔍</span><input type="text" id="search" placeholder="Store or CDF ref… (⌘K)" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
+        +'<div class="sw" style="min-width:180px;max-width:260px"><input type="text" id="search" placeholder="Search store or CDF…" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
         +'<select class="fs" id="f-route" onchange="renderAll()"><option value="">All Routes</option><option value="Direct">Direct</option><option value="Via SDC">Via SDC</option><option value="Via CDC">Via CDC</option></select>'
         +'<select class="fs" id="f-type" onchange="renderAll()"><option value="">All Types</option><option value="Regular">Regular</option><option value="Spare Parts">Spare Parts</option><option value="Shopee">Shopee</option><option value="Supplies">Supplies</option></select>'
         +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="7" min="1" max="60" onchange="renderAll()"> days</div>'
