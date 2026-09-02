@@ -644,7 +644,6 @@ select.ms{appearance:none; -webkit-appearance:none; background-image:url("data:i
   select.fs{font-size:12px; padding:8px 30px 8px 10px}
   .dw{font-size:11px} .dw input{width:40px; padding:5px 6px}
   .btn-toggle{font-size:11px; padding:6px 10px}
-  #month-sel{min-width:0; flex:1}
 
   .ph-summary{grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:12px}
   .phc{padding:13px 14px}
@@ -763,7 +762,6 @@ select.ms{appearance:none; -webkit-appearance:none; background-image:url("data:i
   <div class="sticky-bar">
   <div class="controls">
     <div class="crow">
-      <select class="fs" id="month-sel" onchange="setMonth(this.value)" style="font-weight:600;min-width:130px"></select>
       <div class="sync-info" id="sync-info"></div>
     </div>
   </div>
@@ -1220,16 +1218,9 @@ function startApp() {
   const hideBtn = document.getElementById('hide-recv-btn');
   if (hideBtn) hideBtn.classList.toggle('active', S.hideReceived);
 
-  // Month tabs
-  const sel = document.getElementById('month-sel');
-  // Only populate months that exist in the data (or all 12 if no data yet)
-  const dataMonths = [...new Set((S.records.length ? S.records : OFFLINE_DATA).map(r=>r.month))];
-  const showMonths = MONTHS.filter(m => dataMonths.includes(m));
-  const listToShow = showMonths.length ? showMonths : MONTHS;
-  sel.innerHTML = listToShow.map(m =>
-    `<option value="${m}"${m===S.month?' selected':''}>${m.charAt(0)+m.slice(1).toLowerCase()}</option>`
-  ).join('');
-
+  // Month filtering was removed: a July ticket still in transit is work that
+  // needs doing in September, and scoping the view to one month hid it.
+  // S.month survives only as the default month stamped on a NEW manual record.
   loadData();
 
   // Fetch stores once at login (non-blocking) — scoped to user's assigned stores via Bible
@@ -1276,7 +1267,7 @@ async function loadData() {
     } else {
       records = await gasGet('getCDFs', {
         username: S.user.username,
-        month:    S.month
+        // no month — the Hub shows every ticket regardless of age
       });
       setConn('online', 'Live');
       // Normalize date fields from Sheets (may arrive as full timestamp strings)
@@ -1302,7 +1293,7 @@ async function loadData() {
 
     // Month filter on offline data (server filters when online)
     if (CFG.offline) {
-      records = records.filter(r => r.month === S.month);
+      // month filter removed — show every ticket
     }
 
     S.records = records;
@@ -1345,7 +1336,7 @@ async function loadData() {
     setConn('offline', 'Offline');
     toast('Could not sync: ' + e.message, 'warn');
     // Fall back to offline data
-    S.records = OFFLINE_DATA.filter(r => r.month === S.month);
+    S.records = OFFLINE_DATA.slice();
     renderAll();
   }
 }
@@ -1391,8 +1382,7 @@ function renderAll() {
   if (pill) pill.textContent = total + ' CDF' + (total !== 1 ? 's' : '');
   const rc = document.getElementById('rc');
   if (rc) rc.textContent = filtered.length < total ? filtered.length + ' shown' : '';
-  document.getElementById('tcard-title').textContent =
-    S.month.charAt(0) + S.month.slice(1).toLowerCase() + ' — CDF Records';
+  document.getElementById('tcard-title').textContent = 'All CDF Records';
 }
 
 
@@ -4708,11 +4698,8 @@ async function deleteRecord(uid) {
 }
 
 /* ══════════════════ NAV HELPERS ══════════════════ */
-function setMonth(m) {
-  S.month = m; S.expandedId=null;
-  document.querySelectorAll('.mtab').forEach(el=>el.classList.toggle('active',el.textContent===m.slice(0,3)));
-  loadData();
-}
+// setMonth removed with the month filter. New records default to the current
+// month via S.month; the month is still editable per record in the edit modal.
 
 function setStatusFilter(k) {
   // Legacy — used by dispatch cards inside Phase 4 expanded panel
@@ -4786,7 +4773,7 @@ function exportCSV() {
   });
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
-  a.download=`acacia-dispatch-${S.month.toLowerCase()}.csv`;
+  a.download=`acacia-dispatch-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   toast('CSV exported');
 }
