@@ -1091,7 +1091,10 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', IS:'#22A749', COORDINATOR:'#00695C'};
 
 // Phase 4 status cards. Every key in STATUS_META gets a card, so the breakdown
 // always accounts for every record in the phase. Workflow order, not alphabetical.
-const P4_STATUS_ORDER = ['Preparing Order','Pending Dispatch','In Transit','On Hold','Received','Completed'];
+// 'Completed' is in STATUS_META but nothing in the app ever sets it — Received is
+// the end state — so it gets no card. Any record that somehow holds it still
+// surfaces via the Unrecognised Status catch-all rather than vanishing.
+const P4_STATUS_ORDER = ['Preparing Order','Pending Dispatch','In Transit','On Hold','Received'];
 const P4_STATUS_SF = {
   'Preparing Order':'p4_prep', 'Pending Dispatch':'p4_pd', 'In Transit':'p4_tr',
   'On Hold':'p4_hold', 'Received':'p4_recv', 'Completed':'p4_comp'
@@ -1579,7 +1582,8 @@ function renderSummary(rows) {
     // Count the strays so a mismatch reports itself instead of hiding.
     let oddStatus = 0;
     all.filter(r=>r.storeStatus==='Approved').forEach(r=>{
-      if(cnt[r.status]!==undefined) cnt[r.status]++; else oddStatus++;
+      if(P4_STATUS_SF[r.status] && P4_STATUS_ORDER.includes(r.status)) cnt[r.status]++;
+      else oddStatus++;   // includes 'Completed', which has no card by design
     });
     const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
     // One-time legacy migration. EXECUTIVE only: it writes straight into Phase 4,
@@ -2841,7 +2845,12 @@ async function p4ParseMigrationFile(file) {
     };
     if (C.store<0 || C.cdf<0) throw new Error('Missing the Store or CDF Number column.');
 
-    const existing = new Set((S.records||[]).map(r=>String(r.cdf||'').trim()));
+    // Map, not a Set: a partially-migrated record (addCDF landed, the approval
+    // write did not) needs repairing, not skipping — otherwise a re-run can
+    // never rescue it and it sits stranded in Phase 3 forever.
+    const existingByCdf = new Map((S.records||[]).map(r=>[String(r.cdf||'').trim(), r]));
+    const isFullyMigrated = r => String(r.storeStatus||'')==='Approved'
+                              && String(r.fulfillStatus||'')!=='';
     const staged = [], problems = [];
     const seen = new Set();
     for (let i=hdrIdx+1;i<rows.length;i++){
@@ -2852,12 +2861,14 @@ async function p4ParseMigrationFile(file) {
       if (!cdf)   { problems.push(`row ${i+1}: no CDF number`); continue; }
       if (!store) { problems.push(`${cdf}: no store`); continue; }
       if (seen.has(cdf))     { problems.push(`${cdf}: duplicated inside the file`); continue; }
-      if (existing.has(cdf)) { problems.push(`${cdf}: already in the Hub — skipped`); continue; }
+      const prior = existingByCdf.get(cdf);
+      if (prior && isFullyMigrated(prior)) { problems.push(`${cdf}: already migrated — skipped`); continue; }
       seen.add(cdf);
       const prep = p4ToISODate(r[C.prep]);
       const route = String(r[C.route]||'').trim() || 'Unknown';
       const leg1 = p4ToISODate(r[C.leg1]), leg2 = p4ToISODate(r[C.leg2]);
       staged.push({
+        _repairId: prior ? prior.id : null,   // set = record exists, only needs the Phase 4 write
         cdf, store, route,
         status: String(r[C.status]||'').trim() || 'In Transit',
         type:   String(r[C.type]||'').trim()   || 'Regular',
@@ -2904,6 +2915,8 @@ async function p4ParseMigrationFile(file) {
     document.getElementById('p4-mig-summary').style.display='';
     document.getElementById('p4-mig-summary').innerHTML =
       `<strong>${staged.length}</strong> CDF${staged.length!==1?'s':''} ready to import into Phase 4 · `
+      + (staged.filter(s=>s._repairId).length
+          ? `${staged.filter(s=>s._repairId).length} of them already exist and will be repaired into Phase 4 · ` : '')
       + `${staged.filter(s=>s.status==='In Transit').length} In Transit · `
       + `${staged.filter(s=>s.status==='Pending Dispatch').length} Pending Dispatch`;
 
@@ -2935,7 +2948,7 @@ async function p4ConfirmMigrate() {
   btn.disabled = true; btn.style.opacity='.6';
 
   const stamp = `Migrated from legacy CDF tracking ${new Date().toISOString().slice(0,10)}`;
-  let done=0, failed=0, completed=0; const errors=[];
+  let done=0, repaired=0, failed=0, completed=0; const errors=[];
   const total = P4M.staged.length;
 
   // addCDF cannot set the approval fields (buildCDFRecord hardcodes them blank),
@@ -2943,17 +2956,26 @@ async function p4ConfirmMigrate() {
   // no backend change. storeStatus='Approved' is what puts it in Phase 4.
   const importOne = async (s) => {
     try {
-      const created = await gasPost('addCDF', {
-        username:S.user.username, cdf:s.cdf, store:s.store, month:s.month,
-        type:s.type, route:s.route, status:s.status,
-        dWhs:s.dWhs, dSdc:s.dSdc, dDirect:s.dDirect, dCdc:s.dCdc,
-        dSdc2:s.dSdc2, dCdc2:s.dCdc2,
-        boxes:s.boxes, truck:s.truck, cas:s.cas, acaciaRef:s.acaciaRef,
-        remarks: s.remarks ? `${s.remarks} · ${stamp}` : stamp,
-      });
+      // A repair target already exists — it just never got its Phase 4 write.
+      // Only the update is needed; re-running addCDF would throw on the duplicate.
+      let id = s._repairId;
+      if (!id) {
+        const created = await gasPost('addCDF', {
+          username:S.user.username, cdf:s.cdf, store:s.store, month:s.month,
+          type:s.type, route:s.route, status:s.status,
+          dWhs:s.dWhs, dSdc:s.dSdc, dDirect:s.dDirect, dCdc:s.dCdc,
+          dSdc2:s.dSdc2, dCdc2:s.dCdc2,
+          boxes:s.boxes, truck:s.truck, cas:s.cas, acaciaRef:s.acaciaRef,
+          remarks: s.remarks ? `${s.remarks} · ${stamp}` : stamp,
+        });
+        id = created.id;
+      }
       const ts = new Date().toISOString();
       await gasPost('updateCDF', {
-        username:S.user.username, id:created.id,
+        username:S.user.username, id,
+        // Repairs re-assert status from the file: a stranded record never had it
+        // applied properly, and the Status column is the source of truth.
+        status: s.status,
         smgrStatus:'Approved',  smgrApprovedBy:S.user.username,  smgrApprovedAt:ts,
         storeStatus:'Approved', storeUpdatedBy:S.user.username,  storeUpdatedAt:ts,
         // These goods have already left the warehouse, so the fulfilment step is
@@ -2962,13 +2984,11 @@ async function p4ConfirmMigrate() {
         // already shipped, and (b) leave every record's dispatch dates LOCKED —
         // p6Locked only opens for 'Actuals Logged' or 'Partial' — so the IA
         // could not edit a leg date or mark anything Received.
-        // `status` is deliberately NOT sent: the Status column in the file is
-        // the source of truth for which card the ticket lands in.
         fulfillStatus:'Actuals Logged', fulfillBy:S.user.username, fulfillAt:ts,
         fulfillNotes: stamp,
         coordNotes: stamp,
       });
-      done++;
+      if (s._repairId) repaired++; else done++;
     } catch(err) {
       failed++; errors.push(`${s.cdf}: ${err.message}`);
     } finally {
@@ -2981,7 +3001,10 @@ async function p4ConfirmMigrate() {
 
   await loadData();
   p4CloseMigrateModal();
-  let msg = `✅ Migrated ${done} CDF${done!==1?'s':''} into Phase 4.`;
+  const bits2=[];
+  if (done)     bits2.push(`created ${done}`);
+  if (repaired) bits2.push(`repaired ${repaired} that were stuck outside Phase 4`);
+  let msg = bits2.length ? `✅ Migration — ${bits2.join(' · ')}.` : '⚠ Nothing was applied.';
   if (failed) msg += ` ⚠ ${failed} failed: ${errors.slice(0,3).join(', ')}${errors.length>3?'…':''}`;
   toast(msg);
 }
