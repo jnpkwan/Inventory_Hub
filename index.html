@@ -1310,10 +1310,14 @@ async function loadData() {
       });
     }
 
-    // Role filter on offline data
+    // Role filter on offline data — same rule as the server:
+    // '*' = every store · a list = those stores · blank = none.
     if (CFG.offline && (S.user.role === 'IS' || S.user.role === 'COORDINATOR')) {
-      const assigned = (S.user.assignedStores||'').split(',').map(s=>s.trim().toUpperCase());
-      records = records.filter(r => assigned.includes((r.store||'').toUpperCase()));
+      const raw = (S.user.assignedStores || '').trim();
+      if (raw !== '*') {
+        const assigned = raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+        records = records.filter(r => assigned.includes((r.store||'').toUpperCase()));
+      }
     }
 
     // Month filter on offline data (server filters when online)
@@ -4926,15 +4930,16 @@ const P1_YELLOW_VALUE = 500;
 /* ── Role helpers ────────────────────────────────────────────────────────── */
 function p1CanEdit()      { return S.user && (S.user.role === 'IS' || S.user.role === 'EXECUTIVE'); }
 function p1AssignedSet()  {
-  // Returns Set of uppercase store names this user is assigned to, or null = all stores.
-  // null means "no filter" — applies to EXECUTIVE and to IS users with blank/wildcard assignedStores.
+  // Returns a Set of uppercase store names this user may see, or null = all stores.
+  // One rule everywhere:  '*' = every store  ·  a list = those stores  ·  blank = none.
+  // Blank previously returned null here, i.e. "show everything", while the server
+  // reads blank as no access at all — so a user with an empty cell saw every store
+  // listed in the UI and zero records behind it.
   if (!S.user) return null;
   if (S.user.role === 'EXECUTIVE') return null;
   const raw = (S.user.assignedStores || '').trim();
-  if (!raw || raw === '*') return null;           // blank or wildcard → no filter
-  const stores = raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-  if (!stores.length) return null;               // nothing parsed → no filter
-  return new Set(stores);
+  if (raw === '*') return null;
+  return new Set(raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
 }
 
 /* ── Workspace render — main entry from renderAll ────────────────────────── */
