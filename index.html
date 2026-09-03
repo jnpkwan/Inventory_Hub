@@ -1607,9 +1607,15 @@ function renderSummary(rows) {
       // a status bucket, so it does not belong in the sum, but this is where it
       // reads best in the workflow. Falls back to the end if On Hold ever moves.
       +(() => {
-        const cards = P4_STATUS_ORDER.map(k =>
+        // 'Preparing Order' is a status bucket; 'WHS Prepare Order' above is a
+        // fulfilment overlay. Not the same thing, but they overlap almost always,
+        // so the empty card is just noise — show it only when it holds something.
+        // It stays in P4_STATUS_ORDER so it is still COUNTED, and the cards keep
+        // summing to the phase header.
+        const shown = P4_STATUS_ORDER.filter(k => k !== 'Preparing Order' || cnt[k] > 0);
+        const cards = shown.map(k =>
           mkSub(P4_STATUS_SF[k], STATUS_META[k].icon, k, cnt[k], STATUS_META[k].dot));
-        const at = P4_STATUS_ORDER.indexOf('On Hold');
+        const at = shown.indexOf('On Hold');
         cards.splice(at >= 0 ? at + 1 : cards.length, 0,
           mkSub('p4_attn', '🚨', 'Needs Attention', attn, '#C0392B'));   // red — blocked
         return cards.join('');
