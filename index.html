@@ -1660,7 +1660,7 @@ function renderSummary(rows) {
         +'<button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records"><span class="tog-dot"></span> Hide Received</button>'
         // Export by breakdown card. This block is already the Phase 4 branch, so
         // no phase check is needed — no other phase has these buckets.
-        +'<button class="btn-toggle" onclick="p4OpenExportModal()" title="Export Phase 4 tickets to CSV" style="margin-left:auto">⬇ Export</button>'
+        +'<button class="btn-toggle" onclick="p4OpenExportModal()" title="Export Phase 4 tickets to Excel" style="margin-left:auto">⬇ Export</button>'
       +'</div>';
   }
 
@@ -3092,7 +3092,7 @@ function p4OpenExportModal() {
       </div>
       <div style="padding:14px 24px 20px;border-top:1px solid var(--silver);display:flex;gap:10px;justify-content:flex-end">
         <button onclick="p4CloseExportModal()" style="padding:9px 18px;border:1px solid var(--silver);background:#fff;border-radius:8px;font-size:12px;cursor:pointer">Cancel</button>
-        <button id="p4x-btn" onclick="p4RunExport()" style="padding:9px 20px;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">⬇ Download CSV</button>
+        <button id="p4x-btn" onclick="p4RunExport()" style="padding:9px 20px;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">⬇ Download Excel</button>
       </div>
     </div>`;
   // '__attn' narrows the selection rather than adding to it, so it starts off.
@@ -3124,21 +3124,46 @@ function p4ExportUpdateCount() {
 function p4RunExport() {
   const rows = p4ExportSelection();
   if (!rows.length) { toast('Nothing selected to export.','warn'); return; }
-  const head = ['Status','Store','CDF No.','Acacia Ref','Type','Route',
-                'Date Prepared (WHS)','WHS → SDC','WHS → Store (Direct)','WHS → CDC',
-                'SDC → Store','CDC → Store','Date Received','Transit Days',
-                'Boxes','Truck / Plate No.','CAS No.','Breakdown Card','Remarks'];
-  const esc = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
-  const lines = [head.join(',')];
-  rows.forEach(r => lines.push([
-    r.status, r.store, r.cdf, r.acaciaRef||'', r.type, r.route,
+  // Headers mirror the record modal's own field labels exactly — 'Store Order'
+  // and 'CDF Ref' mean the same thing here as they do on screen.
+  const head = ['Status','Store Name','Store Order','CDF Ref','Type','Route',
+                'WHS','WHS \u2192 SDC','WHS \u2192 Store (Direct)','WHS \u2192 CDC',
+                'SDC \u2192 Stores','CDC \u2192 Stores','Received in Store','Transit Days',
+                'No. of Boxes','Truck / Plate No.','CAS No.','Remarks'];
+  // Numbers stay numbers so the sheet can total and sort them; dates stay as
+  // YYYY-MM-DD text, which is what the Hub stores and what sorts correctly.
+  const num = v => { const n = parseFloat(v); return isFinite(n) ? n : ''; };
+  const aoa = [head];
+  rows.forEach(r => aoa.push([
+    r.status||'', r.store||'', r.cdf||'', r.acaciaRef||'', r.type||'', r.route||'',
     r.dWhs||'', r.dSdc||'', r.dDirect||'', r.dCdc||'', r.dSdc2||'', r.dCdc2||'', r.dRecv||'',
-    tdDays(r) ?? '', r.boxes||'', r.truck||'', r.cas||'', p4Bucket(r)||'', r.remarks||''
-  ].map(esc).join(',')));
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['\uFEFF'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
-  a.download = `acacia-phase4-${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
+    tdDays(r) ?? '', num(r.boxes), r.truck||'', r.cas||'', r.remarks||''
+  ]));
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [18,24,16,14,13,12, 13,13,17,13, 14,14,15, 11, 11,17,13, 34].map(w=>({wch:w}));
+  // No freeze panes: xlsx-js-style (the build the Hub loads) ignores !freeze,
+  // !views and the 'A2' form alike — verified. AutoFilter does work, and is the
+  // more useful of the two for a flat export.
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:rows.length, c:head.length-1}}) };
+  for (let c = 0; c < head.length; c++) {
+    const ref = XLSX.utils.encode_cell({r:0, c});
+    if (ws[ref]) ws[ref].s = p1CellStyle('1B4DA0', true, 'FFFFFF', 9, 'center');
+  }
+  for (let i = 0; i < rows.length; i++) {
+    const attn = S._attnIds && S._attnIds.has(rows[i].id||rows[i].cdf);
+    // Rows needing attention get a soft tint so they stand out in the sheet.
+    const bg = attn ? 'FDECEA' : (i % 2 ? 'F5F5F5' : 'FFFFFF');
+    for (let c = 0; c < head.length; c++) {
+      const ref = XLSX.utils.encode_cell({r:i+1, c});
+      if (!ws[ref]) continue;
+      const centred = [6,7,8,9,10,11,12,13,14].includes(c);
+      ws[ref].s = p1CellStyle(bg, false, '2C2C2C', 9, centred ? 'center' : 'left');
+    }
+  }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Phase 4 Tickets');
+  XLSX.writeFile(wb, `acacia-phase4-${new Date().toISOString().slice(0,10)}.xlsx`);
   p4CloseExportModal();
   toast(`Exported ${rows.length} Phase 4 ticket${rows.length!==1?'s':''}`);
 }
