@@ -1477,10 +1477,7 @@ function getFiltered() {
       if(sf==='p4_odd')    { if(p4Bucket(r) !== 'Unrecognised Status')  return false; }
       // Every generated status card filters to its own status.
       const sfStatus = Object.keys(P4_STATUS_SF).find(k => P4_STATUS_SF[k] === sf);
-      if(sfStatus) {
-        if(fl === '' || fl === 'Sent to WHS')                     return false;  // owned by the fulfilment cards
-        if(r.status !== sfStatus)                                 return false;
-      }
+      if(sfStatus)         { if(p4Bucket(r) !== sfStatus)         return false; }
       if(sf==='p4_attn')   { if(!S._attnIds||!S._attnIds.has(uid)) return false; }
     }
     return true;
@@ -1597,13 +1594,15 @@ function renderSummary(rows) {
     // process, not an overlay: once a ticket is sent to the warehouse it belongs
     // there and nowhere else — counting it in its status bucket as well would
     // show one ticket twice.
+    // Counted through p4Bucket, the same function the click-filters and the
+    // export use, so a card's number and its contents can never disagree.
     let oddStatus = 0, awaitAct = 0, pendWhs = 0;
     all.filter(r=>r.storeStatus==='Approved').forEach(r=>{
-      const fl = String(r.fulfillStatus||'');
-      if(fl === '')             { pendWhs++;  return; }   // warehouse hasn't started
-      if(fl === 'Sent to WHS')  { awaitAct++; return; }   // sent, awaiting the count
-      if(P4_STATUS_SF[r.status] && P4_STATUS_ORDER.includes(r.status)) cnt[r.status]++;
-      else oddStatus++;   // 'Completed', or actuals logged but status never advanced
+      const b = p4Bucket(r);
+      if(b === 'WHS Prepare Order')      pendWhs++;
+      else if(b === 'Awaiting Actual Count') awaitAct++;
+      else if(cnt[b] !== undefined)      cnt[b]++;
+      else                               oddStatus++;
     });
     const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
     // One-time legacy migration. EXECUTIVE only: it writes straight into Phase 4,
@@ -3046,6 +3045,18 @@ function p4Bucket(r) {
   if (fl === '')            return 'WHS Prepare Order';
   if (fl === 'Sent to WHS') return 'Awaiting Actual Count';
   if (P4_STATUS_SF[r.status] && P4_STATUS_ORDER.includes(r.status)) return r.status;
+  // Two statuses exist in the vocabulary but have no card of their own. Map them
+  // rather than dumping them in the catch-all, so nobody has to re-save a record
+  // just to make a card go away:
+  //   'Preparing Order' — past the warehouse with no leg dates yet, which is
+  //     exactly what the save derivation now calls Pending Dispatch. Older rows
+  //     still carry the stale value.
+  //   'Completed' — an end state; the app already treats it as Received
+  //     everywhere else (hideReceived, the attention flag).
+  if (r.status === 'Preparing Order') return 'Pending Dispatch';
+  if (r.status === 'Completed')       return 'Received';
+  // Anything left is a value the system never produces — a hand edit or a typo.
+  // It keeps its own card so it stays visible and fixable.
   return 'Unrecognised Status';
 }
 
