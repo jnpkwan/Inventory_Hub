@@ -1097,17 +1097,16 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', IS:'#22A749', COORDINATOR:'#00695C'};
 // 'Completed' is in STATUS_META but nothing in the app ever sets it — Received is
 // the end state — so it gets no card. Any record that somehow holds it still
 // surfaces via the Unrecognised Status catch-all rather than vanishing.
-const P4_STATUS_ORDER = ['Preparing Order','Pending Dispatch','In Transit','On Hold','Received'];
+const P4_STATUS_ORDER = ['Pending Dispatch','In Transit','On Hold','Received'];
 const P4_STATUS_SF = {
-  'Preparing Order':'p4_whs', 'Pending Dispatch':'p4_pd', 'In Transit':'p4_tr',
+  'Pending Dispatch':'p4_pd', 'In Transit':'p4_tr',
   'On Hold':'p4_hold', 'Received':'p4_recv', 'Completed':'p4_comp'
 };
-// 'WHS Prepare Order' and 'Preparing Order' were two cards for what is, in the
-// live workflow, one thing: a Phase 4 ticket the warehouse has not started. They
-// are merged — the status bucket keeps the WHS wording, so it still counts toward
-// the phase total instead of sitting outside it as an overlay.
-const P4_STATUS_LABEL = { 'Preparing Order':'WHS Prepare Order' };
-const P4_STATUS_ICON  = { 'Preparing Order':'🏭' };
+// WHS Prepare Order and Awaiting Actual Count are FULFILMENT states
+// (fulfillStatus), not dispatch statuses. They were deliberately kept as separate
+// axes when Phase 4 was built: `status` stays frozen at 'Preparing Order' until
+// actuals are logged, so it cannot be used to tell whether the warehouse has
+// started. Each record is owned by exactly one card, fulfilment first.
 
 /* ══════════════════ OFFLINE DATA ══════════════════ */
 const OFFLINE_DATA = [];
@@ -1469,12 +1468,13 @@ function getFiltered() {
       if(sf==='p3_pdf')    { if(sm!=='Approved'||(r.pdfStatus||'')==='Generated') return false; }
       if(sf==='p3_coord')  { if(sm!=='Approved'||st!=='')         return false; }
       if(sf==='p3_stchg')    { if(st!=='Changes Requested')         return false; }
+      if(sf==='p4_whs')    { if(st!=='Approved'||fl!=='')         return false; }
       if(sf==='p4_act')    { if(fl!=='Sent to WHS')               return false; }
       if(sf==='p4_odd')    { if(STATUS_META[r.status])            return false; }
       // Every generated status card filters to its own status.
       const sfStatus = Object.keys(P4_STATUS_SF).find(k => P4_STATUS_SF[k] === sf);
       if(sfStatus) {
-        if(fl === 'Sent to WHS')                                  return false;  // owned by Awaiting Actual Count
+        if(fl === '' || fl === 'Sent to WHS')                     return false;  // owned by the fulfilment cards
         if(r.status !== sfStatus)                                 return false;
       }
       if(sf==='p4_attn')   { if(!S._attnIds||!S._attnIds.has(uid)) return false; }
@@ -1593,11 +1593,13 @@ function renderSummary(rows) {
     // process, not an overlay: once a ticket is sent to the warehouse it belongs
     // there and nowhere else — counting it in its status bucket as well would
     // show one ticket twice.
-    let oddStatus = 0, awaitAct = 0;
+    let oddStatus = 0, awaitAct = 0, pendWhs = 0;
     all.filter(r=>r.storeStatus==='Approved').forEach(r=>{
-      if(String(r.fulfillStatus||'') === 'Sent to WHS') { awaitAct++; return; }
+      const fl = String(r.fulfillStatus||'');
+      if(fl === '')             { pendWhs++;  return; }   // warehouse hasn't started
+      if(fl === 'Sent to WHS')  { awaitAct++; return; }   // sent, awaiting the count
       if(P4_STATUS_SF[r.status] && P4_STATUS_ORDER.includes(r.status)) cnt[r.status]++;
-      else oddStatus++;   // includes 'Completed', which has no card by design
+      else oddStatus++;   // 'Completed', or actuals logged but status never advanced
     });
     const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
     // One-time legacy migration. EXECUTIVE only: it writes straight into Phase 4,
@@ -1625,12 +1627,8 @@ function renderSummary(rows) {
         // into the status bucket keeps the card inside the total instead of
         // floating outside it.
         const shown = P4_STATUS_ORDER;
-        const cards = shown.map(k => mkSub(
-          P4_STATUS_SF[k],
-          P4_STATUS_ICON[k]  || STATUS_META[k].icon,
-          P4_STATUS_LABEL[k] || k,
-          cnt[k],
-          k === 'Preparing Order' ? '#F9A825' : STATUS_META[k].dot));
+        const cards = shown.map(k =>
+          mkSub(P4_STATUS_SF[k], STATUS_META[k].icon, k, cnt[k], STATUS_META[k].dot));
         // Cards follow the real dispatch sequence:
         //   WHS Prepare Order → send to WHS → Awaiting Actual Count →
         //   WHS + IA confirm actuals → Pending Dispatch → sent → In Transit
@@ -1642,9 +1640,11 @@ function renderSummary(rows) {
         const at = shown.indexOf('On Hold');
         cards.splice(at >= 0 ? at + 1 : cards.length, 0,
           mkSub('p4_attn', '🚨', 'Needs Attention', attn, '#C0392B'));   // red — blocked
-        const wp = shown.indexOf('Preparing Order');
-        cards.splice(wp >= 0 ? wp + 1 : 0, 0,
-          mkSub('p4_act', '📋', 'Awaiting Actual Count', awaitAct, '#F9A825'));
+        // Fulfilment stages lead the sequence:
+        //   WHS Prepare Order → sent → Awaiting Actual Count → confirmed →
+        //   Pending Dispatch → sent out → In Transit → Received
+        cards.unshift(mkSub('p4_act', '📋', 'Awaiting Actual Count', awaitAct, '#F9A825'));
+        cards.unshift(mkSub('p4_whs', '🏭', 'WHS Prepare Order',     pendWhs,  '#F9A825'));
         return cards.join('');
       })()
       // Only rendered when non-zero: a record whose status is not one of the six
