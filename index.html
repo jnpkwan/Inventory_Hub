@@ -1470,7 +1470,11 @@ function getFiltered() {
       if(sf==='p3_stchg')    { if(st!=='Changes Requested')         return false; }
       if(sf==='p4_whs')    { if(st!=='Approved'||fl!=='')         return false; }
       if(sf==='p4_act')    { if(fl!=='Sent to WHS')               return false; }
-      if(sf==='p4_odd')    { if(STATUS_META[r.status])            return false; }
+      // Use the same bucketing the card and the export use. The old test was
+      // `STATUS_META[r.status]`, which excluded 'Preparing Order' — a status the
+      // card counts as odd because it has no card of its own. The card said 1 and
+      // clicking it showed nothing, so the record could not be found or fixed.
+      if(sf==='p4_odd')    { if(p4Bucket(r) !== 'Unrecognised Status')  return false; }
       // Every generated status card filters to its own status.
       const sfStatus = Object.keys(P4_STATUS_SF).find(k => P4_STATUS_SF[k] === sf);
       if(sfStatus) {
@@ -2578,20 +2582,20 @@ function getFormVals() {
       const hub1v = document.getElementById('f-hub1').value;
       const hub2v = document.getElementById('f-hub2').value;
       const dWhs  = document.getElementById('f-dWhs').value;
+      // Once actuals are confirmed the ticket is out of the warehouse's hands, so
+      // the floor here is 'Pending Dispatch' — never 'Preparing Order'. That used
+      // to be the fallback, which silently pushed any edited ticket without leg
+      // dates into a status that has no card, so it vanished into Unrecognised.
+      // This now matches submitActualsLogged, which already bottoms out at
+      // 'Pending Dispatch'; the two derivations previously disagreed.
       if (dRecv) return 'Received';
       if (route === 'Direct') {
         if (hub1v) return 'In Transit';
-        if (dWhs)  return 'Preparing Order';
-      } else if (route === 'Via SDC') {
+      } else if (route === 'Via SDC' || route === 'Via CDC') {
         if (hub2v) return 'In Transit';
         if (hub1v) return 'Pending Dispatch';
-        if (dWhs)  return 'Preparing Order';
-      } else if (route === 'Via CDC') {
-        if (hub2v) return 'In Transit';
-        if (hub1v) return 'Pending Dispatch';
-        if (dWhs)  return 'Preparing Order';
       }
-      return 'Preparing Order';
+      return 'Pending Dispatch';
     })(),
     dWhs:    document.getElementById('f-dWhs').value,
     dSdc:    isSdc  ? hub1 : '',
