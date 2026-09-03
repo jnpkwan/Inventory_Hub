@@ -1732,6 +1732,21 @@ function renderTable(rows) {
   const isP34 = pf==='p3';
   const cols  = isP34 ? 7 : 12;
 
+  // Which identifier leads the table depends on the Phase 4 card in view.
+  // Up to the actual count there is no CDF Ref yet, so Store Order leads. Once
+  // actuals are confirmed the CDF Ref exists and is the link to the Acacia
+  // system, so it takes the first column from there on.
+  const P4_REF_CARDS = ['p4_pd','p4_tr','p4_hold','p4_attn','p4_recv'];
+  const leadRef = pf === 'p4' && P4_REF_CARDS.includes(S.subFilter);
+  // A migrated or not-yet-referenced ticket has a blank acaciaRef. Falling back
+  // to the Store Order in muted type keeps the row identifiable and makes the
+  // missing ref visible, rather than leaving 60-odd blank cells.
+  const leadCell = r => leadRef
+    ? (r.acaciaRef
+        ? esc(r.acaciaRef)
+        : `<span style="color:#AEB6C2" title="No CDF Ref yet — showing Store Order">${esc(r.cdf)}</span>`)
+    : esc(r.cdf);
+
   // ── Dynamic thead ─────────────────────────────────────────────────────────
   const thead = document.getElementById('thead');
   if(isP34) {
@@ -1746,7 +1761,7 @@ function renderTable(rows) {
     </tr>`;
   } else {
     thead.innerHTML = `<tr>
-      <th onclick="sortBy('cdf')">Store Order</th>
+      <th onclick="sortBy('${leadRef?'acaciaRef':'cdf'}')">${leadRef?'CDF Ref':'Store Order'}</th>
       <th onclick="sortBy('store')">Store</th>
       <th onclick="sortBy('route')">Route</th>
       <th onclick="sortBy('type')">Type</th>
@@ -1797,7 +1812,7 @@ function renderTable(rows) {
 
     return `
       <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="toggleExpand('${esc(uid)}')" data-id="${esc(uid)}">
-        <td class="td-cdf">${esc(r.cdf)}</td>
+        <td class="td-cdf">${leadCell(r)}</td>
         <td class="td-store">${esc(r.store)}</td>
         <td class="td-dim">${r.route}</td>
         <td class="td-dim">${r.type}</td>
