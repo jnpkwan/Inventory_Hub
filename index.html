@@ -1473,7 +1473,10 @@ function getFiltered() {
       if(sf==='p4_odd')    { if(STATUS_META[r.status])            return false; }
       // Every generated status card filters to its own status.
       const sfStatus = Object.keys(P4_STATUS_SF).find(k => P4_STATUS_SF[k] === sf);
-      if(sfStatus)         { if(r.status !== sfStatus)            return false; }
+      if(sfStatus) {
+        if(fl === 'Sent to WHS')                                  return false;  // owned by Awaiting Actual Count
+        if(r.status !== sfStatus)                                 return false;
+      }
       if(sf==='p4_attn')   { if(!S._attnIds||!S._attnIds.has(uid)) return false; }
     }
     return true;
@@ -1578,15 +1581,21 @@ function renderSummary(rows) {
       +mkSub('p3_stchg', '🏪','Store Changes Requested',storeChg,  '#C0392B')  // red — blocked
       +'</div>';
   } else if(pf==='p4') {
-    const awaitAct = all.filter(r=>r.fulfillStatus==='Sent to WHS').length;
+
     const cnt={}; Object.keys(STATUS_META).forEach(k=>cnt[k]=0);
     // Every Phase 4 record has exactly one status, so these six buckets should
     // account for all of them. `cnt[r.status]!==undefined` silently dropped any
     // value outside STATUS_META — a blank, or something a legacy import carried
     // in — which is why the status cards summed to one less than the header.
     // Count the strays so a mismatch reports itself instead of hiding.
-    let oddStatus = 0;
+    // Every Phase 4 record lands in exactly ONE flow card, so the cards always
+    // add up to the phase header. "Awaiting Actual Count" is a real stage of the
+    // process, not an overlay: once a ticket is sent to the warehouse it belongs
+    // there and nowhere else — counting it in its status bucket as well would
+    // show one ticket twice.
+    let oddStatus = 0, awaitAct = 0;
     all.filter(r=>r.storeStatus==='Approved').forEach(r=>{
+      if(String(r.fulfillStatus||'') === 'Sent to WHS') { awaitAct++; return; }
       if(P4_STATUS_SF[r.status] && P4_STATUS_ORDER.includes(r.status)) cnt[r.status]++;
       else oddStatus++;   // includes 'Completed', which has no card by design
     });
@@ -1625,9 +1634,10 @@ function renderSummary(rows) {
         // Cards follow the real dispatch sequence:
         //   WHS Prepare Order → send to WHS → Awaiting Actual Count →
         //   WHS + IA confirm actuals → Pending Dispatch → sent → In Transit
-        // Awaiting Actual Count is a fulfilment overlay, not a status bucket, so
-        // it is spliced between the two statuses it sits between rather than
-        // counted. Needs Attention likewise, after On Hold.
+        // Awaiting Actual Count is a genuine stage and IS counted; it just is not
+        // a `status` value, so it is spliced into position rather than mapped.
+        // Needs Attention is the only true overlay — an age flag on records that
+        // are already counted elsewhere.
         // Splice the LATER position first — inserting earlier would shift it.
         const at = shown.indexOf('On Hold');
         cards.splice(at >= 0 ? at + 1 : cards.length, 0,
