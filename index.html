@@ -1658,6 +1658,9 @@ function renderSummary(rows) {
         +'<select class="fs" id="f-type" onchange="renderAll()"><option value="">All Types</option><option value="Regular">Regular</option><option value="Spare Parts">Spare Parts</option><option value="Shopee">Shopee</option><option value="Supplies">Supplies</option></select>'
         +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="'+(S.attnDays||30)+'" min="1" max="180" onchange="S.attnDays=parseInt(this.value)||30; renderAll()"> days</div>'
         +'<button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records"><span class="tog-dot"></span> Hide Received</button>'
+        // Export by breakdown card. This block is already the Phase 4 branch, so
+        // no phase check is needed — no other phase has these buckets.
+        +'<button class="btn-toggle" onclick="p4OpenExportModal()" title="Export Phase 4 tickets to CSV" style="margin-left:auto">⬇ Export</button>'
       +'</div>';
   }
 
@@ -3026,6 +3029,118 @@ async function p4ConfirmMigrate() {
   let msg = bits2.length ? `✅ Migration — ${bits2.join(' · ')}.` : '⚠ Nothing was applied.';
   if (failed) msg += ` ⚠ ${failed} failed: ${errors.slice(0,3).join(', ')}${errors.length>3?'…':''}`;
   toast(msg);
+}
+
+/* ── PHASE 4 EXPORT ────────────────────────────────────────────────────────
+   Export Phase 4 tickets, choosing which breakdown cards to include.
+   Bucketing reuses the SAME ownership chain the cards use, so a bucket's export
+   row count always equals the number on its card.
+   ------------------------------------------------------------------------ */
+function p4Bucket(r) {
+  if (String(r.storeStatus||'') !== 'Approved') return null;
+  const fl = String(r.fulfillStatus||'');
+  if (fl === '')            return 'WHS Prepare Order';
+  if (fl === 'Sent to WHS') return 'Awaiting Actual Count';
+  if (P4_STATUS_SF[r.status] && P4_STATUS_ORDER.includes(r.status)) return r.status;
+  return 'Unrecognised Status';
+}
+
+const P4_EXPORT_BUCKETS = ['WHS Prepare Order','Awaiting Actual Count','Pending Dispatch',
+                           'In Transit','On Hold','Received','Unrecognised Status'];
+
+function p4OpenExportModal() {
+  const all = (S.records||[]).filter(r => String(r.storeStatus||'')==='Approved');
+  const tally = {}; P4_EXPORT_BUCKETS.forEach(b => tally[b]=0);
+  let attn = 0;
+  all.forEach(r => {
+    const b = p4Bucket(r); if (b && tally[b] !== undefined) tally[b]++;
+    if (S._attnIds && S._attnIds.has(r.id||r.cdf)) attn++;
+  });
+
+  let m = document.getElementById('p4-export-modal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'p4-export-modal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:800;align-items:center;justify-content:center;padding:20px';
+    document.body.appendChild(m);
+  }
+  const row = (key,label,n,extra='') => `
+    <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--silver);border-radius:8px;cursor:${n?'pointer':'not-allowed'};opacity:${n?1:.45};background:#fff">
+      <input type="checkbox" class="p4x" value="${key}" ${n?'checked':'disabled'}
+        onchange="p4ExportUpdateCount()" style="width:16px;height:16px;accent-color:var(--blue)">
+      <span style="flex:1;font-size:12.5px;font-weight:600">${label}</span>
+      <span style="font-family:'DM Mono',monospace;font-size:12px;color:#777">${n}</span>
+      ${extra}
+    </label>`;
+
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)">
+      <div style="padding:20px 24px 14px;border-bottom:1px solid var(--silver);display:flex;align-items:center;gap:10px">
+        <span style="font-family:'Montserrat',sans-serif;font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.8px">⬇ Export Phase 4 Tickets</span>
+        <button onclick="p4CloseExportModal()" style="margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:#888">✕</button>
+      </div>
+      <div style="padding:18px 24px">
+        <p style="font-size:12px;color:#666;margin-bottom:12px">Tick the breakdown cards to include. Counts match the cards exactly — every ticket belongs to one.</p>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${P4_EXPORT_BUCKETS.map(b => row(b, b, tally[b])).join('')}
+        </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--silver)">
+          ${row('__attn','🚨 Only those needing attention ('+(S.attnDays||30)+'d+)',attn,
+                '<span style="font-size:10px;color:#999">narrows the above</span>')}
+        </div>
+        <div id="p4x-count" style="margin-top:14px;font-size:12px;font-weight:700;color:var(--green-d)"></div>
+      </div>
+      <div style="padding:14px 24px 20px;border-top:1px solid var(--silver);display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="p4CloseExportModal()" style="padding:9px 18px;border:1px solid var(--silver);background:#fff;border-radius:8px;font-size:12px;cursor:pointer">Cancel</button>
+        <button id="p4x-btn" onclick="p4RunExport()" style="padding:9px 20px;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">⬇ Download CSV</button>
+      </div>
+    </div>`;
+  // '__attn' narrows the selection rather than adding to it, so it starts off.
+  const a = m.querySelector('.p4x[value="__attn"]'); if (a) a.checked = false;
+  m.style.display = 'flex';
+  p4ExportUpdateCount();
+}
+function p4CloseExportModal(){ const m=document.getElementById('p4-export-modal'); if(m) m.style.display='none'; }
+
+function p4ExportSelection() {
+  const boxes = [...document.querySelectorAll('#p4-export-modal .p4x')];
+  const picked = new Set(boxes.filter(b=>b.checked && b.value!=='__attn').map(b=>b.value));
+  const attnOnly = boxes.some(b=>b.value==='__attn' && b.checked);
+  return (S.records||[]).filter(r => {
+    const b = p4Bucket(r);
+    if (!b || !picked.has(b)) return false;
+    if (attnOnly && !(S._attnIds && S._attnIds.has(r.id||r.cdf))) return false;
+    return true;
+  });
+}
+function p4ExportUpdateCount() {
+  const n = p4ExportSelection().length;
+  const el = document.getElementById('p4x-count');
+  if (el) el.textContent = `${n} ticket${n!==1?'s':''} will be exported`;
+  const b = document.getElementById('p4x-btn');
+  if (b) { b.disabled = !n; b.style.opacity = n?1:.5; b.style.cursor = n?'pointer':'not-allowed'; }
+}
+
+function p4RunExport() {
+  const rows = p4ExportSelection();
+  if (!rows.length) { toast('Nothing selected to export.','warn'); return; }
+  const head = ['Status','Store','CDF No.','Acacia Ref','Type','Route',
+                'Date Prepared (WHS)','WHS → SDC','WHS → Store (Direct)','WHS → CDC',
+                'SDC → Store','CDC → Store','Date Received','Transit Days',
+                'Boxes','Truck / Plate No.','CAS No.','Breakdown Card','Remarks'];
+  const esc = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
+  const lines = [head.join(',')];
+  rows.forEach(r => lines.push([
+    r.status, r.store, r.cdf, r.acaciaRef||'', r.type, r.route,
+    r.dWhs||'', r.dSdc||'', r.dDirect||'', r.dCdc||'', r.dSdc2||'', r.dCdc2||'', r.dRecv||'',
+    tdDays(r) ?? '', r.boxes||'', r.truck||'', r.cas||'', p4Bucket(r)||'', r.remarks||''
+  ].map(esc).join(',')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download = `acacia-phase4-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  p4CloseExportModal();
+  toast(`Exported ${rows.length} Phase 4 ticket${rows.length!==1?'s':''}`);
 }
 
 function p3OpenUploadModal() {
