@@ -2406,6 +2406,13 @@ function buildForm(r) {
   r = r || {status:'Preparing Order', route:'Via SDC', type:'Regular', month:S.month};
   // Phase 6 date fields locked until warehouse actuals logged
   const p6Locked = isEdit && !['Actuals Logged','Partial'].includes(r.fulfillStatus||'');
+// CDF Ref is the link to the Acacia system, so once set only an executive may
+// change it. But an IA has to be able to ENTER it. Normally that happens in
+// Confirm Actuals — which migrated tickets skipped, having arrived with actuals
+// already logged — so for them this form is the only way in. It used to be
+// executive-only outright, leaving 123 tickets with no way to get a CDF Ref
+// from the people who actually hold it.
+const refLocked = isEdit && S.user.role !== 'EXECUTIVE' && !!String(r.acaciaRef||'').trim();
   const p6Banner = isEdit && p6Locked ? `
     <div class="alert alert-info" style="margin-bottom:12px;font-size:11.5px">
       ⏸ <strong>Dispatch dates are locked</strong> — confirm actuals in Phase 4 to unlock.
@@ -2423,14 +2430,16 @@ function buildForm(r) {
       <label>Store Order <span class="req">*</span></label>
       <input type="text" id="f-cdf" value="${esc(r.cdf||'')}" placeholder="ACMAC-ORDER-20260515">
     </div><div class="fg">
-      <label>CDF Ref ${isEdit && S.user.role !== 'EXECUTIVE'
+      <label>CDF Ref ${refLocked
         ? '<span style="color:#999;font-weight:400;text-transform:none;font-size:10px">— executives only</span>'
-        : ''}</label>
+        : (isEdit && S.user.role !== 'EXECUTIVE'
+            ? '<span style="color:#999;font-weight:400;text-transform:none;font-size:10px">— locks once saved</span>'
+            : '')}</label>
       ${isEdit ? `
         <input type="text" id="f-acaciaRef"
           value="${esc(r.acaciaRef||'')}"
           placeholder="e.g. CDF-2026-00123"
-          ${S.user.role !== 'EXECUTIVE' ? 'readonly style="background:#f5f5f7;color:#666;cursor:not-allowed"' : ''}>
+          ${refLocked ? 'readonly style="background:#f5f5f7;color:#666;cursor:not-allowed"' : ''}>
       ` : `
         <input type="text" value="" placeholder="Set on warehouse handoff" readonly
           style="background:#f5f5f7;color:#999;cursor:not-allowed">
@@ -2626,10 +2635,12 @@ function getFormVals() {
     truck:   document.getElementById('f-truck').value.trim(),
     cas:     document.getElementById('f-cas').value.trim(),
     remarks: document.getElementById('f-remarks').value.trim(),
-    // acaciaRef (displayed as "CDF Ref") is editable only by executives.
-    // For non-executives, the field is readonly in the form; we omit it from
-    // the payload entirely so the server keeps the existing stored value.
-    ...(S.user.role === 'EXECUTIVE' && document.getElementById('f-acaciaRef')
+    // acaciaRef ("CDF Ref") is sent only when the field was actually editable.
+    // Tied to the input itself rather than to role: an IA can now enter it while
+    // it is blank, and a role check here would have silently dropped what they
+    // typed — success toast, value gone. When locked it is omitted, so the
+    // server keeps the stored value.
+    ...(document.getElementById('f-acaciaRef') && !document.getElementById('f-acaciaRef').readOnly
         ? { acaciaRef: document.getElementById('f-acaciaRef').value.trim() }
         : {})
   };
@@ -4877,7 +4888,10 @@ async function saveRecord() {
   // moment any dispatch date is logged the route has to be a real one, or the
   // hub-date fields and the CDF PDF are describing a route nobody chose.
   if(!isNew) {
-    const anyDispatchDate = !!(vals.dWhs || vals.dSdc || vals.dDirect || vals.dCdc
+    // Dispatch LEGS only. dWhs was in here too, but it is the warehouse-prepared
+    // date and is required on every record — so any ticket with route 'Unknown'
+    // could never be saved at all, whatever the IA was trying to change.
+    const anyDispatchDate = !!(vals.dSdc || vals.dDirect || vals.dCdc
                             || vals.dSdc2 || vals.dCdc2 || vals.dRecv);
     if(anyDispatchDate && (!vals.route || vals.route==='Unknown')) {
       toast('Pumili muna ng Route bago mag-log ng dispatch dates.','err'); return;
