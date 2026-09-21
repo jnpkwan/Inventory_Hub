@@ -1900,7 +1900,11 @@ function buildDetail(r) {
   const role = S.user.role;
   const canEdit       = role==='EXECUTIVE'||role==='IS';
   const canDelete     = role==='EXECUTIVE';
-  const canApproveSM  = role==='EXECUTIVE';
+  // Phase 3 review belongs to the Inventory Associate (role 'IS'). The step was
+  // relabelled from Sales Manager to IA, but this permission was left at
+  // EXECUTIVE-only — so IAs could edit quantities (canEditQty allows IS) yet
+  // could not submit the approval. Name kept per the locked `sm` identifiers.
+  const canApproveSM  = role==='IS' || role==='EXECUTIVE';
   const canApproveStore = role==='COORDINATOR'||role==='EXECUTIVE';
   const canFulfill    = role==='IS'||role==='EXECUTIVE';
 
@@ -3976,7 +3980,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   }
 
   // ── Helper: bottom footer ─────────────────────────────────────────────────
-  function drawFooter() {
+  function drawFooter(pageNo = 1, pageCount = 1) {
     const fy = PH - 8*MM;
     // thin rule
     doc.setDrawColor(...GREY_LIGHT); doc.setLineWidth(0.4);
@@ -3991,7 +3995,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     doc.text('Acacia Home Builders Corporation', PW/2, fy + 10, {align:'center'});
     // Batch + page info on right
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5); doc.setTextColor(190, 195, 210);
-    doc.text(`Batch: ${batchTs}  ·  Page 1 of 1`, PW - MARGIN, fy + 10, {align:'right'});
+    doc.text(`Batch: ${batchTs}  ·  Page ${pageNo} of ${pageCount}`, PW - MARGIN, fy + 10, {align:'right'});
   }
 
   // ── Helper: running store header bar ──────────────────────────────────────
@@ -4011,7 +4015,11 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   // ═══════════════════════════════════════════════════════════════════════════
   // START DRAWING
   // ═══════════════════════════════════════════════════════════════════════════
-  let curY = MARGIN + 7*MM;   // leave room for store bar at top
+  // Printable area. The store bar and footer both sit at the BOTTOM of the page
+  // (store bar at PH - MARGIN - 7mm), so content must stop above them.
+  const CONTENT_TOP    = MARGIN + 7*MM;
+  const CONTENT_BOTTOM = PH - MARGIN - 7*MM - 4*MM;
+  let curY = CONTENT_TOP;
 
   // ── BANNER ────────────────────────────────────────────────────────────────
   const bannerH = 19*MM;
@@ -4133,7 +4141,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
 
   doc.autoTable({
     startY: curY,
-    margin: { left: MARGIN, right: MARGIN },
+    margin: { left: MARGIN, right: MARGIN, top: CONTENT_TOP, bottom: PH - CONTENT_BOTTOM },
     head: [['#', 'Brand', 'Barcode', 'Product Name', 'Qty', 'Unit Price', 'Line Total']],
     body: pdfLines.map((l, i) => [
       i + 1,
@@ -4241,9 +4249,15 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   curY += totH + 5*MM;
 
   // ── COMMENTS / NOTES ─────────────────────────────────────────────────────
+  // Same guard as the signatures: this box was drawn wherever the table ended,
+  // so a longer order ran it into the store bar at the foot of the page.
+  const commH = 20*MM;
+  if (curY + 16 + 2*MM + commH + 4*MM > CONTENT_BOTTOM) {
+    doc.addPage();
+    curY = CONTENT_TOP;
+  }
   curY = sectionHeading(curY, 'Comments / Notes');
   curY += 2*MM;
-  const commH = 20*MM;
   doc.setFillColor(...SIG_BG);
   doc.setDrawColor(...META_BDR); doc.setLineWidth(0.4);
   doc.roundedRect(MARGIN, curY, IW, commH, 2, 2, 'FD');
@@ -4258,13 +4272,28 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   curY += commH + 4*MM;
 
   // ── SIGNATURES ────────────────────────────────────────────────────────────
+  // Six signatories in two rows of three — the store side, then the warehouse
+  // side — in the order the CDF passes between them.
+  const sigLabels = [
+    'Inventory Associate', 'Store Merchandiser', 'Store Manager',
+    'Warehouse Associate', 'Warehouse Checker',  'Warehouse Manager',
+  ];
+  const sigCols = 3;
+  const sigGap  = 3*MM;
+  const sigW    = (IW - (sigCols - 1) * sigGap) / sigCols;
+  const sigH    = 24*MM;
+  const sigRows = Math.ceil(sigLabels.length / sigCols);
+  const sigBlockH = 16 + 2*MM + sigRows * sigH + (sigRows - 1) * sigGap + 4*MM + 10;
+
+  // The block used to be drawn wherever the item table ended, with no check.
+  // At twice the height it would run off the page on a long order, so move the
+  // whole block — heading included — onto a fresh page when it won't fit.
+  if (curY + sigBlockH > CONTENT_BOTTOM) {
+    doc.addPage();
+    curY = CONTENT_TOP;
+  }
   curY = sectionHeading(curY, 'Authorisation & Signatures');
   curY += 2*MM;
-
-  const sigLabels = ['Prepared By', 'Store Manager', 'Warehouse Manager'];
-  const sigW = (IW - 2 * 3*MM) / 3;
-  const sigGap = 3*MM;
-  const sigH = 26*MM;
 
   // Name + timestamp of the user who generated this PDF — appears in the
   // "Prepared By" box just above the dashed signature line, so the signature
@@ -4280,8 +4309,11 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     return `${preparedByName} / ${datePart} ${timePart}`;
   })();
 
+  const sigTop = curY;
   sigLabels.forEach((title, i) => {
-    const sx = MARGIN + i * (sigW + sigGap);
+    const col = i % sigCols, row = Math.floor(i / sigCols);
+    const sx = MARGIN + col * (sigW + sigGap);
+    curY = sigTop + row * (sigH + sigGap);
     // box
     doc.setFillColor(...SIG_BG);
     doc.setDrawColor(...META_BDR); doc.setLineWidth(0.4);
@@ -4298,17 +4330,17 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     doc.line(sx + 9, curY + sigH - 11, sx + sigW - 9, curY + sigH - 11);
     doc.setLineDashPattern([], 0);
 
-    // Prepared By box: name+timestamp printed just above the dashed line so
-    // the signature is written over it (the printed name labels who signed).
+    // Inventory Associate box: the person generating the PDF is stamped just
+    // above the dashed line, so they sign over their own printed name.
     if (i === 0 && preparedByStamp) {
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GREY_DARK);
       doc.text(preparedByStamp, sx + sigW / 2, curY + sigH - 14, { align: 'center' });
     }
-    // Helper text under the dashed line — same on all three boxes.
+    // Helper text under the dashed line — same on every box.
     doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GREY_MID);
     doc.text('Signature over Printed Name', sx + 9, curY + sigH - 4);
   });
-  curY += sigH + 4*MM;
+  curY = sigTop + sigRows * sigH + (sigRows - 1) * sigGap + 4*MM;
 
   // ── LEGAL FOOTER LINE ─────────────────────────────────────────────────────
   doc.setDrawColor(...GREY_LIGHT); doc.setLineWidth(0.4);
@@ -4320,9 +4352,16 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   );
 
   // ── PAGE CHROME ───────────────────────────────────────────────────────────
-  drawStoreBar();   // running header at top
-  drawFooter();     // logo + contact + batch at bottom
-  cropMarks();
+  // Chrome on EVERY page. It previously ran once, on whichever page was current
+  // at the end, so a multi-page CDF left earlier pages without it.
+  const pageCount = doc.getNumberOfPages();
+  for (let pg = 1; pg <= pageCount; pg++) {
+    doc.setPage(pg);
+    drawStoreBar();
+    drawFooter(pg, pageCount);
+    cropMarks();
+  }
+  doc.setPage(pageCount);
 
   // ── SAVE ──────────────────────────────────────────────────────────────────
   const filename = `AcaciaHBC_CDF_${dateTag}_${record.store}.pdf`;
