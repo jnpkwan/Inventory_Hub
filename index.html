@@ -1736,7 +1736,7 @@ function renderTable(rows) {
 
   const pf    = S.phaseFilter;
   const isP34 = pf==='p3';
-  const cols  = isP34 ? 7 : 12;
+  const cols  = isP34 ? 7 : 13;   // Phase 4 gained Last Updated
 
   // Which identifier leads the table depends on the Phase 4 card in view.
   // Up to the actual count there is no CDF Ref yet, so Store Order leads. Once
@@ -1778,6 +1778,7 @@ function renderTable(rows) {
       <th onclick="sortBy('dRecv')">Received</th>
       <th onclick="sortBy('_transit')">Transit</th>
       <th>Truck</th>
+      <th onclick="sortBy('updatedBy')">Last Updated</th>
       <th></th>
     </tr>`;
   }
@@ -1813,7 +1814,7 @@ function renderTable(rows) {
             <span style="font-size:11px;color:#ccc;margin-left:4px">${isEx?'▲':'▼'}</span>
           </td>
         </tr>
-        ${isEx?buildDetail(r):''}`;
+        ${isEx?buildDetail(r, cols):''}`;
     }
 
     return `
@@ -1836,12 +1837,18 @@ function renderTable(rows) {
         <td class="td-date${!r.dRecv?' empty':''}">${r.dRecv?fmtD(r.dRecv):'—'}</td>
         <td class="td-dim" style="font-family:'DM Mono',monospace;${od?'color:#C0392B;font-weight:700':''}">${td!==null?(r.dRecv?td+'d':td+'d ▸'):'—'}</td>
         <td class="td-dim" style="font-family:'DM Mono',monospace;font-size:11px">${esc(r.truck||'—')}</td>
+        <td class="td-dim" style="white-space:nowrap">
+          ${r.updatedBy
+            ? `<span style="font-weight:600;color:var(--ink)">${esc(r.updatedBy)}</span>
+               <span style="display:block;font-size:10px;color:#999">${fmtD(String(r.updatedAt||'').slice(0,10))}</span>`
+            : '—'}
+        </td>
         <td style="text-align:right;padding-right:8px!important;white-space:nowrap">
             ${canEdit?`<button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10.5px" onclick="event.stopPropagation();openEditModal(this.dataset.uid)" data-uid="${uid}">✏ Edit</button>`:''}
             <span style="font-size:11px;color:#ccc;margin-left:4px">${isEx?'▲':'▼'}</span>
           </td>
       </tr>
-      ${isEx?buildDetail(r):''}`;
+      ${isEx?buildDetail(r, cols):''}`;
   }).join('');
 }
 
@@ -1864,7 +1871,9 @@ function computePhaseCounts() {
 }
 
 
-function buildDetail(r) {
+// span = the table's real column count. It was hardcoded to 12, so adding a
+// column to Phase 4 left the expanded panel one column short on the right.
+function buildDetail(r, span = 13) {
   // ── Build dispatch timeline (Phase 4) ─────────────────────────────────────
   let steps = [];
   if(r.route==='Direct') steps=[
@@ -2311,7 +2320,7 @@ function buildDetail(r) {
   // skip Phase 3 panels entirely and open straight to Phase 4
   const allPreApproved = smSt==='Approved' && pdfSt==='Generated' && storeSt==='Approved';
 
-  return `<tr class="det-tr"><td colspan="12"><div class="det-inner">
+  return `<tr class="det-tr"><td colspan="${span}"><div class="det-inner">
     ${allPreApproved ? '' : panelP3}
     ${allPreApproved ? '' : (showP4 ? panelP4 : '')}
     ${showP5 ? panelP5 : ''}
@@ -3180,19 +3189,29 @@ function p4RunExport() {
   const head = ['Status','Store Name','Store Order','CDF Ref','Type','Route',
                 'WHS','WHS \u2192 SDC','WHS \u2192 Store (Direct)','WHS \u2192 CDC',
                 'SDC \u2192 Stores','CDC \u2192 Stores','Received in Store','Transit Days',
-                'No. of Boxes','Truck / Plate No.','CAS No.','Remarks'];
+                'No. of Boxes','Truck / Plate No.','CAS No.',
+                'Last Updated By','Last Updated','Remarks'];
   // Numbers stay numbers so the sheet can total and sort them; dates stay as
   // YYYY-MM-DD text, which is what the Hub stores and what sorts correctly.
   const num = v => { const n = parseFloat(v); return isFinite(n) ? n : ''; };
+  // updatedAt is a UTC ISO timestamp. Rendered in the viewer's local time as
+  // YYYY-MM-DD HH:MM — still sorts correctly as text, and a 7am Manila edit
+  // doesn't show up as 11pm the previous day.
+  const stamp = v => {
+    const d = new Date(v); if (!v || isNaN(d)) return '';
+    const p = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
   const aoa = [head];
   rows.forEach(r => aoa.push([
     r.status||'', r.store||'', r.cdf||'', r.acaciaRef||'', r.type||'', r.route||'',
     r.dWhs||'', r.dSdc||'', r.dDirect||'', r.dCdc||'', r.dSdc2||'', r.dCdc2||'', r.dRecv||'',
-    tdDays(r) ?? '', num(r.boxes), r.truck||'', r.cas||'', r.remarks||''
+    tdDays(r) ?? '', num(r.boxes), r.truck||'', r.cas||'',
+    r.updatedBy||'', stamp(r.updatedAt), r.remarks||''
   ]));
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [18,24,16,14,13,12, 13,13,17,13, 14,14,15, 11, 11,17,13, 34].map(w=>({wch:w}));
+  ws['!cols'] = [18,24,16,14,13,12, 13,13,17,13, 14,14,15, 11, 11,17,13, 16,17, 34].map(w=>({wch:w}));
   // No freeze panes: xlsx-js-style (the build the Hub loads) ignores !freeze,
   // !views and the 'A2' form alike — verified. AutoFilter does work, and is the
   // more useful of the two for a flat export.
@@ -3208,7 +3227,7 @@ function p4RunExport() {
     for (let c = 0; c < head.length; c++) {
       const ref = XLSX.utils.encode_cell({r:i+1, c});
       if (!ws[ref]) continue;
-      const centred = [6,7,8,9,10,11,12,13,14].includes(c);
+      const centred = [6,7,8,9,10,11,12,13,14,18].includes(c);   // 18 = Last Updated
       ws[ref].s = p1CellStyle(bg, false, '2C2C2C', 9, centred ? 'center' : 'left');
     }
   }
