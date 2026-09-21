@@ -1449,8 +1449,14 @@ function getFiltered() {
   const search = String(S.searchTerm ?? (document.getElementById('search')?.value || '')).toLowerCase();
   const fRoute = document.getElementById('f-route')?.value || '';
   const fType  = document.getElementById('f-type')?.value  || '';
+  // Hide Received is ON by default for IS and COORDINATOR (set at login) so field
+  // users land on active work. But clicking the Received card is an explicit
+  // request to see received tickets — and this filter runs before the card
+  // filter, so it used to throw them all away first: card said 8, table said 0.
+  // The card wins while it is selected; the preference resumes on any other card.
+  const wantsReceived = S.subFilter === 'p4_recv';
   return S.records.filter(r => {
-    if (S.hideReceived && (r.status==='Received'||r.status==='Completed')) return false;
+    if (S.hideReceived && !wantsReceived && (r.status==='Received'||r.status==='Completed')) return false;
     if (fRoute && r.route!==fRoute) return false;
     if (fType  && r.type !==fType)  return false;
     if (search && !(r.store||'').toLowerCase().includes(search) &&
