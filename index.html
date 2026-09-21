@@ -1058,13 +1058,18 @@ const CFG = {
 const MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
 const _nowMonth = MONTHS[new Date().getMonth()];
 
+// Needs Attention: a ticket with no movement for more than this many days is
+// flagged. One constant, so the card, the row highlight, the spinner and the
+// export filter can't disagree — it used to be a literal repeated six times.
+const ATTN_DEFAULT_DAYS = 45;
+
 const S = {
   user:         null,
   records:      [],
   month:        _nowMonth,
   searchTerm:   '',   // kept in state: the search input lives inside #sub-summary,
                       // which gets rebuilt wholesale, so the DOM value is not durable
-  attnDays:     30,   // "no movement for N days" threshold. One source for both the
+  attnDays:     ATTN_DEFAULT_DAYS,   // "no movement for N days" threshold. One source for both the
                       // Needs Attention card and the row overdue highlight, which
                       // previously used 7 (hardcoded) and the spinner respectively.
   phaseFilter:  'p3', // default to Phase 3 (Approvals) on load
@@ -1503,7 +1508,7 @@ function renderSummary(rows) {
       .filter(d=>d&&d.match(/^\d{4}-\d{2}-\d{2}/));
     if(!dates.length) return false;
     const latest=dates.map(d=>new Date(d)).filter(d=>!isNaN(d)).sort((a,b)=>b-a)[0];
-    return latest && (today-latest)/(1000*60*60*24) > (S.attnDays||30);
+    return latest && (today-latest)/(1000*60*60*24) > (S.attnDays||ATTN_DEFAULT_DAYS);
   });
   S._attnIds = new Set(needsAttn.map(r=>r.id||r.cdf));
 
@@ -1665,7 +1670,7 @@ function renderSummary(rows) {
         +'<div class="sw" style="min-width:180px;max-width:260px"><input type="text" id="search" placeholder="Search store or CDF…" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
         +'<select class="fs" id="f-route" onchange="renderAll()"><option value="">All Routes</option><option value="Direct">Direct</option><option value="Via SDC">Via SDC</option><option value="Via CDC">Via CDC</option></select>'
         +'<select class="fs" id="f-type" onchange="renderAll()"><option value="">All Types</option><option value="Regular">Regular</option><option value="Spare Parts">Spare Parts</option><option value="Shopee">Shopee</option><option value="Supplies">Supplies</option></select>'
-        +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="'+(S.attnDays||30)+'" min="1" max="180" onchange="S.attnDays=parseInt(this.value)||30; renderAll()"> days</div>'
+        +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="'+(S.attnDays||ATTN_DEFAULT_DAYS)+'" min="1" max="180" onchange="S.attnDays=parseInt(this.value)||ATTN_DEFAULT_DAYS; renderAll()"> days</div>'
         +'<button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records"><span class="tog-dot"></span> Hide Received</button>'
         // Export by breakdown card. This block is already the Phase 4 branch, so
         // no phase check is needed — no other phase has these buckets.
@@ -3145,7 +3150,7 @@ function p4OpenExportModal() {
           ${P4_EXPORT_BUCKETS.map(b => row(b, b, tally[b])).join('')}
         </div>
         <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--silver)">
-          ${row('__attn','🚨 Only those needing attention ('+(S.attnDays||30)+'d+)',attn,
+          ${row('__attn','🚨 Only those needing attention ('+(S.attnDays||ATTN_DEFAULT_DAYS)+'d+)',attn,
                 '<span style="font-size:10px;color:#999">narrows the above</span>')}
         </div>
         <div id="p4x-count" style="margin-top:14px;font-size:12px;font-weight:700;color:var(--green-d)"></div>
@@ -5131,7 +5136,7 @@ function exportCSV() {
 function isOverdue(r) {
   if(r.status!=='In Transit'&&r.status!=='Pending Dispatch'&&r.status!=='Preparing Order') return false;
   if(!r.dWhs) return false;
-  return (Date.now()-new Date(r.dWhs))/ 86400000 > (S.attnDays||30);
+  return (Date.now()-new Date(r.dWhs))/ 86400000 > (S.attnDays||ATTN_DEFAULT_DAYS);
 }
 
 function tdDays(r) {
