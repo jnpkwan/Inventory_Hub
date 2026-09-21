@@ -1461,7 +1461,7 @@ function getFiltered() {
   // The card wins while it is selected; the preference resumes on any other card.
   const wantsReceived = S.subFilter === 'p4_recv';
   return S.records.filter(r => {
-    if (S.hideReceived && !wantsReceived && (r.status==='Received'||r.status==='Completed')) return false;
+    if (S.hideReceived && !wantsReceived && isReceivedTicket(r)) return false;
     if (fRoute && r.route!==fRoute) return false;
     if (fType  && r.type !==fType)  return false;
     if (search && !(r.store||'').toLowerCase().includes(search) &&
@@ -1503,7 +1503,7 @@ function renderSummary(rows) {
   // ── Needs-attention IDs (reused across renders) ───────────────────────────
   const today = new Date();
   const needsAttn = all.filter(r => {
-    if(r.status==='Received'||r.status==='Completed') return false;
+    if(isReceivedTicket(r)) return false;
     const dates=[r.dWhs,r.dSdc,r.dDirect,r.dCdc,r.dSdc2,r.dCdc2,r.dRecv]
       .filter(d=>d&&d.match(/^\d{4}-\d{2}-\d{2}/));
     if(!dates.length) return false;
@@ -1516,9 +1516,10 @@ function renderSummary(rows) {
   // Phase 3 = combined approvals (any CDF not yet store-approved)
   const p3cnt  = all.filter(r=>(r.storeStatus||'')!=='Approved').length;
   // Phase 4 sub-label: active (not yet dispatched) vs in transit vs received
-  const p4active  = all.filter(r=>(r.storeStatus||'')==='Approved'&&r.status!=='In Transit'&&!r.dRecv).length;
-  const p4transit = all.filter(r=>(r.storeStatus||'')==='Approved'&&r.status==='In Transit').length;
-  const p4done    = all.filter(r=>(r.storeStatus||'')==='Approved'&&!!r.dRecv).length;
+  // Through p4Bucket, so the header can never disagree with the cards below it.
+  const p4transit = all.filter(r=>p4Bucket(r)==='In Transit').length;
+  const p4active  = all.filter(r=>{ const b=p4Bucket(r); return b && b!=='In Transit' && b!=='Received'; }).length;
+  const p4done    = all.filter(r=>p4Bucket(r)==='Received').length;
   const p4cnt     = all.filter(r=>(r.storeStatus||'')==='Approved').length;
 
   const pf = S.phaseFilter;
@@ -3094,7 +3095,23 @@ function p4Bucket(r) {
   const fl = String(r.fulfillStatus||'');
   if (fl === '')            return 'WHS Prepare Order';
   if (fl === 'Sent to WHS') return 'Awaiting Actual Count';
-  if (P4_STATUS_SF[r.status] && P4_STATUS_ORDER.includes(r.status)) return r.status;
+  // Past the warehouse. On Hold is a manual pause and wins outright.
+  if (r.status === 'On Hold') return 'On Hold';
+  // Otherwise take the FURTHEST stage indicated by either the stored status or
+  // the dates. Stored status can lag behind dates entered later — migrated
+  // tickets, saves made on older builds — which left tickets with a Received
+  // date sitting in Pending Dispatch. Dispatch only moves forward, so the
+  // furthest signal is the true one. Reading dates alone would instead drag
+  // back tickets the IAs marked In Transit without a to-store date yet.
+  const RANK = { 'Pending Dispatch':1, 'In Transit':2, 'Received':3 };
+  const byStatus = r.status === 'Completed'       ? 'Received'
+                 : r.status === 'Preparing Order' ? 'Pending Dispatch'
+                 : (RANK[r.status] ? r.status : null);
+  const byDates  = r.dRecv                             ? 'Received'
+                 : (r.dSdc2 || r.dCdc2 || r.dDirect)   ? 'In Transit'
+                 :                                       'Pending Dispatch';
+  if (!byStatus || RANK[byDates] > RANK[byStatus]) return byDates;
+  return byStatus;
   // Two statuses exist in the vocabulary but have no card of their own. Map them
   // rather than dumping them in the catch-all, so nobody has to re-save a record
   // just to make a card go away:
@@ -3103,15 +3120,17 @@ function p4Bucket(r) {
   //     still carry the stale value.
   //   'Completed' — an end state; the app already treats it as Received
   //     everywhere else (hideReceived, the attention flag).
-  if (r.status === 'Preparing Order') return 'Pending Dispatch';
-  if (r.status === 'Completed')       return 'Received';
-  // Anything left is a value the system never produces — a hand edit or a typo.
-  // It keeps its own card so it stays visible and fixable.
-  return 'Unrecognised Status';
 }
 
+/** True when a ticket is received — by its card if in Phase 4, else by status. */
+function isReceivedTicket(r) {
+  return p4Bucket(r) === 'Received' || r.status === 'Received' || r.status === 'Completed';
+}
+
+// No 'Unrecognised Status': p4Bucket resolves every Phase 4 ticket to a real
+// card from its status and dates, so that catch-all can no longer occur.
 const P4_EXPORT_BUCKETS = ['WHS Prepare Order','Awaiting Actual Count','Pending Dispatch',
-                           'In Transit','On Hold','Received','Unrecognised Status'];
+                           'In Transit','On Hold','Received'];
 
 function p4OpenExportModal() {
   const all = (S.records||[]).filter(r => String(r.storeStatus||'')==='Approved');
@@ -3208,8 +3227,10 @@ function p4RunExport() {
     return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   };
   const aoa = [head];
+  // Status is the card the ticket sits on — the same p4Bucket the dashboard uses
+  // — not the stored field, which can lag behind the dates.
   rows.forEach(r => aoa.push([
-    r.status||'', r.store||'', r.cdf||'', r.acaciaRef||'', r.type||'', r.route||'',
+    p4Bucket(r)||r.status||'', r.store||'', r.cdf||'', r.acaciaRef||'', r.type||'', r.route||'',
     r.dWhs||'', r.dSdc||'', r.dDirect||'', r.dCdc||'', r.dSdc2||'', r.dCdc2||'', r.dRecv||'',
     tdDays(r) ?? '', num(r.boxes), r.truck||'', r.cas||'',
     r.updatedBy||'', stamp(r.updatedAt), r.remarks||''
@@ -5134,7 +5155,11 @@ function exportCSV() {
 
 /* ══════════════════ UTILS ══════════════════ */
 function isOverdue(r) {
-  if(r.status!=='In Transit'&&r.status!=='Pending Dispatch'&&r.status!=='Preparing Order') return false;
+  // Phase 4 uses the same bucketing as the cards, so a ticket with a Received
+  // date is never marked Delayed just because its stored status fell behind.
+  const b = p4Bucket(r);
+  if (b) { if (b === 'Received' || b === 'On Hold') return false; }
+  else if(r.status!=='In Transit'&&r.status!=='Pending Dispatch'&&r.status!=='Preparing Order') return false;
   if(!r.dWhs) return false;
   return (Date.now()-new Date(r.dWhs))/ 86400000 > (S.attnDays||ATTN_DEFAULT_DAYS);
 }
