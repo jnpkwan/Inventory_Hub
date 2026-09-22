@@ -1063,12 +1063,27 @@ const _nowMonth = MONTHS[new Date().getMonth()];
 // export filter can't disagree — it used to be a literal repeated six times.
 const ATTN_DEFAULT_DAYS = 45;
 
+// CDF paper sizes. Every measurement in the PDF is derived from the page width
+// and height, so these two numbers are the only thing that changes per size.
+const PAPER_SIZES = {
+  letter: { label: 'Letter',    w: 612,    h: 792    },   // 8.5 × 11 in
+  long:   { label: 'Long bond', w: 612,    h: 936    },   // 8.5 × 13 in
+  a4:     { label: 'A4',        w: 595.28, h: 841.89 },   // 210 × 297 mm
+};
+// Each person's last choice is remembered in this browser — an IA printing on
+// long bond shouldn't have to re-pick it for every CDF. Defaults to Letter.
+function loadPaperSize() {
+  try { const v = localStorage.getItem('acacia_paperSize'); if (PAPER_SIZES[v]) return v; } catch(e) {}
+  return 'letter';
+}
+
 const S = {
   user:         null,
   records:      [],
   month:        _nowMonth,
   searchTerm:   '',   // kept in state: the search input lives inside #sub-summary,
                       // which gets rebuilt wholesale, so the DOM value is not durable
+  paperSize:    loadPaperSize(),   // CDF PDF page size; see PAPER_SIZES
   attnDays:     ATTN_DEFAULT_DAYS,   // "no movement for N days" threshold. One source for both the
                       // Needs Attention card and the row overdue highlight, which
                       // previously used 7 (hardcoded) and the spinner respectively.
@@ -1961,7 +1976,7 @@ function buildDetail(r, span = 13) {
     ? (pdfSt==='Generated'
         ? `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="color:var(--teal);font-weight:600">📄 Generated ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''}</div></div>`
         : (role==='IS'||role==='EXECUTIVE')
-          ? `<div class="wf-meta" style="margin-top:2px"><div class="wf-ml">PDF</div><div class="wf-mv"><button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10px" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate PDF</button></div></div>`
+          ? `<div class="wf-meta" style="margin-top:2px"><div class="wf-ml">PDF</div><div class="wf-mv"><button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10px" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate PDF</button>${paperSelect()}</div></div>`
           : `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="font-size:10px;color:var(--amber);font-weight:600">⏳ Pending IS</div></div>`)
     : '';
   const pdfGenBtn = ''; // kept for compat — logic moved to pdfInline
@@ -2205,7 +2220,7 @@ function buildDetail(r, span = 13) {
         ${hasUnsavedStoreEdits?'disabled':''}
         onclick="event.stopPropagation();generateFinalCDF('${uid}')">
         📄 ${r.cdfGeneratedAt ? 'Re-download Adjusted CDF' : 'Generate Adjusted CDF'}
-      </button>
+      </button>${paperSelect()}
       ${hasUnsavedStoreEdits
         ? `<span style="font-size:10.5px;color:var(--amber);font-weight:700;margin-left:8px">⚠ Save Store Qty first</span>`
         : r.cdfGeneratedAt
@@ -3881,6 +3896,24 @@ async function p3EnrichLinesWithPrices(lines) {
   }
 }
 
+/* Paper-size selector shown beside both PDF buttons. One shared setting, so
+   changing it next to either button updates the other and is remembered.
+   stopPropagation: the table row toggles open/closed on click. */
+function paperSelect() {
+  const opts = Object.entries(PAPER_SIZES)
+    .map(([k, p]) => `<option value="${k}" ${S.paperSize === k ? 'selected' : ''}>${p.label}</option>`).join('');
+  return `<select class="paper-sel" title="Paper size for the CDF PDF"
+    onclick="event.stopPropagation()" onchange="event.stopPropagation();setPaperSize(this.value)"
+    style="margin-left:6px;font-size:10px;padding:2px 4px;border:1px solid var(--silver);border-radius:5px;
+           background:#fff;color:var(--ink);cursor:pointer;vertical-align:middle">${opts}</select>`;
+}
+function setPaperSize(v) {
+  if (!PAPER_SIZES[v]) return;
+  S.paperSize = v;
+  try { localStorage.setItem('acacia_paperSize', v); } catch(e) {}
+  document.querySelectorAll('.paper-sel').forEach(el => { el.value = v; });
+}
+
 async function generatePDF(uid) {
   const r = S.records.find(x => (x.id || x.cdf) === uid);
   if (!r) return;
@@ -3946,13 +3979,14 @@ async function generatePDF(uid) {
  */
 async function p3GeneratePDF(record, lines, storeInfo) {
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+  const paper = PAPER_SIZES[S.paperSize] || PAPER_SIZES.letter;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: [paper.w, paper.h] });
 
   // ── Geometry ──────────────────────────────────────────────────────────────
-  const PW     = 612;
-  const PH     = 792;
+  const PW     = paper.w;
+  const PH     = paper.h;
   const MM     = 2.835;
-  const MARGIN = 12 * MM;   // ~34pt — comfortable side margin
+  const MARGIN = 9 * MM;
   const IW     = PW - 2 * MARGIN;
 
   // ── Palette ───────────────────────────────────────────────────────────────
@@ -4027,7 +4061,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     doc.setDrawColor(...GREY_LIGHT);
     doc.setLineWidth(0.4);
     doc.line(MARGIN + lw, y + 5.5, MARGIN + IW, y + 5.5);
-    return y + 16;
+    return y + 13;
   }
 
   // ── Helper: crop marks ────────────────────────────────────────────────────
@@ -4043,101 +4077,72 @@ async function p3GeneratePDF(record, lines, storeInfo) {
 
   // ── Helper: bottom footer ─────────────────────────────────────────────────
   function drawFooter(pageNo = 1, pageCount = 1) {
-    const fy = PH - 8*MM;
-    // thin rule
-    doc.setDrawColor(...GREY_LIGHT); doc.setLineWidth(0.4);
-    doc.line(MARGIN, fy, MARGIN + IW, fy);
-    // logo small repeat — height-anchored, width follows true aspect ratio
+    // One strip replaces the old store bar + footer pair: store and CDF on the
+    // left, the company mark centred, page number and batch time on the right.
+    const sh = 6 * MM, sy = PH - MARGIN - sh;
+    doc.setFillColor(232, 238, 252); doc.rect(MARGIN, sy, IW, sh, 'F');
+    doc.setFillColor(...BRAND_GRN);  doc.rect(MARGIN, sy, 3, sh, 'F');
+    const ty = sy + sh/2 + 2.2;
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...DARK_BLUE);
+    doc.text(record.store, MARGIN + 9, ty);
+    const sw = doc.getTextWidth(record.store);
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GREY_MID);
+    doc.text('·  ' + poNumber, MARGIN + 9 + sw + 5, ty);
+    // Company mark, centred: small logo + name. The old footer carried the logo
+    // on every page; keeping it here preserves that when the two strips merge.
+    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...DARK_BLUE);
+    const coName = 'Acacia Home Builders Corporation';
+    const coW = doc.getTextWidth(coName);
+    const mkH = sh - 2.2*MM, mkW = logoDataUrl ? mkH * logoAspect : 0, mkGap = logoDataUrl ? 4 : 0;
+    const groupX = PW/2 - (mkW + mkGap + coW)/2;
     if (logoDataUrl) {
-      const fLogoH = 10, fLogoW = fLogoH * logoAspect;
-      try { doc.addImage(logoDataUrl, 'PNG', MARGIN, fy + 3, fLogoW, fLogoH, '', 'FAST'); } catch(e) {}
+      try { doc.addImage(logoDataUrl, 'PNG', groupX, sy + (sh - mkH)/2, mkW, mkH, '', 'FAST'); } catch(e) {}
     }
-    // Company name — vertically centered now that phone/email line is gone
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(...DARK_BLUE);
-    doc.text('Acacia Home Builders Corporation', PW/2, fy + 10, {align:'center'});
-    // Batch + page info on right
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(5); doc.setTextColor(190, 195, 210);
-    doc.text(`Batch: ${batchTs}  ·  Page ${pageNo} of ${pageCount}`, PW - MARGIN, fy + 10, {align:'right'});
+    doc.text(coName, groupX + mkW + mkGap, ty);
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...DARK_BLUE);
+    doc.text(`Page ${pageNo} of ${pageCount}`, MARGIN + IW - 8, ty, {align:'right'});
+    const pw = doc.getTextWidth(`Page ${pageNo} of ${pageCount}`);
+    doc.setFont('helvetica','normal'); doc.setFontSize(5); doc.setTextColor(170, 178, 195);
+    doc.text(batchTs + '  ·', MARGIN + IW - 8 - pw - 4, ty, {align:'right'});
   }
 
   // ── Helper: running store header bar ──────────────────────────────────────
-  function drawStoreBar() {
-    const bh = 7*MM, by = PH - MARGIN - bh;
-    // subtle gradient-like bar using two rects
-    doc.setFillColor(232, 238, 252); doc.rect(MARGIN, by, IW, bh, 'F');
-    doc.setFillColor(0, 34, 102, 0.06);
-    // left accent stripe
-    doc.setFillColor(...BRAND_GRN); doc.rect(MARGIN, by, 3, bh, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...DARK_BLUE);
-    doc.text(record.store, MARGIN + 9, by + bh/2 + 2.5);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GREY_MID);
-    doc.text(poNumber, MARGIN + IW, by + bh/2 + 2.5, {align:'right'});
-  }
+  // Kept so the page-chrome loop needn't change; its content now lives in
+  // drawFooter's single strip.
+  function drawStoreBar() {}
 
   // ═══════════════════════════════════════════════════════════════════════════
   // START DRAWING
   // ═══════════════════════════════════════════════════════════════════════════
   // Printable area. The store bar and footer both sit at the BOTTOM of the page
   // (store bar at PH - MARGIN - 7mm), so content must stop above them.
-  const CONTENT_TOP    = MARGIN + 7*MM;
-  const CONTENT_BOTTOM = PH - MARGIN - 7*MM - 4*MM;
+  const STRIP_H = 6 * MM;
+  const CONTENT_TOP    = MARGIN + 1.5 * MM;
+  const CONTENT_BOTTOM = PH - MARGIN - STRIP_H - 2.5 * MM;
   let curY = CONTENT_TOP;
 
   // ── BANNER ────────────────────────────────────────────────────────────────
-  const bannerH = 19*MM;
-
-  // Main dark blue banner
-  doc.setFillColor(...DARK_BLUE);
-  doc.rect(MARGIN, curY, IW, bannerH, 'F');
-
-  // Right panel — slightly lighter blue for CDF info
-  const rpW = IW * 0.38;
-  doc.setFillColor(0, 48, 120);   // #003078
-  doc.rect(MARGIN + IW - rpW, curY, rpW, bannerH, 'F');
-
-  // Thin green accent line at banner bottom
-  doc.setFillColor(...BRAND_GRN);
-  doc.rect(MARGIN, curY + bannerH - 2, IW, 2, 'F');
-
-  // Logo (left side, vertically centered in banner) — uses true aspect ratio
-  const logoH = 11*MM, logoW = logoH * logoAspect;
-  const logoX = MARGIN + 10;
-  const logoY = curY + (bannerH - logoH) / 2;
-  if (logoDataUrl) {
-    try { doc.addImage(logoDataUrl, 'PNG', logoX, logoY, logoW, logoH, '', 'FAST'); } catch(e) {}
-  }
-
-  // Company name — vertically centered, right of logo
-  const nameX = logoDataUrl ? logoX + logoW + 8 : MARGIN + 12;
-  const nameY = curY + bannerH / 2;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13.5);
-  doc.setTextColor(...WHITE);
-  doc.text('Acacia Home Builders', nameX, nameY - 4);
-  doc.setFontSize(13.5);
-  doc.text('Corporation', nameX, nameY + 11);
-
-  // CDF label + number (right panel, vertically centered)
-  const rpX = MARGIN + IW - rpW + 12;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
-  doc.setTextColor(160, 195, 235);   // steel blue label
-  doc.setCharSpace(1.5);
-  doc.text('CONCESSION DELIVERY FORM', rpX, curY + bannerH/2 - 8);
-  doc.setCharSpace(0);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
-  doc.setTextColor(...WHITE);
-  // Word-wrap CDF number if long
-  const poLines = doc.splitTextToSize(poNumber, rpW - 20);
-  doc.text(poLines, rpX, curY + bannerH/2 + 5);
-
-  curY += bannerH + 3*MM;
+  const bannerH = 12.5*MM;
+  doc.setFillColor(...DARK_BLUE); doc.rect(MARGIN, curY, IW, bannerH, 'F');
+  const rpW = IW * 0.34;
+  doc.setFillColor(0, 48, 120); doc.rect(MARGIN + IW - rpW, curY, rpW, bannerH, 'F');
+  doc.setFillColor(...BRAND_GRN); doc.rect(MARGIN, curY + bannerH - 2, IW, 2, 'F');
+  const logoH = bannerH - 4*MM, logoW = logoH * logoAspect, logoX = MARGIN + 8;
+  if (logoDataUrl) { try { doc.addImage(logoDataUrl,'PNG',logoX,curY+(bannerH-logoH)/2-1,logoW,logoH,'','FAST'); } catch(e) {} }
+  const nameX = logoDataUrl ? logoX + logoW + 7 : MARGIN + 11;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.setTextColor(...WHITE);
+  doc.text('Acacia Home Builders Corporation', nameX, curY + bannerH/2 + 3);
+  const rpX = MARGIN + IW - rpW + 11;
+  doc.setFont('helvetica','normal'); doc.setFontSize(5.8); doc.setTextColor(160,195,235);
+  doc.setCharSpace(1.3); doc.text('CONCESSION DELIVERY FORM', rpX, curY + bannerH/2 - 3.5); doc.setCharSpace(0);
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...WHITE);
+  doc.text(doc.splitTextToSize(poNumber, rpW - 18)[0], rpX, curY + bannerH/2 + 7);
+  curY += bannerH + 2.5*MM;
 
   // ── META BLOCK ────────────────────────────────────────────────────────────
   // 3-col top row + 2-col bottom row
   // Taller cells, generous padding, uppercase micro-labels in brand blue
-  const metaRowH = 9*MM;
+  const metaRowH = 6.8*MM;
 
   function drawMetaCell(x, y, w, h, label, value) {
     doc.setFillColor(...META_BG);
@@ -4146,18 +4151,18 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     doc.rect(x, y, w, h, 'FD');
     // label
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6);
-    doc.setCharSpace(0.8);
+    doc.setFontSize(5.4);
+    doc.setCharSpace(0.7);
     doc.setTextColor(...BRAND_BLUE);
-    doc.text(label, x + 9, y + 7.5);
+    doc.text(label, x + 8, y + 6.3);
     doc.setCharSpace(0);
     // value
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
+    doc.setFontSize(7.6);
     doc.setTextColor(...GREY_DARK);
     const maxW = w - 18;
     const vLines = doc.splitTextToSize(String(value || '—'), maxW);
-    doc.text(vLines[0], x + 9, y + 7.5 + 11);
+    doc.text(vLines[0], x + 8, y + 6.3 + 9.2);
   }
 
   const c1 = IW * 0.22, c2 = IW * 0.46, c3 = IW * 0.32;
@@ -4170,16 +4175,15 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   drawMetaCell(MARGIN,          curY, d1, metaRowH, 'PHONE', phone);
   drawMetaCell(MARGIN + d1,     curY, d2, metaRowH, 'EMAIL', email);
   drawMetaCell(MARGIN + d1+d2,  curY, d3, metaRowH, 'ROUTE / TYPE', `${(record.route && record.route !== 'Unknown') ? record.route : '—'}  ·  ${record.type || 'Regular'}`);
-  curY += metaRowH + 5*MM;
+  curY += metaRowH + 3*MM;
 
   // ── ORDER ITEMS TABLE ─────────────────────────────────────────────────────
   curY = sectionHeading(curY, 'Order Items');
-  curY += 2*MM;
+  curY += 1.2*MM;
 
   // Column widths — Category dropped, Price split into Unit Price + Line Total.
   // #  | Brand | Barcode | Product Name | Qty | Unit Price | Line Total
   // 5% | 10%   | 13%     | 36%          | 6%  | 15%        | 15%
-  const CW = [IW*0.05, IW*0.10, IW*0.13, IW*0.36, IW*0.06, IW*0.15, IW*0.15];
 
   // Price formatter — accepts number, numeric string, or empty.
   // Renders empty string when no price is set on the line, otherwise a
@@ -4193,75 +4197,71 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     return 'PHP ' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
-  // Line total = qty × unit price. Blank when either piece is missing.
-  const lineTotal = (qty, price) => {
-    const q = Number(qty);
-    const p = Number(price);
-    if (!isFinite(q) || !isFinite(p) || q <= 0 || p <= 0) return '';
-    return fmtPrice(q * p);
-  };
 
+  // Item table — sized to fit ~46 SKUs a page at the same text size as before.
+  // The Brand column is gone: every product name already contains its brand,
+  // so dropping it gives names the width to stay on one line instead of
+  // wrapping (wrapping, not type size, was what limited the old layout to ~26).
+  // PHP moves into the column headings rather than repeating on every line.
+  const V = {
+    headFont: 6.2, headPad: 4.2,   // header row
+    bodyFont: 7.4, bodyPad: 2.3,   // body text and row padding
+    qtyFont:  9,                   // Qty sets the row height, so it stays modest
+    overflow: 'linebreak',                // long names still wrap rather than truncate
+    pesoInCell: false,                    // 'PHP' lives in the heading
+    cols: [
+      { key:'num', head:'#', w:0.04, halign:'center' },
+      { key:'barcode', head:'Barcode', w:0.14, halign:'center' },
+      { key:'name', head:'Product Name', w:0.52, halign:'left' },
+      { key:'qty', head:'Qty', w:0.06, halign:'center' },
+      { key:'unit', head:'Unit Price (PHP)', w:0.12, halign:'right' },
+      { key:'total', head:'Line Total (PHP)', w:0.12, halign:'right' },
+    ],
+  };
+  const fmtNum = (p) => { const n = Number(p); if (!isFinite(n) || n === 0) return '';
+    return n.toLocaleString('en-PH', { minimumFractionDigits:2, maximumFractionDigits:2 }); };
+  const cellPrice = (p) => V.pesoInCell ? fmtPrice(p) : fmtNum(p);
+  const cellTotal = (q, p) => { const Q = Number(q), P = Number(p);
+    if (!isFinite(Q) || !isFinite(P) || Q <= 0 || P <= 0) return '';
+    return V.pesoInCell ? fmtPrice(Q * P) : fmtNum(Q * P); };
+  const COLS = V.cols;
+  const colStyle = (c) => {
+    const st = { halign: c.halign, cellWidth: IW * c.w };
+    if (c.key === 'num')   Object.assign(st, { textColor: GREY_MID, fontSize: V.bodyFont - 0.6 });
+    if (c.key === 'qty')   Object.assign(st, { fontStyle:'bold', fontSize: V.qtyFont, textColor: DARK_BLUE, fillColor: GRN_PALE });
+    if (c.key === 'total') Object.assign(st, { fontStyle:'bold', textColor: DARK_BLUE });
+    if (c.key === 'barcode') Object.assign(st, { fontSize: V.bodyFont - 0.3 });
+    return st;
+  };
   doc.autoTable({
     startY: curY,
     margin: { left: MARGIN, right: MARGIN, top: CONTENT_TOP, bottom: PH - CONTENT_BOTTOM },
-    head: [['#', 'Brand', 'Barcode', 'Product Name', 'Qty', 'Unit Price', 'Line Total']],
-    body: pdfLines.map((l, i) => [
-      i + 1,
-      l.brand       || '',
-      l.barcode     || '',
-      l.productName || '',
-      l.finalOrder  || 0,
-      fmtPrice(l.price),
-      lineTotal(l.finalOrder, l.price),
-    ]),
+    head: [COLS.map(c => c.head)],
+    body: pdfLines.map((l, i) => COLS.map(c => ({
+      num: i + 1, brand: l.brand || '', barcode: l.barcode || '', name: l.productName || '',
+      qty: l.finalOrder || 0, unit: cellPrice(l.price), total: cellTotal(l.finalOrder, l.price)
+    })[c.key])),
     theme: 'plain',
-    headStyles: {
-      fillColor:   DARK_BLUE,
-      textColor:   WHITE,
-      fontStyle:   'bold',
-      fontSize:    6.5,
-      halign:      'center',
-      cellPadding: { top:7, bottom:7, left:5, right:5 },
-    },
-    bodyStyles: {
-      fontSize:    7.5,
-      textColor:   GREY_DARK,
-      cellPadding: { top:5, bottom:5, left:5, right:5 },
-      lineColor:   GREY_LIGHT,
-      lineWidth:   0.25,
-    },
-    columnStyles: {
-      0: { halign:'center', cellWidth:CW[0], textColor:GREY_MID, fontSize:7 },
-      1: { halign:'center', cellWidth:CW[1] },
-      2: { halign:'center', cellWidth:CW[2] },
-      3: { halign:'left',   cellWidth:CW[3], fontStyle:'normal' },
-      4: { halign:'center', cellWidth:CW[4], fontStyle:'bold', fontSize:10,
-           textColor:DARK_BLUE, fillColor:GRN_PALE },
-      5: { halign:'right',  cellWidth:CW[5], font:'helvetica', fontStyle:'normal',
-           fontSize:7.5, textColor:GREY_DARK },
-      6: { halign:'right',  cellWidth:CW[6], font:'helvetica', fontStyle:'bold',
-           fontSize:7.5, textColor:DARK_BLUE },
-    },
+    headStyles: { fillColor: DARK_BLUE, textColor: WHITE, fontStyle:'bold', fontSize: V.headFont,
+      halign:'center', cellPadding: { top: V.headPad, bottom: V.headPad, left: 4, right: 4 } },
+    bodyStyles: { fontSize: V.bodyFont, textColor: GREY_DARK, overflow: V.overflow,
+      cellPadding: { top: V.bodyPad, bottom: V.bodyPad, left: 4, right: 4 },
+      lineColor: GREY_LIGHT, lineWidth: 0.25 },
+    columnStyles: Object.fromEntries(COLS.map((c, k) => [k, colStyle(c)])),
     alternateRowStyles: { fillColor: ROW_EVEN },
     didParseCell(d) {
       if (d.section === 'head') {
-        if (d.column.index === 3) d.cell.styles.halign = 'left';
-        if (d.column.index === 4) d.cell.styles.fillColor = BRAND_GRN;
-        if (d.column.index === 5) d.cell.styles.halign = 'right';
-        if (d.column.index === 6) d.cell.styles.halign = 'right';
+        const c = COLS[d.column.index];
+        d.cell.styles.halign = c.halign;
+        if (c.key === 'qty') { d.cell.styles.fillColor = BRAND_GRN; d.cell.styles.halign = 'center'; }
       }
     },
     didDrawCell(d) {
-      // Green underline on entire header row
       if (d.section === 'head' && d.row.index === 0) {
         doc.setDrawColor(...BRAND_GRN); doc.setLineWidth(1.5);
-        doc.line(d.cell.x, d.cell.y + d.cell.height,
-                 d.cell.x + d.cell.width, d.cell.y + d.cell.height);
+        doc.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height);
       }
-      // Green left-border on Qty col (col 4) only — visually pairs with the
-      // green Qty header fill. Previously this drew on col 5 (Price) which
-      // appeared as an intrusive line cutting into the Price column.
-      if (d.section === 'body' && d.column.index === 4) {
+      if (d.section === 'body' && COLS[d.column.index].key === 'qty') {
         doc.setDrawColor(...BRAND_GRN); doc.setLineWidth(1);
         doc.line(d.cell.x, d.cell.y, d.cell.x, d.cell.y + d.cell.height);
       }
@@ -4270,7 +4270,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   curY = doc.lastAutoTable.finalY;
 
   // ── TOTALS BAR ────────────────────────────────────────────────────────────
-  const totH = 8*MM + 6;
+  const totH = 6.8*MM;
 
   // Dark blue top rule
   doc.setDrawColor(...DARK_BLUE); doc.setLineWidth(1.5);
@@ -4301,37 +4301,37 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     // label
     doc.setFont('helvetica', 'bold'); doc.setFontSize(6);
     doc.setCharSpace(0.7); doc.setTextColor(...BRAND_BLUE);
-    doc.text(col.label, tx + 10, curY + 8);
+    doc.text(col.label, tx + 9, curY + 6.5);
     doc.setCharSpace(0);
     // value
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
     doc.setTextColor(...(col.muted ? GREY_MID : DARK_BLUE));
-    doc.text(col.value, tx + 10, curY + 8 + 14);
+    doc.text(col.value, tx + 9, curY + 6.5 + 11);
   });
-  curY += totH + 5*MM;
+  curY += totH + 3.5*MM;
 
   // ── COMMENTS / NOTES ─────────────────────────────────────────────────────
   // Same guard as the signatures: this box was drawn wherever the table ended,
   // so a longer order ran it into the store bar at the foot of the page.
-  const commH = 20*MM;
-  if (curY + 16 + 2*MM + commH + 4*MM > CONTENT_BOTTOM) {
+  const commH = 15*MM;
+  if (curY + 13 + 1.2*MM + commH + 3*MM > CONTENT_BOTTOM) {
     doc.addPage();
     curY = CONTENT_TOP;
   }
   curY = sectionHeading(curY, 'Comments / Notes');
-  curY += 2*MM;
+  curY += 1.2*MM;
   doc.setFillColor(...SIG_BG);
   doc.setDrawColor(...META_BDR); doc.setLineWidth(0.4);
   doc.roundedRect(MARGIN, curY, IW, commH, 2, 2, 'FD');
   // placeholder dotted lines inside comments box
   doc.setDrawColor(...GREY_LIGHT); doc.setLineWidth(0.3);
   doc.setLineDashPattern([2,3], 0);
-  [0.35, 0.62, 0.89].forEach(t => {
+  [0.36, 0.64, 0.90].forEach(t => {
     const ly = curY + commH * t;
     doc.line(MARGIN + 10, ly, MARGIN + IW - 10, ly);
   });
   doc.setLineDashPattern([], 0);
-  curY += commH + 4*MM;
+  curY += commH + 3*MM;
 
   // ── SIGNATURES ────────────────────────────────────────────────────────────
   // Six signatories in two rows of three — the store side, then the warehouse
@@ -4341,11 +4341,11 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     'Warehouse Associate', 'Warehouse Checker',  'Warehouse Manager',
   ];
   const sigCols = 3;
-  const sigGap  = 3*MM;
+  const sigGap  = 2.5*MM;
   const sigW    = (IW - (sigCols - 1) * sigGap) / sigCols;
-  const sigH    = 24*MM;
+  const sigH    = 21.5*MM;
   const sigRows = Math.ceil(sigLabels.length / sigCols);
-  const sigBlockH = 16 + 2*MM + sigRows * sigH + (sigRows - 1) * sigGap + 4*MM + 10;
+  const sigBlockH = 13 + 1.2*MM + sigRows * sigH + (sigRows - 1) * sigGap + 3*MM + 10;
 
   // The block used to be drawn wherever the item table ended, with no check.
   // At twice the height it would run off the page on a long order, so move the
@@ -4355,7 +4355,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     curY = CONTENT_TOP;
   }
   curY = sectionHeading(curY, 'Authorisation & Signatures');
-  curY += 2*MM;
+  curY += 1.2*MM;
 
   // Name + timestamp of the user who generated this PDF — appears in the
   // "Prepared By" box just above the dashed signature line, so the signature
@@ -4402,7 +4402,7 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GREY_MID);
     doc.text('Signature over Printed Name', sx + 9, curY + sigH - 4);
   });
-  curY = sigTop + sigRows * sigH + (sigRows - 1) * sigGap + 4*MM;
+  curY = sigTop + sigRows * sigH + (sigRows - 1) * sigGap + 3*MM;
 
   // ── LEGAL FOOTER LINE ─────────────────────────────────────────────────────
   doc.setDrawColor(...GREY_LIGHT); doc.setLineWidth(0.4);
