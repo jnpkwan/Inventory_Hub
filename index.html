@@ -363,6 +363,24 @@ thead th:first-child{white-space:nowrap}
 @keyframes fadeIn{from{opacity:0; transform:translateY(-4px)}to{opacity:1; transform:none}}
 .det-tr td{padding:0!important; background:var(--blue-pale); border-bottom:3px solid var(--blue-mid)!important}
 .det-inner{padding:16px 20px 18px; animation:fadeIn .26s var(--ease-out)}
+.det-foot{display:flex;align-items:flex-start;gap:12px;margin-top:8px;padding-top:8px;border-top:1px solid var(--silver)}
+.hist{flex:1;min-width:0}
+.hist-toggle{background:none;border:none;padding:5px 0;font:700 10px 'Montserrat',sans-serif;text-transform:uppercase;letter-spacing:.5px;color:var(--blue);cursor:pointer}
+.hist-toggle:hover{text-decoration:underline}
+.hist-list{list-style:none;margin:6px 0 0;padding:0;max-height:300px;overflow-y:auto;border:1px solid var(--silver);border-radius:8px;background:#fff}
+.hist-item{padding:8px 12px;border-bottom:1px solid var(--silver);font-size:11px;line-height:1.45}
+.hist-item:last-child{border-bottom:none}
+.hist-item:nth-child(even){background:var(--mist)}
+.hist-hd{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+.hist-who{font-weight:700;color:var(--ink)}
+.hist-act{color:var(--slate)}
+.hist-when{margin-left:auto;color:#999;font-size:10px;white-space:nowrap}
+.hist-ch{margin-top:2px;color:var(--ink);overflow-wrap:anywhere}
+.hist-ch b{font-weight:600;color:var(--slate)}
+.hist-muted{margin-top:2px;color:#999;font-style:italic;overflow-wrap:anywhere}
+.hist-note{font-size:11px;color:#999;padding:4px 0 2px}
+.hist-note.err{color:var(--red)}
+.hist-note button{background:none;border:none;padding:0;margin-left:6px;font:inherit;font-weight:700;color:var(--blue);cursor:pointer;text-decoration:underline}
 .timeline-wrap{border-radius:var(--rl); padding:16px 20px 8px; margin-bottom:14px; transition:background .2s; border:1px solid var(--silver); background:var(--white)}
 .timeline{display:flex; align-items:flex-start; gap:0; overflow-x:auto; padding:24px 0 10px}
 .ts{display:flex; flex-direction:column; align-items:center; min-width:124px; flex:1; position:relative}
@@ -1124,6 +1142,8 @@ const S = {
   hideReceived: false,
   _attnIds:     new Set(),
   _wfCache:     {},   // preserves workflow fields across Sheet reloads
+  hist:         {},   // per-ticket history, keyed by record id. Kept here, not in the
+                      // DOM: the detail row is rebuilt on every render (see buildHistory)
   stores:       []    // loaded from Stores sheet on login
 };
 
@@ -1214,6 +1234,7 @@ function doLogout() {
   S.idleTimer = null;
   S.user = null;
   S.records = [];
+  S.hist = {};
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('lu').value = '';
@@ -2399,7 +2420,6 @@ function buildDetail(r, span = 13) {
         <div class="timeline" style="margin-bottom:2px">${tl}</div>
       </div>
       ${r.remarks?`<div style="font-size:11px;color:#888;margin-top:4px;padding:0 4px"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;color:#aaa">Remarks</span> ${esc(r.remarks)}</div>`:''}
-    </div>
     </div>`;
   const panelP5 = `
     <div class="ph-panel open" data-phase="p5">
@@ -2417,10 +2437,12 @@ function buildDetail(r, span = 13) {
     </div>`;
 
   // ── Actions row ───────────────────────────────────────────────────────────
-  const actionsRow = canDelete ? `
-    <div style="display:flex;gap:7px;justify-content:flex-end;margin-top:8px;padding-top:8px;border-top:1px solid var(--silver)">
-      <button class="btn btn-sm" style="background:var(--red);color:#fff;border:none" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>
-    </div>` : '';
+  // History is open to every role that can see the ticket; Delete stays executive-only.
+  const actionsRow = `
+    <div class="det-foot">
+      ${buildHistory(r)}
+      ${canDelete ? `<button class="btn btn-sm" style="background:var(--red);color:#fff;border:none;flex-shrink:0" onclick="event.stopPropagation();deleteRecord(this.dataset.uid)" data-uid="${uid}">✕ Delete</button>` : ''}
+    </div>`;
 
   // Progressive reveal — only show panels the CDF has actually reached
   const showP4 = smSt==='Approved' && pdfSt==='Generated'; // PDF must be generated before coordinator can act
@@ -5150,6 +5172,110 @@ function sortBy(f) {
   if(S.sortField===f) S.sortDir=S.sortDir==='asc'?'desc':'asc';
   else{S.sortField=f;S.sortDir='asc';}
   renderTable();
+}
+
+/* ══════════════════ TICKET HISTORY ══════════════════ */
+// Loaded on demand, one ticket at a time, so it costs nothing until opened.
+// State lives in S.hist, never in the DOM: the detail row sits inside the
+// table, which renders rebuild wholesale — a DOM-only value would vanish on
+// the next poll. Each entry remembers the ticket's updatedAt at fetch time;
+// when a save or a poll changes updatedAt, an open history refetches itself.
+const HIST_ACTIONS = { UPDATE:'updated', CREATE:'created the ticket', BATCH_CREATE:'created the ticket', DELETE:'deleted the ticket' };
+
+function buildHistory(r) {
+  if (!r.id) return '';
+  const id = String(r.id);
+  const h  = S.hist[id];
+  const open = !!(h && h.open);
+  if (open && h.state !== 'loading' && h.at !== (r.updatedAt || '')) {
+    setTimeout(() => loadHistory(id), 0);   // ticket changed since we fetched
+  }
+  const toggle = `<button class="hist-toggle" onclick="event.stopPropagation();toggleHistory(this.dataset.id)" data-id="${esc(id)}">${open ? '▾' : '▸'} History</button>`;
+  let body = '';
+  if (open) {
+    if (h.state === 'error' && !h.rows) {
+      body = `<div class="hist-note err">Couldn't load history: ${esc(h.error)}<button onclick="event.stopPropagation();loadHistory(this.dataset.id)" data-id="${esc(id)}">Retry</button></div>`;
+    } else if (!h.rows) {
+      body = `<div class="hist-note">Loading…</div>`;
+    } else if (!h.rows.length) {
+      body = `<div class="hist-note">No history recorded for this ticket.</div>`;
+    } else {
+      const refreshing = h.state === 'loading' ? `<div class="hist-note">Updating…</div>` : '';
+      const capped = h.rows.length >= 100 ? `<div class="hist-note">Showing the latest 100 entries.</div>` : '';
+      body = `${refreshing}<ol class="hist-list">${h.rows.map(histItem).join('')}</ol>${capped}`;
+    }
+  }
+  return `<div class="hist" id="hist-${esc(id)}">${toggle}${body}</div>`;
+}
+
+function toggleHistory(id) {
+  const h = S.hist[id];
+  if (h && h.open) { h.open = false; paintHistory(id); return; }
+  if (h && h.rows && h.state !== 'error') { h.open = true; paintHistory(id); return; }   // reuse; buildHistory refetches if stale
+  S.hist[id] = { open: true, state: 'loading', rows: null, at: '' };
+  loadHistory(id);
+}
+
+async function loadHistory(id) {
+  const r = S.records.find(x => String(x.id) === String(id));
+  const h = S.hist[id] || (S.hist[id] = { open: true, rows: null });
+  h.state = 'loading';
+  h.at = r ? (r.updatedAt || '') : '';
+  paintHistory(id);
+  try {
+    const rows = await gasGet('getActivity', { username: S.user.username, recordId: id });
+    h.rows  = Array.isArray(rows) ? rows : [];
+    h.state = 'ok';
+    h.error = '';
+  } catch (e) {
+    h.state = 'error';
+    h.error = e.message || 'network error';
+    if (h.rows) toast('History refresh failed: ' + h.error, 'err');   // keep showing what we had
+  }
+  paintHistory(id);
+}
+
+// Repaint only the history block, so opening it doesn't redraw the whole table.
+function paintHistory(id) {
+  const el = document.getElementById('hist-' + id);
+  const r  = S.records.find(x => String(x.id) === String(id));
+  if (el && r) el.outerHTML = buildHistory(r);
+}
+
+function histItem(a) {
+  const who  = esc(a.username || '—');
+  const act  = HIST_ACTIONS[a.action] || esc(String(a.action || '').toLowerCase());
+  const when = histStamp(a.timestamp);
+  const detail = String(a.detail || '');
+  let lines = '';
+  if (a.action === 'UPDATE' && detail.includes('\n')) {
+    // Current format: first line "Updated CDF X", then one change per line.
+    lines = detail.split('\n').slice(1).map(l => {
+      if (l === 'No field changes') return `<div class="hist-muted">Saved with no changes</div>`;
+      const i = l.indexOf(': ');
+      return i > 0
+        ? `<div class="hist-ch"><b>${esc(l.slice(0, i))}:</b> ${esc(l.slice(i + 2))}</div>`
+        : `<div class="hist-ch">${esc(l)}</div>`;
+    }).join('');
+  } else if (a.action === 'UPDATE') {
+    // Entries saved before change tracking only kept a status snapshot.
+    const m = detail.match(/smgr:(.*?) store:(.*?) fulfill:(.*)$/);
+    const v = s => (!s || s === '-') ? '—' : s;
+    lines = m
+      ? `<div class="hist-muted">Details not recorded. Statuses after save — IA review: ${esc(v(m[1]))} · Store approval: ${esc(v(m[2]))} · Fulfillment: ${esc(v(m[3]))}</div>`
+      : `<div class="hist-muted">Details not recorded.</div>`;
+  } else if (detail) {
+    lines = `<div class="hist-muted">${esc(detail)}</div>`;
+  }
+  return `<li class="hist-item"><div class="hist-hd"><span class="hist-who">${who}</span><span class="hist-act">${act}</span><span class="hist-when">${when}</span></div>${lines}</li>`;
+}
+
+function histStamp(ts) {
+  const d = new Date(ts);
+  if (!ts || isNaN(d)) return esc(ts || '—');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const h = d.getHours(), m = d.getMinutes();
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} · ${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
 /* ══════════════════ GAS HTTP ══════════════════ */
