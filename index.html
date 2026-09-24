@@ -331,11 +331,21 @@ tbody tr.overdue-row{background:#FEF4F3}
 tbody tr.overdue-row:hover{background:#FCEAE8; box-shadow:inset 3px 0 0 var(--red)}
 tbody tr.exp-row{background:var(--blue-pale); box-shadow:inset 3px 0 0 var(--blue); border-bottom:none}
 td{padding:11px 14px; vertical-align:middle}
-.td-cdf{font-family:"DM Mono",monospace; font-size:11.5px; font-weight:500; color:var(--blue); letter-spacing:-.2px}
+/* CDF Ref / Store Order never wraps. It is an identifier people read aloud,
+   copy and match against Acacia — broken across two lines it stops being one.
+   Applies to the header cell too, so the column keeps its own width. */
+.td-cdf{font-family:"DM Mono",monospace; font-size:11.5px; font-weight:500; color:var(--blue);
+  letter-spacing:-.2px; white-space:nowrap}
+.td-cdf span{white-space:nowrap}
+thead th:first-child{white-space:nowrap}
 .td-store{font-weight:700; font-size:12.5px; color:var(--carbon)}
 .td-date{font-size:11.5px; color:var(--slate); white-space:nowrap; font-variant-numeric:tabular-nums}
 .td-date.empty{color:var(--silver-d); font-style:italic}
-.td-dim{font-size:11.5px; color:var(--slate)}
+/* Short fixed values — route, type, truck, transit, username. None are free
+   text, so none should ever wrap: "Via SDC" split over two lines just makes
+   the row taller for nothing. Store names may still wrap; they are long and
+   variable. */
+.td-dim{font-size:11.5px; color:var(--slate); white-space:nowrap}
 
 /* ── Workflow badges ── */
 .wb{display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:700; padding:3px 10px; border-radius:var(--pill); border:1px solid transparent; white-space:nowrap; letter-spacing:.1px}
@@ -531,6 +541,20 @@ select.ms{appearance:none; -webkit-appearance:none; background-image:url("data:i
 }
 .btn-toggle:hover{border-color:var(--silver-d)}
 .btn-toggle.active{background:var(--blue-pale); border-color:var(--blue); color:var(--blue)}
+/* A filter control that is actually filtering looks different from one that
+   isn't — the point of the chip bar below is that a narrowed list says so. */
+select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:var(--blue); font-weight:700}
+.fbar{display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px 2px 0}
+.fbar-l{font-family:"Montserrat",sans-serif; font-size:9px; font-weight:800; text-transform:uppercase;
+  letter-spacing:.8px; color:var(--slate); margin-right:2px}
+.fchip{display:inline-flex; align-items:center; gap:6px; background:var(--blue-pale);
+  border:1px solid var(--blue); color:var(--blue); border-radius:999px;
+  padding:3px 8px 3px 10px; font-size:11px; font-weight:600; line-height:1.5}
+.fchip-x{cursor:pointer; font-size:11px; opacity:.6; font-weight:700}
+.fchip-x:hover{opacity:1}
+.fbar-clear{font-size:11px; font-weight:700; color:var(--slate); cursor:pointer;
+  text-decoration:underline; text-underline-offset:2px; margin-left:4px}
+.fbar-clear:hover{color:var(--blue)}
 .btn-toggle .tog-dot{width:7px; height:7px; border-radius:50%; background:currentColor; opacity:.45; transition:opacity .16s}
 .btn-toggle.active .tog-dot{opacity:1}
 .spinner{width:16px; height:16px; border:2px solid var(--silver); border-top-color:var(--green); border-radius:50%; animation:spin .7s linear infinite; flex-shrink:0}
@@ -1081,6 +1105,8 @@ const S = {
   user:         null,
   records:      [],
   month:        _nowMonth,
+  fRoute:       '',   // Route filter — see searchTerm below for why it is here
+  fType:        '',   // Type filter
   searchTerm:   '',   // kept in state: the search input lives inside #sub-summary,
                       // which gets rebuilt wholesale, so the DOM value is not durable
   paperSize:    loadPaperSize(),   // CDF PDF page size; see PAPER_SIZES
@@ -1434,8 +1460,7 @@ function renderAll() {
   const total = S.records.length;
   const pill = document.getElementById('total-pill');
   if (pill) pill.textContent = total + ' CDF' + (total !== 1 ? 's' : '');
-  const rc = document.getElementById('rc');
-  if (rc) rc.textContent = filtered.length < total ? filtered.length + ' shown' : '';
+  setShownCount(filtered.length, total);
   document.getElementById('tcard-title').textContent = 'All CDF Records';
 }
 
@@ -1453,8 +1478,67 @@ function onSearchInput() {
   const filtered = getFiltered();
   renderTable(filtered);
   const total = S.records.length;
+  setShownCount(filtered.length, total);
+}
+
+/* A filter control that keeps its value. Rendered from state and marked
+   .active when it is actually filtering, so a narrowed list never looks
+   like a full one. */
+function selectFilter(id, key, allLabel, values) {
+  const cur = S[key] || '';
+  const opts = `<option value="">${allLabel}</option>`
+    + values.map(v => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  return `<select class="fs${cur ? ' active' : ''}" id="${id}"
+    onchange="S.${key}=this.value; S.expandedId=null; renderAll()">${opts}</select>`;
+}
+
+/** Clears one filter by name, or every filter when called with 'all'. */
+function clearFilter(which) {
+  if (which === 'all') {
+    S.fRoute = ''; S.fType = ''; S.searchTerm = ''; S.subFilter = '';
+    S.hideReceived = false;
+  }
+  else if (which === 'route')    S.fRoute = '';
+  else if (which === 'type')     S.fType = '';
+  else if (which === 'search')   S.searchTerm = '';
+  else if (which === 'sub')      S.subFilter = '';
+  else if (which === 'received') S.hideReceived = false;
+  S.expandedId = null;
+  renderAll();
+}
+
+/** Chips naming every filter currently in force. Empty string when none are. */
+function activeFilterBar() {
+  const chips = [];
+  const add = (key, label) => chips.push(
+    `<span class="fchip">${esc(label)}<span class="fchip-x" title="Remove this filter"
+       onclick="event.stopPropagation();clearFilter('${key}')">✕</span></span>`);
+  if (S.subFilter) {
+    const byKey = Object.keys(P4_STATUS_SF).find(k => P4_STATUS_SF[k] === S.subFilter);
+    const names = { p4_whs:'WHS Prepare Order', p4_act:'Awaiting Actual Count',
+                    p4_attn:'Needs Attention', p4_odd:'Unrecognised Status',
+                    p3_await:'Awaiting IA Review', p3_pdf:'PDF Pending',
+                    p3_coord:'Awaiting Coordinator', p3_stchg:'Changes Requested' };
+    add('sub', byKey || names[S.subFilter] || 'Card filter');
+  }
+  if (S.fRoute)      add('route',  'Route: ' + S.fRoute);
+  if (S.fType)       add('type',   'Type: ' + S.fType);
+  if (S.searchTerm)  add('search', `Search: "${S.searchTerm}"`);
+  if (S.hideReceived) add('received', 'Received hidden');
+  if (!chips.length) return '';
+  return '<div class="fbar"><span class="fbar-l">Filtered by</span>' + chips.join('')
+    + `<span class="fbar-clear" onclick="clearFilter('all')">Clear all</span></div>`;
+}
+
+/* "26 shown" beside "273 CDFs" reads like a second total. Spell it out, and
+   colour it when a filter is actually on. */
+function setShownCount(shown, total) {
   const rc = document.getElementById('rc');
-  if (rc) rc.textContent = filtered.length < total ? filtered.length + ' shown' : '';
+  if (!rc) return;
+  const filtering = shown < total;
+  rc.textContent    = filtering ? `${shown} of ${total} shown` : '';
+  rc.style.color    = filtering ? 'var(--blue)' : '#aaa';
+  rc.style.fontWeight = filtering ? '700' : '400';
 }
 
 function toggleHideReceived() {
@@ -1467,8 +1551,8 @@ function toggleHideReceived() {
 
 function getFiltered() {
   const search = String(S.searchTerm ?? (document.getElementById('search')?.value || '')).toLowerCase();
-  const fRoute = document.getElementById('f-route')?.value || '';
-  const fType  = document.getElementById('f-type')?.value  || '';
+  const fRoute = S.fRoute || '';
+  const fType  = S.fType  || '';
   // Hide Received is ON by default for IS and COORDINATOR (set at login) so field
   // users land on active work. But clicking the Received card is an explicit
   // request to see received tickets — and this filter runs before the card
@@ -1684,14 +1768,15 @@ function renderSummary(rows) {
       // ── Phase 4 filter controls row ──────────────────────────────────────────
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 2px 0">'
         +'<div class="sw" style="min-width:180px;max-width:260px"><input type="text" id="search" placeholder="Search store or CDF…" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
-        +'<select class="fs" id="f-route" onchange="renderAll()"><option value="">All Routes</option><option value="Direct">Direct</option><option value="Via SDC">Via SDC</option><option value="Via CDC">Via CDC</option></select>'
-        +'<select class="fs" id="f-type" onchange="renderAll()"><option value="">All Types</option><option value="Regular">Regular</option><option value="Spare Parts">Spare Parts</option><option value="Shopee">Shopee</option><option value="Supplies">Supplies</option></select>'
+        +selectFilter('f-route', 'fRoute', 'All Routes', ['Direct','Via SDC','Via CDC'])
+        +selectFilter('f-type', 'fType', 'All Types', ['Regular','Spare Parts','Shopee','Supplies'])
         +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="'+(S.attnDays||ATTN_DEFAULT_DAYS)+'" min="1" max="180" onchange="S.attnDays=parseInt(this.value)||ATTN_DEFAULT_DAYS; renderAll()"> days</div>'
         +'<button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records"><span class="tog-dot"></span> Hide Received</button>'
         // Export by breakdown card. This block is already the Phase 4 branch, so
         // no phase check is needed — no other phase has these buckets.
         +'<button class="btn-toggle" onclick="p4OpenExportModal()" title="Export Phase 4 tickets to Excel" style="margin-left:auto">⬇ Export</button>'
-      +'</div>';
+      +'</div>'
+      + activeFilterBar();
   }
 
   // Render sub-cards (or clear if no phase selected)
