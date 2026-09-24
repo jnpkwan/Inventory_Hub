@@ -1561,7 +1561,7 @@ function getFiltered() {
   const wantsReceived = S.subFilter === 'p4_recv';
   return S.records.filter(r => {
     if (S.hideReceived && !wantsReceived && isReceivedTicket(r)) return false;
-    if (fRoute && r.route!==fRoute) return false;
+    if (fRoute && routeLabel(r)!==fRoute) return false;
     if (fType  && r.type !==fType)  return false;
     if (search && !(r.store||'').toLowerCase().includes(search) &&
                   !(r.cdf||'').toLowerCase().includes(search)) return false;
@@ -1769,7 +1769,7 @@ function renderSummary(rows) {
       // ── Phase 4 filter controls row ──────────────────────────────────────────
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 2px 0">'
         +'<div class="sw" style="min-width:180px;max-width:260px"><input type="text" id="search" placeholder="Search store or CDF…" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
-        +selectFilter('f-route', 'fRoute', 'All Routes', ['Direct','Via SDC','Via CDC'])
+        +selectFilter('f-route', 'fRoute', 'All Routes', ['Direct','Via SDC','Via CDC','LBC'])
         +selectFilter('f-type', 'fType', 'All Types', ['Regular','Spare Parts','Shopee','Supplies'])
         +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="'+(S.attnDays||ATTN_DEFAULT_DAYS)+'" min="1" max="180" onchange="S.attnDays=parseInt(this.value)||ATTN_DEFAULT_DAYS; renderAll()"> days</div>'
         +'<button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records"><span class="tog-dot"></span> Hide Received</button>'
