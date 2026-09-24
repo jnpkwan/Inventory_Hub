@@ -1716,17 +1716,18 @@ function renderSummary(rows) {
       else                               oddStatus++;
     });
     const attn = all.filter(r=>r.storeStatus==='Approved'&&S._attnIds.has(r.id||r.cdf)).length;
-    // One-time legacy migration. EXECUTIVE only: it writes straight into Phase 4,
-    // bypassing Phases 1–3, so it must never be reachable by an IA or coordinator.
-    const migCard = (S.user?.role==='EXECUTIVE')
-      ? '<div class="ssc" style="border-color:var(--blue);cursor:pointer" onclick="p4OpenMigrateModal()">'
-          +'<div class="ssc-n" style="color:var(--blue)">📦</div>'
-          +'<div class="ssc-l" style="color:var(--blue);font-weight:700">Migrate Dispatched CDFs</div>'
+    // Spare parts orders are approved in a separate workflow, so they enter at
+    // Phase 4 and are tracked through fulfilment like any other ticket.
+    // IAs raise them (executives too, as admins); coordinators cannot.
+    const spCard = ['IS','EXECUTIVE'].includes(S.user?.role||'')
+      ? '<div class="ssc" style="border-color:var(--green-d);cursor:pointer" onclick="spOpenModal()">'
+          +'<div class="ssc-n" style="color:var(--green-d)">🔧</div>'
+          +'<div class="ssc-l" style="color:var(--green-d);font-weight:700">Order Spare Parts</div>'
         +'</div>'
       : '';
     subHTML = '<div class="sub-summary">'
       +'<div class="sub-label">Phase 4 — Fulfillment &amp; Dispatch breakdown</div>'
-      +migCard
+      +spCard
       // One card per status, driven off STATUS_META rather than a hand-picked
       // list, so a status can never exist without a card and the status cards
       // always add up to the phase header.
@@ -1811,7 +1812,9 @@ function getWorkflowStatus(r) {
   const pdf= r.pdfStatus||'';
   // Phase 3 — SM Approval
   if(sm==='')                    return {label:'🔍 Awaiting IA Review',   cls:'wb-action'};
-  if(sm==='Approved'&&pdf!=='Generated') return {label:'📄 PDF Pending',  cls:'wb-action'};
+  // Spare parts never get a CDF PDF — they are approved in Acacia — so this
+  // badge would otherwise read "PDF Pending" for the rest of their life.
+  if(sm==='Approved'&&pdf!=='Generated'&&!isSpareParts(r)) return {label:'📄 PDF Pending',  cls:'wb-action'};
   // Phase 3 — Store Approval
   if(st==='')                    return {label:'📤 Awaiting Coordinator', cls:'wb-action'};
   if(st==='Changes Requested')   return {label:'🏪 Store Changes Requested',cls:'wb-change'};
@@ -1927,7 +1930,7 @@ function renderTable(rows) {
       <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="toggleExpand('${esc(uid)}')" data-id="${esc(uid)}">
         <td class="td-cdf">${leadCell(r)}</td>
         <td class="td-store">${esc(r.store)}</td>
-        <td class="td-dim">${r.route}</td>
+        <td class="td-dim">${esc(routeLabel(r))}</td>
         <td class="td-dim">${r.type}</td>
         <td>
           <span class="wb ${wf.cls}">${wf.label}</span>
@@ -2587,10 +2590,14 @@ const refLocked = isEdit && S.user.role !== 'EXECUTIVE' && !!String(r.acaciaRef|
       </select>
     </div><div class="fg">
       <label>Route <span class="req">*</span></label>
+      ${isSpareParts(r) ? `
+        <select class="ms" id="f-route-m" onchange="updateRouteFields()" title="Spare parts always ship by LBC">
+          <option value="Direct" selected>LBC</option>
+        </select>` : `
       <select class="ms" id="f-route-m" onchange="updateRouteFields()">
         ${['Direct','Via SDC','Via CDC'].includes(r.route) ? '' : '<option value="">— Select route —</option>'}
         ${['Direct','Via SDC','Via CDC'].map(v=>`<option value="${v}" ${r.route===v?'selected':''}>${v}</option>`).join('')}
-      </select>
+      </select>`}
     </div></div>
 
     <div class="section-label">Dates</div>
@@ -2614,7 +2621,7 @@ const refLocked = isEdit && S.user.role !== 'EXECUTIVE' && !!String(r.acaciaRef|
       <label id="boxes-lbl">No. of Boxes</label>
       <input type="text" id="f-boxes" value="${esc(r.boxes||'')}" placeholder="12">
     </div><div class="fg">
-      <label id="truck-lbl">Truck / Plate No.</label>
+      <label id="truck-lbl">${isSpareParts(r) ? 'LBC Tracking Number' : 'Truck / Plate No.'}</label>
       <input type="text" id="f-truck" value="${esc(r.truck||'')}" placeholder="TRK-001">
     </div><div class="fg">
       <label id="cas-lbl">CAS No.</label>
@@ -2661,9 +2668,16 @@ function syncDateLocks() {
   const truckLbl = document.getElementById('truck-lbl');
   const casLbl   = document.getElementById('cas-lbl');
   const reqMark  = '<span class="req">*</span>';
-  if(boxesLbl) boxesLbl.innerHTML = 'No. of Boxes' + (toStoreFilled ? ' '+reqMark : '');
-  if(truckLbl) truckLbl.innerHTML = 'Truck / Plate No.' + (toStoreFilled ? ' '+reqMark : '');
-  if(casLbl)   casLbl.innerHTML   = 'CAS No.' + (toStoreFilled ? ' '+reqMark : '');
+  // A courier shipment has no truck, boxes count or CAS — just a tracking
+  // number. So for spare parts only that one is required, and it is named for
+  // what it actually is.
+  // f-type-m is the record's own Type field. f-type is the table filter — a
+  // different control entirely, and reading it here would be wrong.
+  const sparePs = document.getElementById('f-type-m')?.value === 'Spare Parts';
+  if(boxesLbl) boxesLbl.innerHTML = 'No. of Boxes' + (toStoreFilled && !sparePs ? ' '+reqMark : '');
+  if(truckLbl) truckLbl.innerHTML = (sparePs ? 'LBC Tracking Number' : 'Truck / Plate No.')
+                                  + (toStoreFilled ? ' '+reqMark : '');
+  if(casLbl)   casLbl.innerHTML   = 'CAS No.' + (toStoreFilled && !sparePs ? ' '+reqMark : '');
   const fRecv = document.getElementById('f-dRecv');
   if (fRecv) {
     if (p6Locked) {
@@ -2904,292 +2918,234 @@ function r_coordNote(uid) {
    ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Upload modal open/close ─────────────────────────────────────────── */
-/* ── PHASE 4 — ONE-TIME LEGACY CDF MIGRATION ───────────────────────────────
-   Loads CDFs that were already dispatched under the old paper/Excel tracking
-   straight into Phase 4. These never passed through Phases 1–3 and carry no
-   order lines, because the goods have already shipped. EXECUTIVE only.
-   Every imported record is stamped in Remarks so it stays obvious later why it
-   has no approval trail.
+/* ── PHASE 4 — SPARE PARTS ORDER ───────────────────────────────────────────
+   Spare parts are approved in a separate workflow (Acacia), so they skip
+   Phases 1–3 and enter at Phase 4 with fulfilment still to run. A batch can
+   cover several stores; each store becomes ONE ticket, because each store's
+   delivery gets its own LBC tracking number.
+   Route is stored as 'Direct' — LBC is structurally a single leg, warehouse
+   straight to store, so it reuses Direct's date field and every rule built on
+   it. The front end shows it as LBC (see routeLabel).
    ------------------------------------------------------------------------ */
-const P4M = { staged: null };
+const SP = { rows: null };
 
-function p4OpenMigrateModal() {
-  if (S.user?.role !== 'EXECUTIVE') { toast('Migration is restricted to EXECUTIVE users.', 'err'); return; }
-  let m = document.getElementById('p4-migrate-modal');
+function spBlankRow() { return { store:'', acaciaRef:'', sku:'', desc:'', qty:'' }; }
+
+function spOpenModal() {
+  if (!['IS','EXECUTIVE'].includes(S.user?.role||'')) {
+    toast('Only Inventory Associates can raise a spare parts order.', 'err'); return;
+  }
+  SP.rows = [spBlankRow(), spBlankRow(), spBlankRow()];
+  let m = document.getElementById('sp-modal');
   if (!m) {
     m = document.createElement('div');
-    m.id = 'p4-migrate-modal';
+    m.id = 'sp-modal';
     m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:800;align-items:center;justify-content:center;padding:20px';
-    m.innerHTML = `
-      <div style="background:#fff;border-radius:14px;width:100%;max-width:900px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)">
-        <div style="padding:20px 24px 14px;border-bottom:1px solid var(--silver);display:flex;align-items:center;gap:10px">
-          <span style="font-family:'Montserrat',sans-serif;font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.8px">📦 Migrate Dispatched CDFs into Phase 4</span>
-          <button onclick="p4CloseMigrateModal()" style="margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:#888">✕</button>
-        </div>
-        <div style="padding:20px 24px">
-          <p style="font-size:12px;color:#666;margin-bottom:14px">One-time load of CDFs already dispatched under the old tracking. Records land directly in <strong>Phase 4 — Fulfillment &amp; Dispatch</strong>, marked approved, with no order lines. Anything already in the Hub is skipped, so re-running is safe.</p>
-          <div id="p4-mig-dz" style="border:2px dashed var(--silver);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:16px"
-            ondrop="p4MigDrop(event)" ondragover="p1DragOver(event)" ondragleave="p1DragLeave(event)"
-            onclick="document.getElementById('p4-mig-input').click()">
-            <input type="file" id="p4-mig-input" accept=".xlsx,.xls" style="display:none" onchange="p4MigSelect(this)">
-            <div style="font-size:28px;margin-bottom:8px">📄</div>
-            <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:12px">Drop the filled CDF Migration Template here</div>
-            <div style="font-size:11px;color:#999;margin-top:4px">Store, CDF Number and Date Prepared are required on every row</div>
-          </div>
-          <div id="p4-mig-warn" style="display:none;background:var(--sage);border-left:3px solid var(--amber);border-radius:6px;padding:10px 12px;font-size:11.5px;margin-bottom:12px"></div>
-          <div id="p4-mig-summary" style="display:none;font-size:12px;margin-bottom:12px"></div>
-          <div id="p4-mig-tablewrap" style="display:none;max-height:320px;overflow-y:auto;border:1px solid var(--silver);border-radius:8px">
-            <table style="width:100%;border-collapse:collapse;font-size:11.5px">
-              <thead style="position:sticky;top:0;background:var(--mist)">
-                <tr>
-                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">CDF</th>
-                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Store</th>
-                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Route</th>
-                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Status</th>
-                  <th style="padding:7px 10px;text-align:center;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Prepared</th>
-                  <th style="padding:7px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Note</th>
-                </tr>
-              </thead>
-              <tbody id="p4-mig-tbody"></tbody>
-            </table>
-          </div>
-        </div>
-        <div style="padding:14px 24px 20px;border-top:1px solid var(--silver);display:flex;gap:10px;justify-content:flex-end">
-          <button onclick="p4CloseMigrateModal()" style="padding:9px 18px;border:1px solid var(--silver);background:#fff;border-radius:8px;font-size:12px;cursor:pointer">Cancel</button>
-          <button id="p4-mig-btn" onclick="p4ConfirmMigrate()" disabled
-            style="padding:9px 20px;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;opacity:.5">Import into Phase 4</button>
-        </div>
-      </div>`;
     document.body.appendChild(m);
   }
-  document.getElementById('p4-mig-warn').style.display='none';
-  document.getElementById('p4-mig-summary').style.display='none';
-  document.getElementById('p4-mig-tablewrap').style.display='none';
-  const b=document.getElementById('p4-mig-btn'); b.disabled=true; b.style.opacity='.5';
-  b.textContent='Import into Phase 4';
-  P4M.staged=null;
-  m.style.display='flex';
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:1040px;max-height:92vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)">
+      <div style="padding:20px 24px 14px;border-bottom:1px solid var(--silver);display:flex;align-items:center;gap:10px">
+        <span style="font-family:'Montserrat',sans-serif;font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.8px">🔧 Order Spare Parts</span>
+        <button onclick="spCloseModal()" style="margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:#888">✕</button>
+      </div>
+      <div style="padding:18px 24px">
+        <p style="font-size:12px;color:#666;margin-bottom:14px">
+          Already approved in Acacia, so these skip the Phase 3 review and land in
+          <strong>WHS Prepare Order</strong> — the warehouse step still runs, so nothing gets forgotten.
+          One ticket per store; each store's LBC tracking number is entered on its ticket once it ships.
+        </p>
+        <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+          <div>
+            <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--slate);margin-bottom:4px">Order date (WHS) <span style="color:var(--red)">*</span></label>
+            <input type="date" id="sp-dwhs" value="${new Date().toISOString().slice(0,10)}"
+              style="padding:7px 10px;border:1px solid var(--silver);border-radius:8px;font-size:12.5px">
+          </div>
+          <div style="font-size:11px;color:#999;padding-bottom:9px">Applies to every line in this batch</div>
+        </div>
+        <div style="overflow-x:auto;border:1px solid var(--silver);border-radius:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:860px">
+            <thead style="background:var(--mist)">
+              <tr>
+                ${['Store ★','CDF Ref ★','SKU / Barcode ★','Product Description ★','Qty ★','']
+                  .map((h,i)=>`<th style="padding:7px 10px;text-align:${i===4?'center':'left'};font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">${h}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody id="sp-tbody"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+          <button onclick="spAddRow()" style="padding:6px 12px;border:1px solid var(--silver);background:#fff;border-radius:7px;font-size:11.5px;cursor:pointer">+ Add line</button>
+          <span id="sp-summary" style="font-size:11.5px;color:#666"></span>
+        </div>
+        <div id="sp-warn" style="display:none;background:var(--sage);border-left:3px solid var(--amber);border-radius:6px;padding:10px 12px;font-size:11.5px;margin-top:12px"></div>
+      </div>
+      <div style="padding:14px 24px 20px;border-top:1px solid var(--silver);display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="spCloseModal()" style="padding:9px 18px;border:1px solid var(--silver);background:#fff;border-radius:8px;font-size:12px;cursor:pointer">Cancel</button>
+        <button id="sp-btn" onclick="spSubmit()"
+          style="padding:9px 20px;border:none;background:var(--green-d);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">Create tickets</button>
+      </div>
+    </div>`;
+  spRenderRows();
+  m.style.display = 'flex';
 }
-function p4CloseMigrateModal(){ const m=document.getElementById('p4-migrate-modal'); if(m) m.style.display='none'; }
-function p4MigDrop(e){ e.preventDefault(); p1DragLeave(e); const f=e.dataTransfer.files[0]; if(f) p4ParseMigrationFile(f); }
-function p4MigSelect(el){ const f=el.files[0]; if(f) p4ParseMigrationFile(f); }
+function spCloseModal(){ const m=document.getElementById('sp-modal'); if(m) m.style.display='none'; SP.rows=null; }
+function spAddRow(){ SP.rows.push(spBlankRow()); spRenderRows(); }
+function spDelRow(i){ SP.rows.splice(i,1); if(!SP.rows.length) SP.rows.push(spBlankRow()); spRenderRows(); }
+function spSet(i, field, v){ SP.rows[i][field] = v; if (field==='store'||field==='acaciaRef') spRenderRows(); else spUpdateSummary(); }
 
-/** Excel dates arrive as serials or Date objects depending on how they were typed. */
-function p4ToISODate(v) {
-  if (v === null || v === undefined || v === '') return '';
-  if (v instanceof Date) return v.toISOString().slice(0,10);
-  if (typeof v === 'number') {                      // Excel serial, 1900 epoch
-    const d = new Date(Date.UTC(1899,11,30) + v*86400000);
-    return isNaN(d) ? '' : d.toISOString().slice(0,10);
+function spRenderRows() {
+  const storeOpts = (S.stores||[]).map(st=>`<option value="${esc(st)}">${esc(st)}</option>`).join('');
+  document.getElementById('sp-tbody').innerHTML = SP.rows.map((r,i)=>`
+    <tr style="border-top:1px solid var(--silver)">
+      <td style="padding:5px 8px">
+        <select onchange="spSet(${i},'store',this.value)" style="width:100%;font-size:11.5px;padding:5px;border:1px solid var(--silver);border-radius:5px">
+          <option value="">— Select store —</option>${storeOpts}
+        </select></td>
+      <td style="padding:5px 8px"><input value="${esc(r.acaciaRef)}" oninput="spSet(${i},'acaciaRef',this.value)"
+        placeholder="e.g. CDF-2026-00123" style="width:100%;font-size:11.5px;padding:5px;border:1px solid var(--silver);border-radius:5px"></td>
+      <td style="padding:5px 8px"><input value="${esc(r.sku)}" oninput="spSet(${i},'sku',this.value)"
+        placeholder="barcode" style="width:100%;font-size:11.5px;padding:5px;border:1px solid var(--silver);border-radius:5px;font-family:'DM Mono',monospace"></td>
+      <td style="padding:5px 8px"><input value="${esc(r.desc)}" oninput="spSet(${i},'desc',this.value)"
+        placeholder="what the part is" style="width:100%;font-size:11.5px;padding:5px;border:1px solid var(--silver);border-radius:5px"></td>
+      <td style="padding:5px 8px"><input type="number" min="1" value="${esc(r.qty)}" oninput="spSet(${i},'qty',this.value)"
+        style="width:70px;font-size:11.5px;padding:5px;border:1px solid var(--silver);border-radius:5px;text-align:center"></td>
+      <td style="padding:5px 8px;text-align:center"><span onclick="spDelRow(${i})" title="Remove this line"
+        style="cursor:pointer;color:#bbb;font-size:13px">✕</span></td>
+    </tr>`).join('');
+  SP.rows.forEach((r,i)=>{ const sel=document.querySelectorAll('#sp-tbody select')[i]; if(sel) sel.value=r.store; });
+  spUpdateSummary();
+}
+
+/** Groups the filled rows by store. One store = one ticket. */
+function spGroup() {
+  const filled = SP.rows.filter(r => r.store || r.sku || r.desc || r.qty || r.acaciaRef);
+  const byStore = new Map();
+  filled.forEach(r => {
+    const k = String(r.store||'').trim().toUpperCase();
+    if (!byStore.has(k)) byStore.set(k, []);
+    byStore.get(k).push(r);
+  });
+  return { filled, byStore };
+}
+
+function spUpdateSummary() {
+  const { filled, byStore } = spGroup();
+  const n = [...byStore.keys()].filter(Boolean).length;
+  const el = document.getElementById('sp-summary');
+  if (el) el.textContent = filled.length
+    ? `${filled.length} line${filled.length!==1?'s':''} · ${n} store${n!==1?'s':''} → ${n} ticket${n!==1?'s':''}`
+    : '';
+}
+
+/** Everything that must be true before any ticket is written. */
+function spValidate() {
+  const { filled, byStore } = spGroup();
+  const errs = [];
+  if (!document.getElementById('sp-dwhs')?.value) errs.push('Pick the order date.');
+  if (!filled.length) errs.push('Add at least one line.');
+  filled.forEach((r, i) => {
+    const n = SP.rows.indexOf(r) + 1;
+    if (!r.store)                    errs.push(`Line ${n}: pick a store.`);
+    if (!String(r.acaciaRef).trim()) errs.push(`Line ${n}: CDF Ref is required.`);
+    if (!String(r.sku).trim())       errs.push(`Line ${n}: enter the SKU.`);
+    if (!String(r.desc).trim())      errs.push(`Line ${n}: enter a description.`);
+    if (!(parseFloat(r.qty) > 0))    errs.push(`Line ${n}: quantity must be 1 or more.`);
+  });
+  // One ticket per store carries one CDF Ref, so a store's lines must agree.
+  byStore.forEach((rows, store) => {
+    if (!store) return;
+    const refs = [...new Set(rows.map(r => String(r.acaciaRef).trim()).filter(Boolean))];
+    if (refs.length > 1) errs.push(`${store}: lines have different CDF Refs (${refs.join(', ')}). One ticket per store carries one ref.`);
+  });
+  return errs;
+}
+
+async function spSubmit() {
+  const errs = spValidate();
+  const warn = document.getElementById('sp-warn');
+  if (errs.length) {
+    warn.style.display = '';
+    warn.innerHTML = '⚠️ ' + errs.slice(0,6).join('<br>⚠️ ') + (errs.length>6 ? `<br>…and ${errs.length-6} more` : '');
+    return;
   }
-  const s = String(v).trim();
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  const d = new Date(s);
-  return isNaN(d) ? '' : d.toISOString().slice(0,10);
-}
+  warn.style.display = 'none';
+  const btn = document.getElementById('sp-btn');
+  btn.disabled = true; btn.style.opacity = '.6';
 
-const P4M_MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
-                    'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+  const dWhs = document.getElementById('sp-dwhs').value;
+  const month = P4_MONTH_NAMES[parseInt(dWhs.slice(5,7),10) - 1];
+  const { byStore } = spGroup();
+  const stores = [...byStore.entries()].filter(([k]) => k);
+  let made = 0, failed = 0, done = 0; const errors = [];
 
-async function p4ParseMigrationFile(file) {
-  const dz = document.getElementById('p4-mig-dz');
-  dz.style.background='var(--blue-pale)'; dz.style.borderColor='var(--blue)';
-  try {
-    const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
-    const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes('MIGRATION')) || wb.SheetNames[0];
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header:1, defval:'' });
-
-    // Match on DISTINCT CELLS, not a joined string: the instruction banner above
-    // the table is one merged cell that mentions both "Store" and "CDF Number",
-    // and a joined-substring test latches onto it instead of the real header.
-    const normCell = v => String(v).replace(/\u2605/g,'').trim().toLowerCase();
-    let hdrIdx = -1;
-    for (let i=0;i<Math.min(12,rows.length);i++){
-      const cells = rows[i].map(normCell);
-      if (cells.some(c=>c==='store') && cells.some(c=>c.startsWith('cdf number'))) { hdrIdx=i; break; }
-    }
-    if (hdrIdx < 0) throw new Error('Could not find the header row. Use the CDF Migration Template unchanged.');
-    const headers = rows[hdrIdx].map(v=>String(v).trim());
-    const col = n => headers.findIndex(h=>h.toLowerCase().includes(n.toLowerCase()));
-    const C = {
-      store:col('Store'), cdf:col('CDF Number'), prep:col('Date Prepared'),
-      route:col('Route'), status:col('Status'), type:col('Type'),
-      leg1:col('WHS →'), leg2:col('Hub →'),
-      boxes:col('Boxes'), truck:col('Truck'), cas:col('CAS'),
-      aref:col('Acacia Ref'), remarks:col('Remarks'),
-    };
-    if (C.store<0 || C.cdf<0) throw new Error('Missing the Store or CDF Number column.');
-
-    // Map, not a Set: a partially-migrated record (addCDF landed, the approval
-    // write did not) needs repairing, not skipping — otherwise a re-run can
-    // never rescue it and it sits stranded in Phase 3 forever.
-    const existingByCdf = new Map((S.records||[]).map(r=>[String(r.cdf||'').trim(), r]));
-    const isFullyMigrated = r => String(r.storeStatus||'')==='Approved'
-                              && String(r.fulfillStatus||'')!=='';
-    const staged = [], problems = [];
-    const seen = new Set();
-    for (let i=hdrIdx+1;i<rows.length;i++){
-      const r = rows[i];
-      const cdf   = String(r[C.cdf]||'').trim();
-      const store = String(r[C.store]||'').trim().toUpperCase();
-      if (!cdf && !store) continue;
-      if (!cdf)   { problems.push(`row ${i+1}: no CDF number`); continue; }
-      if (!store) { problems.push(`${cdf}: no store`); continue; }
-      if (seen.has(cdf))     { problems.push(`${cdf}: duplicated inside the file`); continue; }
-      const prior = existingByCdf.get(cdf);
-      if (prior && isFullyMigrated(prior)) { problems.push(`${cdf}: already migrated — skipped`); continue; }
-      seen.add(cdf);
-      const prep = p4ToISODate(r[C.prep]);
-      const route = String(r[C.route]||'').trim() || 'Unknown';
-      const leg1 = p4ToISODate(r[C.leg1]), leg2 = p4ToISODate(r[C.leg2]);
-      staged.push({
-        _repairId: prior ? prior.id : null,   // set = record exists, only needs the Phase 4 write
-        cdf, store, route,
-        status: String(r[C.status]||'').trim() || 'In Transit',
-        type:   String(r[C.type]||'').trim()   || 'Regular',
-        month:  prep ? P4M_MONTHS[parseInt(prep.slice(5,7),10)-1] : currentMonthNameJS(),
-        dWhs: prep,
-        // Which leg column a date belongs to depends on the route.
-        dDirect: route==='Direct' ? leg1 : '',
-        dSdc:    route==='Via SDC' ? leg1 : '',
-        dCdc:    route==='Via CDC' ? leg1 : '',
-        dSdc2:   route==='Via SDC' ? leg2 : '',
-        dCdc2:   route==='Via CDC' ? leg2 : '',
-        boxes: String(r[C.boxes]||'').trim(), truck: String(r[C.truck]||'').trim(),
-        cas:   String(r[C.cas]||'').trim(),   acaciaRef: String(r[C.aref]||'').trim(),
-        remarks: String(r[C.remarks]||'').trim(),
-      });
-    }
-    if (!staged.length) throw new Error('No importable rows found.' + (problems.length?` (${problems.length} skipped)`:''));
-
-    // Every ticket must land in a status card. A Status value outside the six
-    // known ones would import fine and then show in no card at all, so catch it
-    // here — before anything is written — rather than leaving a record adrift.
-    const badStatus = staged.filter(s => !STATUS_META[s.status]);
-    if (badStatus.length) {
-      const seenBad = [...new Set(badStatus.map(s=>s.status))];
-      throw new Error(`${badStatus.length} row(s) have a Status that matches no card: `
-        + `${seenBad.map(v=>`"${v}"`).join(', ')}. Use one of: ${Object.keys(STATUS_META).join(', ')}.`);
-    }
-
-    P4M.staged = staged;
-    const noRoute = staged.filter(s=>s.route==='Unknown').length;
-    const toStoreNoDetail = staged.filter(s=>{
-      const toStore = s.route==='Direct' ? s.dDirect : (s.dSdc2||s.dCdc2);
-      return toStore && !(s.boxes && s.truck && s.cas);
-    }).length;
-
-    const warn = document.getElementById('p4-mig-warn');
-    const bits = [];
-    if (problems.length) bits.push(`${problems.length} row${problems.length!==1?'s':''} skipped: ${problems.slice(0,4).join('; ')}${problems.length>4?'…':''}`);
-    if (noRoute) bits.push(`${noRoute} have no Route — they import as “Unknown” and the IA must pick one before logging any dispatch date.`);
-    if (toStoreNoDetail) bits.push(`${toStoreNoDetail} have a to-store date without Boxes/Truck/CAS — the IA must fill all three before those can be saved or marked Received.`);
-    if (bits.length){ warn.style.display=''; warn.innerHTML = '⚠️ ' + bits.join('<br>⚠️ '); }
-    else warn.style.display='none';
-
-    document.getElementById('p4-mig-summary').style.display='';
-    document.getElementById('p4-mig-summary').innerHTML =
-      `<strong>${staged.length}</strong> CDF${staged.length!==1?'s':''} ready to import into Phase 4 · `
-      + (staged.filter(s=>s._repairId).length
-          ? `${staged.filter(s=>s._repairId).length} of them already exist and will be repaired into Phase 4 · ` : '')
-      + `${staged.filter(s=>s.status==='In Transit').length} In Transit · `
-      + `${staged.filter(s=>s.status==='Pending Dispatch').length} Pending Dispatch`;
-
-    document.getElementById('p4-mig-tbody').innerHTML = staged.map(s=>`
-      <tr style="border-bottom:1px solid var(--silver)">
-        <td style="padding:6px 10px;font-family:'DM Mono',monospace;font-size:11px;color:var(--blue)">${esc(s.cdf)}</td>
-        <td style="padding:6px 10px;font-weight:600">${esc(s.store)}</td>
-        <td style="padding:6px 10px;${s.route==='Unknown'?'color:var(--amber)':''}">${esc(s.route)}</td>
-        <td style="padding:6px 10px">${esc(s.status)}</td>
-        <td style="padding:6px 10px;text-align:center">${esc(s.dWhs||'—')}</td>
-        <td style="padding:6px 10px;font-size:10.5px;color:#777">${esc(s.remarks||'')}</td>
-      </tr>`).join('');
-    document.getElementById('p4-mig-tablewrap').style.display='';
-    const b=document.getElementById('p4-mig-btn'); b.disabled=false; b.style.opacity='1';
-    b.textContent=`✓ Import ${staged.length} into Phase 4`;
-  } catch(err) {
-    toast('Migration file error: ' + err.message, 'err');
-  } finally {
-    dz.style.background=''; dz.style.borderColor='var(--silver)';
-  }
-}
-
-function currentMonthNameJS(){ return P4M_MONTHS[new Date().getMonth()]; }
-
-async function p4ConfirmMigrate() {
-  if (!P4M.staged || !P4M.staged.length) return;
-  if (S.user?.role !== 'EXECUTIVE') { toast('Migration is restricted to EXECUTIVE users.','err'); return; }
-  const btn = document.getElementById('p4-mig-btn');
-  btn.disabled = true; btn.style.opacity='.6';
-
-  const stamp = `Migrated from legacy CDF tracking ${new Date().toISOString().slice(0,10)}`;
-  let done=0, repaired=0, failed=0, completed=0; const errors=[];
-  const total = P4M.staged.length;
-
-  // addCDF cannot set the approval fields (buildCDFRecord hardcodes them blank),
-  // so each record is created and then approved. Both endpoints already exist —
-  // no backend change. storeStatus='Approved' is what puts it in Phase 4.
-  const importOne = async (s) => {
+  for (const [store, rows] of stores) {
     try {
-      // A repair target already exists — it just never got its Phase 4 write.
-      // Only the update is needed; re-running addCDF would throw on the duplicate.
-      let id = s._repairId;
-      if (!id) {
-        const created = await gasPost('addCDF', {
-          username:S.user.username, cdf:s.cdf, store:s.store, month:s.month,
-          type:s.type, route:s.route, status:s.status,
-          dWhs:s.dWhs, dSdc:s.dSdc, dDirect:s.dDirect, dCdc:s.dCdc,
-          dSdc2:s.dSdc2, dCdc2:s.dCdc2,
-          boxes:s.boxes, truck:s.truck, cas:s.cas, acaciaRef:s.acaciaRef,
-          remarks: s.remarks ? `${s.remarks} · ${stamp}` : stamp,
-        });
-        id = created.id;
-      }
+      const ref = String(rows[0].acaciaRef).trim();
+      const lines = rows.map(r => ({
+        barcode: String(r.sku).trim(), productName: String(r.desc).trim(),
+        brand: '', category: 'Spare Parts', cdfIncrement: 1,
+        finalOrder: parseFloat(r.qty) || 0, allocated: parseFloat(r.qty) || 0, storeOrder: 0,
+      }));
+      const created = await gasPost('addCDF', {
+        username: S.user.username,
+        cdf:   spUniqueRef(store, dWhs),
+        store, month,
+        type:  'Spare Parts',
+        route: 'Direct',            // LBC is a single leg; shown as LBC in the UI
+        status:'Preparing Order',
+        dWhs,
+        acaciaRef: ref,
+        orderLines: JSON.stringify(lines),
+        remarks: 'Spare parts order · courier LBC',
+      });
+      // Approved elsewhere, so mark both approvals and drop it into Phase 4.
+      // fulfillStatus stays blank on purpose — that is what puts it in
+      // WHS Prepare Order so the warehouse hand-off still happens.
       const ts = new Date().toISOString();
       await gasPost('updateCDF', {
-        username:S.user.username, id,
-        // Repairs re-assert status from the file: a stranded record never had it
-        // applied properly, and the Status column is the source of truth.
-        status: s.status,
+        username: S.user.username, id: created.id,
         smgrStatus:'Approved',  smgrApprovedBy:S.user.username,  smgrApprovedAt:ts,
         storeStatus:'Approved', storeUpdatedBy:S.user.username,  storeUpdatedAt:ts,
-        // These goods have already left the warehouse, so the fulfilment step is
-        // done. Leaving fulfillStatus blank would (a) pile all of them into the
-        // WHS Prepare Order queue, telling the warehouse to prepare orders that
-        // already shipped, and (b) leave every record's dispatch dates LOCKED —
-        // p6Locked only opens for 'Actuals Logged' or 'Partial' — so the IA
-        // could not edit a leg date or mark anything Received.
-        fulfillStatus:'Actuals Logged', fulfillBy:S.user.username, fulfillAt:ts,
-        fulfillNotes: stamp,
-        coordNotes: stamp,
+        coordNotes:'Spare parts — approved in Acacia, no Phase 3 review',
       });
-      if (s._repairId) repaired++; else done++;
-    } catch(err) {
-      failed++; errors.push(`${s.cdf}: ${err.message}`);
+      made++;
+    } catch (err) {
+      failed++; errors.push(`${store}: ${err.message}`);
     } finally {
-      completed++; btn.textContent = `⏳ Importing ${completed} of ${total}…`;
+      done++; btn.textContent = `⏳ Creating ${done} of ${stores.length}…`;
     }
-  };
-  for (let i=0;i<P4M.staged.length;i+=4) {
-    await Promise.all(P4M.staged.slice(i,i+4).map(importOne));
   }
-
   await loadData();
-  p4CloseMigrateModal();
-  const bits2=[];
-  if (done)     bits2.push(`created ${done}`);
-  if (repaired) bits2.push(`repaired ${repaired} that were stuck outside Phase 4`);
-  let msg = bits2.length ? `✅ Migration — ${bits2.join(' · ')}.` : '⚠ Nothing was applied.';
-  if (failed) msg += ` ⚠ ${failed} failed: ${errors.slice(0,3).join(', ')}${errors.length>3?'…':''}`;
+  spCloseModal();
+  let msg = `✅ Created ${made} spare parts ticket${made!==1?'s':''} in WHS Prepare Order.`;
+  if (failed) msg += ` ⚠ ${failed} failed: ${errors.slice(0,3).join(', ')}`;
   toast(msg);
 }
+
+/** SP-STORE-YYYYMMDD, suffixed if that store already has one today. */
+function spUniqueRef(store, dWhs) {
+  const base = `SP-${String(store).toUpperCase()}-${String(dWhs).replace(/-/g,'')}`;
+  const taken = new Set((S.records||[]).map(r => String(r.cdf||'')));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 100; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+  return `${base}-${Date.now().toString().slice(-4)}`;
+}
+
+const P4_MONTH_NAMES = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
+                        'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
 
 /* ── PHASE 4 EXPORT ────────────────────────────────────────────────────────
    Export Phase 4 tickets, choosing which breakdown cards to include.
    Bucketing reuses the SAME ownership chain the cards use, so a bucket's export
    row count always equals the number on its card.
    ------------------------------------------------------------------------ */
+/* Spare parts travel by courier. The stored route is 'Direct' so every
+   single-leg rule keeps working; LBC is what people call it, so that is what
+   the table, the export and the record show. */
+function isSpareParts(r) { return String(r?.type||'') === 'Spare Parts'; }
+function routeLabel(r)   { return isSpareParts(r) ? 'LBC' : (r.route || ''); }
+
 function p4Bucket(r) {
   if (String(r.storeStatus||'') !== 'Approved') return null;
   const fl = String(r.fulfillStatus||'');
@@ -3330,7 +3286,7 @@ function p4RunExport() {
   // Status is the card the ticket sits on — the same p4Bucket the dashboard uses
   // — not the stored field, which can lag behind the dates.
   rows.forEach(r => aoa.push([
-    p4Bucket(r)||r.status||'', r.store||'', r.cdf||'', r.acaciaRef||'', r.type||'', r.route||'',
+    p4Bucket(r)||r.status||'', r.store||'', r.cdf||'', r.acaciaRef||'', r.type||'', routeLabel(r),
     r.dWhs||'', r.dSdc||'', r.dDirect||'', r.dCdc||'', r.dSdc2||'', r.dCdc2||'', r.dRecv||'',
     tdDays(r) ?? '', num(r.boxes), r.truck||'', r.cas||'',
     r.updatedBy||'', stamp(r.updatedAt), r.remarks||''
@@ -5046,12 +5002,18 @@ async function saveRecord() {
   // Received date requires prior leg dates
   if(dRecv && !dHub1) { toast('Please fill in the dispatch date before marking as Received','err'); return; }
   if(dRecv && vals.route!=='Direct' && !dHub2) { toast('Please fill in the Hub → Store date before marking as Received','err'); return; }
-  // Boxes, Truck and CAS required when package is heading to store
+  // Filling the to-store date is what moves a ticket to In Transit, so this is
+  // the gate. Spare parts ship by courier: the LBC tracking number is required
+  // and stands in for the truck, but boxes and CAS do not apply.
   const toStoreFilled = vals.route==='Direct' ? !!vals.dDirect : !!(vals.dSdc2||vals.dCdc2);
   if(toStoreFilled) {
-    if(!vals.boxes) { toast('No. of Boxes is required when dispatching to store','err'); return; }
-    if(!vals.truck) { toast('Truck / Plate No. is required when dispatching to store','err'); return; }
-    if(!vals.cas)   { toast('CAS No. is required when dispatching to store','err'); return; }
+    if(vals.type === 'Spare Parts') {
+      if(!vals.truck) { toast('LBC Tracking Number is required before this can move to In Transit','err'); return; }
+    } else {
+      if(!vals.boxes) { toast('No. of Boxes is required when dispatching to store','err'); return; }
+      if(!vals.truck) { toast('Truck / Plate No. is required when dispatching to store','err'); return; }
+      if(!vals.cas)   { toast('CAS No. is required when dispatching to store','err'); return; }
+    }
   }
 
   const btn = document.querySelector('#mo-footer .btn-primary');
