@@ -1119,6 +1119,10 @@ function loadPaperSize() {
   return 'letter';
 }
 
+// Sub-card each phase opens on: the first stage that needs action, rather
+// than the unfiltered phase. Used on load and whenever a phase card is clicked.
+const PHASE_DEFAULT_SUB = { p3: 'p3_await', p4: 'p4_whs' };
+
 const S = {
   user:         null,
   records:      [],
@@ -1132,7 +1136,7 @@ const S = {
                       // Needs Attention card and the row overdue highlight, which
                       // previously used 7 (hardcoded) and the spinner respectively.
   phaseFilter:  'p3', // default to Phase 3 (Approvals) on load
-  subFilter:    '',   // sub-card key within active phase
+  subFilter:    PHASE_DEFAULT_SUB.p3,   // sub-card key within active phase
   sortField:    'dWhs',
   sortDir:      'desc',
   expandedId:   null,
@@ -5158,7 +5162,7 @@ async function deleteRecord(uid) {
 
 function setPhaseFilter(id) {
   if(S.phaseFilter===id) return; // already active — do nothing, keep sub-cards visible
-  S.phaseFilter=id; S.subFilter='';
+  S.phaseFilter=id; S.subFilter=PHASE_DEFAULT_SUB[id]||'';
   S.expandedId=null; renderAll();
 }
 
