@@ -363,6 +363,7 @@ thead th:first-child{white-space:nowrap}
 @keyframes fadeIn{from{opacity:0; transform:translateY(-4px)}to{opacity:1; transform:none}}
 .det-tr td{padding:0!important; background:var(--blue-pale); border-bottom:3px solid var(--blue-mid)!important}
 .det-inner{padding:16px 20px 18px; animation:fadeIn .26s var(--ease-out)}
+.ol-added{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--green-pale);color:var(--green-d);font-size:9px;font-weight:700;letter-spacing:.2px;white-space:nowrap;vertical-align:1px}
 .det-foot{display:flex;align-items:flex-start;gap:12px;margin-top:8px;padding-top:8px;border-top:1px solid var(--silver)}
 .hist{flex:1;min-width:0}
 .hist-toggle{background:none;border:none;padding:5px 0;font:700 10px 'Montserrat',sans-serif;text-transform:uppercase;letter-spacing:.5px;color:var(--blue);cursor:pointer}
@@ -2148,7 +2149,7 @@ function buildDetail(r, span = 13) {
                   const isZero    = !isEmpty && Number(final) === 0;
                   return `<tr style="border-bottom:1px solid var(--silver);${i%2===0?'background:#fff':'background:var(--mist)'}${isEmpty||isZero?';opacity:.85':''}">
                     <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-size:10px;color:#666;white-space:nowrap">${esc(l.barcode||'')}</td>
-                    <td style="padding:5px 10px;max-width:200px">${esc(l.productName||'')}</td>
+                    <td style="padding:5px 10px;max-width:200px">${esc(l.productName||'')}${olAddedTag(l)}</td>
                     <td style="padding:5px 10px;color:#888">${esc(l.brand||'')}</td>
                     <td style="padding:5px 10px;color:#888">${esc(l.category||'')}</td>
                     <td style="padding:5px 10px;text-align:center;color:#999">${l.max??'—'}</td>
@@ -2217,6 +2218,97 @@ function buildDetail(r, span = 13) {
       </div>
     </div>`;
 
+  // ── Phase 3 continued — Merchandiser Review ───────────────────────────────
+  // After the IA's PDF goes to the store, the Merchandiser sends back changes
+  // and the IA enters them here. Every order passes through before the Store
+  // Manager step; the Updated PDF is what completes it.
+  const merchDone = (r.merchStatus || '') === 'Reviewed';
+  let merchPanel = '';
+  {
+    let mLines = [];
+    try { mLines = r.orderLines ? JSON.parse(r.orderLines) : []; } catch(e) { mLines = []; }
+    const canRunMerch  = role === 'IS' || role === 'EXECUTIVE';
+    const canEditMerch = canRunMerch && !merchDone && !locked4;
+    const mBuf    = P3_EDITS['merch:' + uid];
+    const mDirty  = !!mBuf;
+    const src     = mBuf || mLines;
+    const nAdded   = src.filter(l => l.added === 'merch').length;
+    const nChanged = src.filter(l => !l.added && olSet(l.merchOrder) && Number(l.merchOrder) !== olIaQty(l)).length;
+    const th = (t, extra = '') => `<th style="padding:6px 10px;text-align:${extra.includes('right')?'right':extra.includes('center')?'center':'left'};font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;${extra}">${t}</th>`;
+    const table = mLines.length ? `
+      <div style="margin:10px 0;border:1px solid var(--silver);border-radius:8px;overflow:hidden">
+        <div style="background:var(--mist);padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--silver);flex-wrap:wrap">
+          <span style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Order Lines</span>
+          <span style="font-size:10px;color:#999">${mLines.length} SKUs${nChanged ? ` · <span style="color:var(--amber);font-weight:700">${nChanged} changed</span>` : ''}${nAdded ? ` · <span style="color:var(--green-d);font-weight:700">${nAdded} added</span>` : ''}</span>
+          <span id="ol-cost-merch-${uid}" style="font-size:10px;color:#aaa;margin-left:8px">— loading prices…</span>
+          ${canEditMerch ? `
+            <span id="p3-merch-dirty-${uid}" style="font-size:10.5px;font-weight:700;margin-left:auto;color:${mDirty?'var(--amber)':'#999'}">${mDirty ? '● Unsaved changes' : 'Change only what the Merchandiser changed'}</span>
+            <button class="btn btn-primary" id="p3-merch-save-${uid}" onclick="event.stopPropagation();p3SaveMerchOrders('${uid}')" ${mDirty?'':'disabled'}
+              style="padding:5px 12px;font-size:10.5px;font-weight:700;background:${mDirty?'var(--amber)':'#ccc'};color:#fff;border:none;border-radius:6px;cursor:${mDirty?'pointer':'not-allowed'};text-transform:uppercase;letter-spacing:.3px">💾 Save Merch Qty</button>` : ''}
+        </div>
+        <div style="overflow-x:auto;max-height:280px;overflow-y:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:980px">
+            <thead style="position:sticky;top:0;background:var(--blue);color:#fff"><tr>
+              ${th('Barcode')}${th('Product')}${th('Category')}${th('IA Approved','text-align:center')}
+              ${th('Merch Qty','text-align:center;background:#1a3a7a;color:#fff')}${th('Unit Price','text-align:right;opacity:.85')}${th('Line Total','text-align:right;opacity:.85')}
+            </tr></thead>
+            <tbody>
+              ${src.map((l, i) => {
+                const ia    = olIaQty(l);
+                const shown = olSet(l.merchOrder) ? l.merchOrder : (mBuf ? '' : ia);
+                const blank = shown === '' || shown === null;
+                const diff  = !blank && Number(shown) !== ia;
+                return `<tr style="border-bottom:1px solid var(--silver);background:${i%2===0?'#fff':'var(--mist)'}">
+                  <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-size:10px;color:#666;white-space:nowrap">${esc(l.barcode||'')}</td>
+                  <td style="padding:5px 10px;max-width:220px">${esc(l.productName||'')}${olAddedTag(l)}</td>
+                  <td style="padding:5px 10px;color:#888">${esc(l.category||'')}</td>
+                  <td style="padding:5px 10px;text-align:center;color:#999;font-weight:600">${ia}</td>
+                  <td style="padding:5px 10px;text-align:center;font-weight:700;${canEditMerch?'background:var(--amber-pale);':''}${diff?'color:var(--amber)':''}">
+                    ${canEditMerch
+                      ? `<input type="number" min="0" value="${blank?'':shown}" class="ol-qty-input" data-line-idx="${i}"
+                          style="width:60px;text-align:center;border:1.5px solid ${blank?'var(--red)':diff?'var(--amber)':'var(--silver)'};border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;outline:none;background:transparent;${diff?'color:var(--amber)':''}"
+                          placeholder="${ia}" onclick="event.stopPropagation()" oninput="p3MerchLineChanged(this,'${uid}')">`
+                      : `${olMerchQty(l)}`}
+                  </td>
+                  <td data-merch-price="${uid}-${i}" style="padding:5px 10px;text-align:right;font-size:10px;color:#aaa;white-space:nowrap">…</td>
+                  <td data-merch-total="${uid}-${i}" style="padding:5px 10px;text-align:right;font-size:10px;font-weight:700;color:#aaa;white-space:nowrap">…</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>` : '';
+    const pdfBtn = canRunMerch && !locked4 ? `
+      <div class="wf-actions">
+        <button class="btn btn-blue" id="p3-merch-pdf-${uid}" style="font-weight:700;letter-spacing:.3px;${mDirty?'opacity:.45;cursor:not-allowed':''}" ${mDirty?'disabled':''}
+          onclick="event.stopPropagation();generateMerchPDF('${uid}')">📄 ${merchDone ? 'Re-download Updated PDF' : 'Download Updated PDF'}</button>${paperSelect()}
+        ${mDirty
+          ? `<span style="font-size:10.5px;color:var(--amber);font-weight:700;margin-left:8px">⚠ Save Merch Qty first</span>`
+          : merchDone
+            ? `<span style="font-size:10.5px;color:var(--teal);font-weight:600;margin-left:8px">✓ Sent for Store Manager approval</span>`
+            : `<span style="font-size:10.5px;color:#aaa;margin-left:8px">Uses Merchandiser quantities · unlocks Store Manager approval</span>`}
+        ${merchDone && storeSt === '' ? `<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();undoMerchReview('${uid}')">↶ Undo</button>` : ''}
+      </div>` : '';
+    merchPanel = `
+    <div class="ph-panel" data-phase="merch">
+      <div class="wf-panel">
+        <div class="wf-panel-hd">
+          <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">3</span>
+          <span class="wf-panel-title">Merchandiser Review</span>
+          <span class="wf-status-badge ${merchDone?'wfs-approved':'wfs-pending'}">${merchDone?'Reviewed':'Awaiting Merchandiser'}</span>
+        </div>
+        <div class="wf-panel-bd">
+          ${table}
+          <div class="wf-meta-row">
+            ${r.merchBy?`<div class="wf-meta"><div class="wf-ml">Updated PDF by</div><div class="wf-mv">${esc(r.merchBy)}</div></div>`:''}
+            ${r.merchAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.merchAt.slice(0,10))}</div></div>`:''}
+          </div>
+          ${pdfBtn}
+        </div>
+      </div>
+    </div>`;
+  }
+
   // ── Phase 3 continued — Store Approval ────────────────────────────────────
   const storeBadge = storeSt==='Approved'?'wfs-approved':storeSt==='Changes Requested'?'wfs-changes':'wfs-pending';
 
@@ -2256,6 +2348,7 @@ function buildDetail(r, span = 13) {
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Product</th>
                   <th style="padding:6px 10px;text-align:left;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Category</th>
                   <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">IA Approved</th>
+                  <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Merch</th>
                   <th style="padding:6px 10px;text-align:center;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:#1a3a7a;color:#fff">Store Qty</th>
                   <th style="padding:6px 10px;text-align:right;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;opacity:.85">Unit Price</th>
                   <th style="padding:6px 10px;text-align:right;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;opacity:.85">Line Total</th>
@@ -2263,7 +2356,8 @@ function buildDetail(r, span = 13) {
               </thead>
               <tbody>
                 ${sLines.map((l, i) => {
-                  const smQty = l.finalOrder ?? l.allocated ?? 0;
+                  const smQty   = olIaQty(l);
+                  const baseQty = olMerchQty(l);   // what the Store Manager is reviewing
                   // Saved value on the record (null/empty if never set)
                   const savedStoreQty = (l.storeOrder !== null && l.storeOrder !== undefined && l.storeOrder !== '') ? l.storeOrder : null;
                   // In-flight buffer value (if user is editing now)
@@ -2271,19 +2365,20 @@ function buildDetail(r, span = 13) {
                   // Display value: buffer (if exists) > saved > blank (NEVER fall back to SM qty silently)
                   const displayQty = bufStoreQty !== undefined ? bufStoreQty : savedStoreQty;
                   const isEmpty  = displayQty === null || displayQty === undefined || displayQty === '';
-                  const changed  = !isEmpty && Number(displayQty) !== Number(smQty);
+                  const changed  = !isEmpty && Number(displayQty) !== Number(baseQty);
                   return `<tr style="border-bottom:1px solid var(--silver);${i%2===0?'background:#fff':'background:var(--mist)'}">
                     <td style="padding:5px 10px;font-family:'DM Mono',monospace;font-size:10px;color:#666;white-space:nowrap">${esc(l.barcode||'')}</td>
-                    <td style="padding:5px 10px;max-width:200px">${esc(l.productName||'')}</td>
+                    <td style="padding:5px 10px;max-width:200px">${esc(l.productName||'')}${olAddedTag(l)}</td>
                     <td style="padding:5px 10px;color:#888">${esc(l.category||'')}</td>
                     <td style="padding:5px 10px;text-align:center;color:#999;font-weight:600">${smQty}</td>
+                    <td style="padding:5px 10px;text-align:center;font-weight:600;${baseQty!==smQty?'color:var(--amber)':'color:#999'}">${baseQty}</td>
                     <td style="padding:5px 10px;text-align:center;font-weight:700;background:${storeSt==='Changes Requested'?'var(--amber-pale)':'inherit'};${changed?'color:var(--amber)':''}">
                       ${canEditStore
                         ? `<input type="number" min="0" value="${isEmpty?'':displayQty}"
                             class="ol-qty-input"
                             data-line-idx="${i}"
                             style="width:60px;text-align:center;border:1.5px solid ${isEmpty?'var(--red)':changed?'var(--amber)':'var(--silver)'};border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;outline:none;background:transparent"
-                            placeholder="${smQty}"
+                            placeholder="${baseQty}"
                             oninput="p3StoreLineChanged(this,'${uid}')">`
                         : `<span style="color:${changed?'var(--amber)':''}">${isEmpty?'—':displayQty}</span>`}
                     </td>
@@ -2450,6 +2545,12 @@ function buildDetail(r, span = 13) {
 
   // Progressive reveal — only show panels the CDF has actually reached
   const showP4 = smSt==='Approved' && pdfSt==='Generated'; // PDF must be generated before coordinator can act
+  // Merchandiser Review sits between the PDF and the Store Manager. Tickets
+  // that reached the Store Manager before this step existed keep their store
+  // panel and skip the Merchandiser panel, so nothing in flight gets stuck.
+  const pastStoreStep = storeSt !== '';
+  const showMerch = showP4 && (merchDone || !pastStoreStep);
+  const showStore = showP4 && (merchDone || pastStoreStep);
   const showP5 = storeSt==='Approved';                     // Store approved → fulfillment begins
   // If all approval gates are already cleared (e.g. new CDF bypassing phases 1-3),
   // skip Phase 3 panels entirely and open straight to Phase 4
@@ -2457,7 +2558,8 @@ function buildDetail(r, span = 13) {
 
   return `<tr class="det-tr"><td colspan="${span}"><div class="det-inner">
     ${allPreApproved ? '' : panelP3}
-    ${allPreApproved ? '' : (showP4 ? panelP4 : '')}
+    ${allPreApproved ? '' : (showMerch ? merchPanel : '')}
+    ${allPreApproved ? '' : (showStore ? panelP4 : '')}
     ${showP5 ? panelP5 : ''}
     ${actionsRow}
   </div></td></tr>` + (()=>{ setTimeout(()=>p3InjectLinePrices(r.id||r.cdf),0); return ''; })();
@@ -2492,9 +2594,9 @@ async function p3InjectLinePrices(uid) {
     priceMap = P3._priceMap;
   } catch(e) {
     // Price fetch failed — clear loading placeholders silently
-    document.querySelectorAll(`[data-sm-price^="${uid}-"],[data-sm-total^="${uid}-"],[data-store-price^="${uid}-"],[data-store-total^="${uid}-"]`)
+    document.querySelectorAll(`[data-sm-price^="${uid}-"],[data-sm-total^="${uid}-"],[data-store-price^="${uid}-"],[data-store-total^="${uid}-"],[data-merch-price^="${uid}-"],[data-merch-total^="${uid}-"]`)
       .forEach(el => { el.textContent = '—'; el.style.color = '#ccc'; });
-    ['ol-cost-sm-'+uid, 'ol-cost-store-'+uid].forEach(id => {
+    ['ol-cost-sm-'+uid, 'ol-cost-store-'+uid, 'ol-cost-merch-'+uid].forEach(id => {
       const el = document.getElementById(id); if (el) el.textContent = '';
     });
     return;
@@ -2525,14 +2627,15 @@ async function p3InjectLinePrices(uid) {
     smEl.style.fontWeight = smHasPrice ? '700' : '';
   }
 
-  // Patch Store table — use storeOrder when set, fall back to SM finalOrder
+  // Merchandiser table — reads the edit buffer when one is open
+  p3PatchPrices(uid, 'merch', P3_EDITS['merch:' + uid] || lines, olMerchQty);
+
+  // Patch Store table — the quantity that counts, see olQty()
   let stTotal = 0, stHasPrice = false;
   lines.forEach((l, i) => {
     const price = Number(priceMap[l.barcode]);
     const ok    = Number.isFinite(price) && price > 0;
-    const qty   = (l.storeOrder !== null && l.storeOrder !== undefined && l.storeOrder !== '')
-                  ? Number(l.storeOrder)
-                  : Number(l.finalOrder ?? l.allocated ?? 0);
+    const qty   = olQty(l);
     const lt    = ok && qty > 0 ? price * qty : null;
 
     const pc = document.querySelector(`[data-store-price="${uid}-${i}"]`);
@@ -2546,6 +2649,35 @@ async function p3InjectLinePrices(uid) {
     stEl.textContent = stHasPrice ? '\u00B7 Total: ' + fmtPHP(stTotal) : '';
     stEl.style.color = stHasPrice ? 'var(--blue)' : '';
     stEl.style.fontWeight = stHasPrice ? '700' : '';
+  }
+}
+
+// Fills Unit Price / Line Total cells and the header total for one table,
+// from the cached price map. Used by the Merchandiser table on render and
+// on every keystroke.
+function p3PatchPrices(uid, prefix, lines, qtyFn) {
+  const priceMap = P3._priceMap;
+  if (!priceMap) return;
+  const fmtPHP = n => Number.isFinite(n) && n > 0
+    ? 'PHP\u00A0' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '—';
+  let total = 0, hasPrice = false;
+  lines.forEach((l, i) => {
+    const price = Number(priceMap[l.barcode]);
+    const ok    = Number.isFinite(price) && price > 0;
+    const qty   = qtyFn(l);
+    const lt    = ok && qty > 0 ? price * qty : null;
+    const pc = document.querySelector(`[data-${prefix}-price="${uid}-${i}"]`);
+    const tc = document.querySelector(`[data-${prefix}-total="${uid}-${i}"]`);
+    if (pc) { pc.textContent = ok ? fmtPHP(price) : '—'; pc.style.color = ok ? '#555' : '#ccc'; }
+    if (tc) { tc.textContent = lt !== null ? fmtPHP(lt) : '—'; tc.style.color = lt !== null ? 'var(--blue)' : '#ccc'; }
+    if (lt !== null) { total += lt; hasPrice = true; }
+  });
+  const el = document.getElementById(`ol-cost-${prefix}-${uid}`);
+  if (el) {
+    el.textContent = hasPrice ? '\u00B7 Total: ' + fmtPHP(total) : '';
+    el.style.color = hasPrice ? 'var(--blue)' : '';
+    el.style.fontWeight = hasPrice ? '700' : '';
   }
 }
 
@@ -3585,17 +3717,33 @@ function p3PopulateReviewFromPlan() {
 }
 
 /**
- * Returns every existing CDF for this store that is still safe to add lines to.
- * Only tickets sitting in Awaiting IA Review (smgrStatus blank) qualify — once an
- * order is approved, PDF'd or dispatched, appending would invalidate a decision
- * someone already made. Ordered oldest first so the list reads in the same order
- * the tickets were numbered (…-20260825, …-2, …-3).
+ * Which stage a manual upload would join on an existing ticket, or null if the
+ * ticket can't take lines any more.
+ *   ia    — Awaiting IA Review: quantities ADD to the IA order (a top-up)
+ *   merch — Merchandiser step, before the Updated PDF: NEW SKUs only, at Merch Qty
+ *   store — Store Changes Requested, before Begin Fulfillment: NEW SKUs only, at Store Qty
+ * Anywhere else, appending would change numbers someone already signed off on.
+ */
+function p3AppendStage(r) {
+  const sm = String(r.smgrStatus || '').trim();
+  const st = String(r.storeStatus || '').trim();
+  if (!sm) return 'ia';
+  if (sm === 'Approved' && (r.pdfStatus || '') === 'Generated' && st === '' && (r.merchStatus || '') !== 'Reviewed') return 'merch';
+  if (sm === 'Approved' && st === 'Changes Requested') return 'store';
+  return null;
+}
+const P3_STAGE_LABEL = { ia: 'IA review', merch: 'Merchandiser', store: 'Store changes' };
+
+/**
+ * Returns every existing CDF for this store that can still take uploaded
+ * lines (see p3AppendStage). Ordered oldest first so the list reads in the
+ * same order the tickets were numbered (…-20260825, …-2, …-3).
  */
 function p3FindOpenCDFs(store) {
   const target = String(store || '').trim().toUpperCase();
   return (S.records || [])
     .filter(r => String(r.store || '').trim().toUpperCase() === target
-              && !String(r.smgrStatus || '').trim())
+              && p3AppendStage(r) !== null)
     .sort((a, b) => String(a.createdAt || a.cdf || '').localeCompare(String(b.createdAt || b.cdf || '')));
 }
 
@@ -3610,31 +3758,55 @@ function p3ReadOrderLines(rec) {
 }
 
 /**
- * Merges incoming lines into existing ones, keyed on barcode.
- * Quantities ADD — a manual top-up on an existing order means "we need this
- * much more", typically a customer special order on top of replenishment.
- * Existing product metadata wins; only the numbers move.
+ * Merges incoming lines into existing ones, keyed on barcode. What happens
+ * depends on the stage the ticket is at (see p3AppendStage):
+ *   ia    — Quantities ADD. A manual top-up on an order still in IA review
+ *           means "we need this much more". Existing metadata wins.
+ *   merch / store — Only NEW SKUs join, as lines the IA never ordered: IA qty
+ *           0, the uploaded quantity in that stage's own field, and tagged
+ *           `added` so everyone downstream can see where they came from.
+ *           SKUs already on the order are skipped — their quantity is edited
+ *           in the table, and a repeat upload can't double anything.
  */
-function p3MergeOrderLines(existing, incoming) {
+function p3MergeOrderLines(existing, incoming, stage = 'ia') {
   const out = existing.map(l => ({ ...l }));
   const byBarcode = new Map(out.map((l, i) => [String(l.barcode || '').trim(), i]));
-  let merged = 0, added = 0;
+  let merged = 0, added = 0, skipped = 0;
   incoming.forEach(nl => {
     const bc = String(nl.barcode || '').trim();
     if (!bc) return;
     const at = byBarcode.get(bc);
     if (at === undefined) {
-      out.push({ ...nl });
+      out.push(stage === 'ia' ? { ...nl } : p3AddedLine(nl, stage));
       byBarcode.set(bc, out.length - 1);
       added++;
-    } else {
+    } else if (stage === 'ia') {
       const cur = out[at];
       cur.finalOrder = (parseFloat(cur.finalOrder) || 0) + (parseFloat(nl.finalOrder) || 0);
       cur.allocated  = (parseFloat(cur.allocated)  || 0) + (parseFloat(nl.allocated)  || 0);
       merged++;
+    } else {
+      skipped++;
     }
   });
-  return { lines: out, merged, added };
+  return { lines: out, merged, added, skipped };
+}
+
+// A SKU added after IA approval. The earlier stages' quantities are 0 because
+// they never ordered it; olQty() then picks up the uploaded number naturally.
+function p3AddedLine(nl, stage) {
+  const qty = olIaQty(nl);
+  const line = { ...nl, finalOrder: 0, allocated: 0, added: stage };
+  if (stage === 'merch') line.merchOrder = qty;
+  if (stage === 'store') { line.merchOrder = 0; line.storeOrder = qty; }
+  return line;
+}
+
+// Small tag on a line added after IA approval.
+function olAddedTag(l) {
+  if (l.added === 'merch') return ' <span class="ol-added">+ Merchandiser</span>';
+  if (l.added === 'store') return ' <span class="ol-added">+ Store</span>';
+  return '';
 }
 
 /** Returns a CDF id that isn't already taken, suffixing -2, -3 … as needed. */
@@ -3691,16 +3863,23 @@ function p3RenderReviewTable(staged) {
     s._target = s.mode === 'append' ? s._opens.find(r => r.id === s.targetId) : null;
     if (s.selected === undefined) s.selected = true;
     s._newCdf = s.mode === 'new' ? p3UniqueCdfId(s.cdf) : s.cdf;
+    s._stage = s._target ? p3AppendStage(s._target) : null;
     s._preview = s._target
-      ? p3MergeOrderLines(p3ReadOrderLines(s._target), s.orderLines)
+      ? p3MergeOrderLines(p3ReadOrderLines(s._target), s.orderLines, s._stage)
       : null;
   });
 
-  const appending = staged.filter(s => s.selected && s.mode === 'append');
+  const appending = staged.filter(s => s.selected && s.mode === 'append' && s._target);
+  const sumCount  = appending.filter(s => s._stage === 'ia').length;
+  const newCount  = appending.length - sumCount;
   if (appending.length) {
+    const msgs = [];
+    if (sumCount) msgs.push(`➕ ${sumCount} store${sumCount!==1?'s':''} will be ADDED to an order in IA review — quantities are summed. `
+      + `Uploading the same file twice will double those lines, so check the totals below before confirming.`);
+    if (newCount) msgs.push(`🆕 ${newCount} store${newCount!==1?'s':''} will get NEW SKUs on an order past IA review (Merchandiser or Store changes). `
+      + `SKUs already on that order are skipped — change those quantities in the ticket.`);
     warn.style.display = '';
-    warn.textContent = `➕ ${appending.length} store${appending.length!==1?'s':''} will be ADDED to an existing open ticket — quantities are summed. `
-      + `Uploading the same file twice will double those lines, so check the totals below before confirming.`;
+    warn.textContent = msgs.join(' ');
   } else {
     warn.style.display = 'none';
   }
@@ -3715,18 +3894,21 @@ function p3RenderReviewTable(staged) {
     // doubled upload is obvious before it is committed.
     const shownLines = isAppend && s._preview ? s._preview.lines.length : s.orderLines.length;
     const shownUnits = isAppend && s._preview
-      ? s._preview.lines.reduce((a, l) => a + (parseFloat(l.finalOrder) || 0), 0)
+      ? s._preview.lines.reduce((a, l) => a + olQty(l), 0)
       : s.totalUnits;
     const lineNote = isAppend && s._preview
-      ? `<div style="font-size:9.5px;color:#777">+${s._preview.added} new · ${s._preview.merged} summed</div>` : '';
+      ? (s._stage === 'ia'
+          ? `<div style="font-size:9.5px;color:#777">+${s._preview.added} new · ${s._preview.merged} summed</div>`
+          : `<div style="font-size:9.5px;color:#777">+${s._preview.added} new${s._preview.skipped ? ` · <span style="color:var(--amber);font-weight:700">${s._preview.skipped} already on order, skipped</span>` : ''}</div>`)
+      : '';
     const cdfCell = isAppend
-      ? `${esc(s._target.cdf)}<div style="font-size:9.5px;color:#777">existing ticket</div>`
+      ? `${esc(s._target.cdf)}<div style="font-size:9.5px;color:#777">existing ticket · ${P3_STAGE_LABEL[s._stage]}</div>`
       : esc(s._newCdf);
     // One option per open ticket, so a store with several (…-2, …-3) lets the
     // IA say exactly which one the lines join. Line count disambiguates them.
     const modeCell = s._opens.length
       ? `<select onchange="p3SetStagedMode(${idx}, this.value)" style="font-size:11px;border:1px solid var(--silver);border-radius:5px;padding:3px 6px;background:#fafafa;max-width:230px">
-           ${s._opens.map(r => `<option value="${esc(r.id)}" ${s.targetId===r.id&&s.mode==='append'?'selected':''}>Add to ${esc(r.cdf)} (${p3ReadOrderLines(r).length} lines)</option>`).join('')}
+           ${s._opens.map(r => `<option value="${esc(r.id)}" ${s.targetId===r.id&&s.mode==='append'?'selected':''}>Add to ${esc(r.cdf)} (${p3ReadOrderLines(r).length} lines · ${P3_STAGE_LABEL[p3AppendStage(r)]})</option>`).join('')}
            <option value="new" ${s.mode==='new'?'selected':''}>Separate new order</option>
          </select>`
       : `<span style="font-size:10px;color:var(--amber)">⏳ Awaiting IA</span>`;
@@ -3832,10 +4014,20 @@ async function p3ConfirmBatchCreate() {
   // an endpoint that already accepts orderLines, so no backend change.
   const appendOne = async (s) => {
     try {
-      const merged = p3MergeOrderLines(p3ReadOrderLines(s._target), s.orderLines);
+      // Re-read the ticket as it is now: it may have moved on, or had lines
+      // edited, since the review table was built.
+      const cur   = (S.records || []).find(r => r.id === s._target.id) || s._target;
+      const stage = p3AppendStage(cur);
+      if (!stage) throw new Error(`${cur.cdf} has moved past the point where lines can be added`);
+      // An open edit buffer would overwrite these lines on its next save.
+      if (P3_EDITS[cur.id] || P3_EDITS['merch:' + cur.id] || P3_EDITS['store:' + cur.id]) {
+        throw new Error(`${cur.cdf} has unsaved quantity edits — save them, then upload again`);
+      }
+      const merged = p3MergeOrderLines(p3ReadOrderLines(cur), s.orderLines, stage);
+      if (stage !== 'ia' && !merged.added) throw new Error(`nothing new — every SKU is already on ${cur.cdf}`);
       await gasPost('updateCDF', {
         username:   S.user.username,
-        id:         s._target.id,
+        id:         cur.id,
         orderLines: JSON.stringify(merged.lines),
       });
       appended++;
@@ -4650,6 +4842,159 @@ async function p3AttachOrderLines(input, uid) {
   }
 }
 
+/* ── Which quantity counts on an order line ────────────────────────────────
+   Each reviewer overrides the one before in their own field, so every stage's
+   numbers stay on the ticket:
+     IA (finalOrder, else allocated) → Merchandiser (merchOrder) → Store (storeOrder)
+   Blank means "not set at this stage"; 0 is a real quantity. Every table,
+   total and PDF reads quantities through these, never inline.
+────────────────────────────────────────────────────────────────────────── */
+const olSet = v => v !== null && v !== undefined && v !== '';
+function olIaQty(l)    { return Number(olSet(l.finalOrder) ? l.finalOrder : (l.allocated ?? 0)) || 0; }
+function olMerchQty(l) { return olSet(l.merchOrder) ? (Number(l.merchOrder) || 0) : olIaQty(l); }
+function olQty(l)      { return olSet(l.storeOrder) ? (Number(l.storeOrder) || 0) : olMerchQty(l); }
+
+/* ── Merchandiser qty editing ──────────────────────────────────────────────
+   After the store gets the IA's PDF, the Merchandiser sends back changes and
+   the IA enters them here. Buffer 'merch:{uid}' in P3_EDITS, separate from
+   the IA and Store buffers. Inputs start at the IA quantity; the IA changes
+   only what the Merchandiser changed. Generating the Updated PDF completes
+   the step (like the IA's own PDF does) and writes merchOrder on EVERY line,
+   so the ticket records an explicit Merchandiser number for each SKU.
+────────────────────────────────────────────────────────────────────────── */
+function p3MerchBuf(uid) {
+  const key = 'merch:' + uid;
+  if (!P3_EDITS[key]) {
+    const r = S.records.find(x => (x.id || x.cdf) === uid);
+    let lines = [];
+    try { lines = JSON.parse(r?.orderLines || '[]'); } catch(e) { lines = []; }
+    // Start every line at its current Merchandiser number (the IA quantity
+    // until one is saved), so only lines the user clears count as blank.
+    P3_EDITS[key] = lines.map(l => ({ ...l, merchOrder: olMerchQty(l) }));
+  }
+  return P3_EDITS[key];
+}
+
+function p3MerchLineChanged(input, uid) {
+  const buf = p3MerchBuf(uid);
+  const idx = parseInt(input.dataset.lineIdx);
+  const l = buf[idx];
+  if (!l) return;
+  const raw = input.value.trim();
+  l.merchOrder = raw === '' ? null : Math.max(0, parseInt(raw) || 0);
+  const isEmpty = !olSet(l.merchOrder);
+  const changed = !isEmpty && l.merchOrder !== olIaQty(l);
+  input.style.borderColor = isEmpty ? 'var(--red)' : changed ? 'var(--amber)' : 'var(--silver)';
+  input.style.color       = isEmpty ? 'var(--red)' : changed ? 'var(--amber)' : '';
+
+  // Update in place — a full render would steal focus from the input.
+  const dirtyEl = document.getElementById('p3-merch-dirty-' + uid);
+  if (dirtyEl) { dirtyEl.textContent = '● Unsaved changes'; dirtyEl.style.color = 'var(--amber)'; }
+  const saveBtn = document.getElementById('p3-merch-save-' + uid);
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.style.background = 'var(--amber)'; saveBtn.style.cursor = 'pointer'; }
+  // Never let an Updated PDF go out with unsaved numbers.
+  const pdfBtn = document.getElementById('p3-merch-pdf-' + uid);
+  if (pdfBtn && !pdfBtn.disabled) {
+    pdfBtn.disabled = true; pdfBtn.style.opacity = '.45'; pdfBtn.style.cursor = 'not-allowed';
+    const hint = pdfBtn.parentElement.querySelector('span[style*="#aaa"]');
+    if (hint) hint.remove();
+    pdfBtn.nextElementSibling.insertAdjacentHTML('afterend', '<span style="font-size:10.5px;color:var(--amber);font-weight:700;margin-left:8px">⚠ Save Merch Qty first</span>');
+  }
+  p3PatchPrices(uid, 'merch', buf, olMerchQty);
+}
+
+// Blank inputs block both Save and Review: a blank must never quietly turn
+// into the IA quantity. Returns the 1-based line numbers that are blank.
+function p3MerchBlanks(buf) {
+  return buf.map((l, i) => olSet(l.merchOrder) ? 0 : i + 1).filter(Boolean);
+}
+
+async function p3SaveMerchOrders(uid) {
+  const buf = P3_EDITS['merch:' + uid];
+  if (!buf) { toast('No changes to save.'); return; }
+  const blanks = p3MerchBlanks(buf);
+  if (blanks.length) { toast(`Enter a Merch Qty on line ${blanks.slice(0, 5).join(', ')}${blanks.length > 5 ? '…' : ''} (0 is allowed).`, 'err'); return; }
+  try {
+    await apiUpdateCDFStrict(uid, { orderLines: JSON.stringify(buf) });
+  } catch(e) {
+    toast('❌ Save failed: ' + e.message + ' — your edits are still here. Try again.', 'err');
+    return;
+  }
+  delete P3_EDITS['merch:' + uid];
+  toast('✅ Merchandiser quantities saved.');
+  S.expandedId = uid;
+  await loadData();
+  renderAll();
+}
+
+// Downloads the order at Merchandiser quantities for the Store Manager.
+// The first download completes the step: it records a Merchandiser number
+// on every line and stamps merchStatus, which unlocks the Store Manager panel.
+// Later downloads just re-download.
+async function generateMerchPDF(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  if (P3_EDITS['merch:' + uid]) { toast('Save Merch Qty first.', 'err'); return; }
+  let lines = [];
+  try { lines = r.orderLines ? JSON.parse(r.orderLines) : []; } catch(e) { lines = []; }
+  lines = lines.map(l => ({ ...l, merchOrder: olMerchQty(l) }));
+  const pdfLines = lines.map(l => ({ ...l, finalOrder: l.merchOrder })).filter(l => l.finalOrder > 0);
+  if (!pdfLines.length) { toast('No lines with a Merch Qty above 0.', 'err'); return; }
+  toast('Generating PDF…');
+  try {
+    let storeInfo = {};
+    if (P2.storesInfo && P2.storesInfo[r.store]) {
+      storeInfo = P2.storesInfo[r.store];
+    } else {
+      const storesArr = await gasGet('getBibleStoresForUser', { username: S.user.username });
+      if (Array.isArray(storesArr)) {
+        const found = storesArr.find(s => s.store === r.store);
+        if (found) storeInfo = found;
+      }
+    }
+    await p3GeneratePDF(r, await p3EnrichLinesWithPrices(pdfLines), storeInfo);
+  } catch(err) {
+    toast('PDF generation failed: ' + err.message, 'err');
+    return;
+  }
+  if ((r.merchStatus || '') === 'Reviewed') { toast('✅ Updated PDF downloaded.'); return; }
+  try {
+    // One write: quantities and the stamp land together or not at all.
+    await apiUpdateCDFStrict(uid, {
+      orderLines:  JSON.stringify(lines),
+      merchStatus: 'Reviewed',
+      merchBy:     S.user.username,
+      merchAt:     new Date().toISOString(),
+    });
+  } catch(e) {
+    toast('❌ PDF downloaded, but the ticket was not updated: ' + e.message + '. Try again.', 'err');
+    return;
+  }
+  toast('✅ Updated PDF downloaded. Store Manager step unlocked.');
+  S.expandedId = uid;
+  await loadData();
+  renderAll();
+}
+
+// Reopens the Merchandiser step. Quantities stay; only the stamp is cleared,
+// which locks the Store Manager panel again. Not offered once the Store
+// Manager decision is logged, since that decision was made on these numbers.
+async function undoMerchReview(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  if ((r.storeStatus || '') !== '') { toast('The Store Manager decision is already logged — this can no longer be undone.', 'err'); return; }
+  try {
+    await apiUpdateCDFStrict(uid, { merchStatus: '', merchBy: '', merchAt: '' });
+  } catch(e) {
+    toast('❌ Undo failed: ' + e.message, 'err');
+    return;
+  }
+  toast('↶ Merchandiser step reopened.');
+  S.expandedId = uid;
+  await loadData();
+  renderAll();
+}
+
 /* ── Store Manager qty editing ─────────────────────────────────────────────
    Uses P3_EDITS keyed as 'store:{uid}' so SM edits and Store edits
    live in separate buffers and never clobber each other.
@@ -4668,10 +5013,10 @@ function p3StoreLineChanged(input, uid) {
     const raw = input.value.trim();
     P3_EDITS[bufKey][idx].storeOrder = raw === '' ? null : (parseInt(raw) || 0);
   }
-  const smQty   = P3_EDITS[bufKey][idx]?.finalOrder ?? P3_EDITS[bufKey][idx]?.allocated ?? 0;
+  const baseQty  = P3_EDITS[bufKey][idx] ? olMerchQty(P3_EDITS[bufKey][idx]) : 0;
   const storeQty = P3_EDITS[bufKey][idx]?.storeOrder;
   const isEmpty = storeQty === null || storeQty === undefined;
-  const changed = !isEmpty && storeQty !== smQty;
+  const changed = !isEmpty && storeQty !== baseQty;
   input.style.borderColor = isEmpty ? 'var(--red)' : changed ? 'var(--amber)' : 'var(--silver)';
   input.style.color = isEmpty ? 'var(--red)' : changed ? 'var(--amber)' : '';
 
@@ -4704,8 +5049,7 @@ function p3StoreLineChanged(input, uid) {
       buf.forEach((l, i) => {
         const p = Number(P3._priceMap[l.barcode]);
         if (!Number.isFinite(p) || p <= 0) return;
-        const q = (l.storeOrder !== null && l.storeOrder !== undefined && l.storeOrder !== '')
-                  ? Number(l.storeOrder) : Number(l.finalOrder ?? l.allocated ?? 0);
+        const q = olQty(l);
         if (q > 0) { grand += p * q; hasAny = true; }
       });
       const hdr = document.getElementById('ol-cost-store-' + uid);
@@ -4739,8 +5083,8 @@ async function p3SaveStoreOrders(uid) {
 }
 
 /* ══════════════════ GENERATE FINAL CDF (Phase 4) ══════════════════
-   Computes effective qty per SKU:
-     storeOrder (if set) > finalOrder (SM approved)
+   Computes effective qty per SKU with olQty():
+     Store qty > Merchandiser qty > IA qty
    Downloads the CDF PDF and stamps cdfGeneratedAt on the record.
 ════════════════════════════════════════════════════════════════════ */
 async function generateFinalCDF(uid) {
@@ -4755,14 +5099,10 @@ async function generateFinalCDF(uid) {
     return;
   }
 
-  // Compute effective qty: storeOrder takes precedence per SKU, else finalOrder
+  // Effective qty per SKU — see olQty(). An IA quantity of 0 stays 0; the
+  // old inline rule here fell back to `allocated` and resurrected it.
   const effectiveLines = lines
-    .map(l => ({
-      ...l,
-      effectiveQty: (l.storeOrder !== null && l.storeOrder !== undefined)
-        ? Number(l.storeOrder)
-        : Number(l.finalOrder || l.allocated || 0),
-    }))
+    .map(l => ({ ...l, effectiveQty: olQty(l) }))
     .filter(l => l.effectiveQty > 0);
 
   if (!effectiveLines.length) {
@@ -5130,13 +5470,23 @@ async function apiUpdateCDF(uid, vals) {
 // failure followed by loadData() would silently revert the user's edits.
 async function apiUpdateCDFStrict(uid, vals) {
   const idx = S.records.findIndex(r=>(r.id||r.cdf)===uid);
+  const before = idx>=0 ? S.records[idx] : null;
+  const cacheBefore = S._wfCache?.[uid] ? {...S._wfCache[uid]} : null;
   if(idx>=0) S.records[idx]={...S.records[idx],...vals,updatedBy:S.user.username,updatedAt:new Date().toISOString()};
   if(!S._wfCache) S._wfCache = {};
   if(!S._wfCache[uid]) S._wfCache[uid] = {};
   Object.assign(S._wfCache[uid], vals);
   if(!CFG.offline && CFG.apiUrl) {
     const id = S.records[idx]?.id||uid;
-    await gasPost('updateCDF', {...vals, id, username:S.user.username});
+    try {
+      await gasPost('updateCDF', {...vals, id, username:S.user.username});
+    } catch(e) {
+      // Strict means the screen never shows a save the server refused:
+      // put the local record and cache back the way they were.
+      if(idx>=0 && S.records[idx]) S.records[idx] = before;
+      if(cacheBefore) S._wfCache[uid] = cacheBefore; else delete S._wfCache[uid];
+      throw e;
+    }
   }
 }
 
