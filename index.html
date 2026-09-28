@@ -592,6 +592,36 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 
 /* ═══════════════════════════ PHASE 1 / 2 WORKSPACE ═══════════════════════════ */
 #p1-workspace,#p2-workspace{display:none; animation:fadeIn .3s var(--ease-out)}
+/* ── Command Center ── */
+#cc-workspace{display:none; animation:fadeIn .3s var(--ease-out)}
+#cc-workspace.show{display:block}
+.cc-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.cc-title{font-family:'Montserrat',sans-serif;font-weight:800;font-size:15px;letter-spacing:.3px;color:var(--ink)}
+.cc-sub{font-size:11px;color:#999}
+.cc-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.cc-kpi{background:#fff;border:1.5px solid var(--silver);border-radius:12px;padding:12px 14px;cursor:pointer;box-shadow:var(--sh);position:relative;overflow:hidden}
+.cc-kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--green)}
+.cc-kpi.amber::before{background:var(--amber)} .cc-kpi.red::before{background:var(--red)}
+.cc-kpi-n{font-family:'Montserrat',sans-serif;font-weight:800;font-size:24px;line-height:1.1;color:var(--ink)}
+.cc-kpi-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--slate);margin-top:2px}
+.cc-kpi-s{font-size:10.5px;color:#999;margin-top:3px}
+.cc-sec{margin-bottom:14px}
+.cc-tbl{width:100%;border-collapse:collapse;font-size:11.5px}
+.cc-tbl th{padding:7px 10px;text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--slate);background:var(--mist);border-bottom:1px solid var(--silver);white-space:nowrap}
+.cc-tbl td{padding:6px 10px;border-bottom:1px solid var(--mist);vertical-align:top}
+.cc-tbl tr:last-child td{border-bottom:none}
+.cc-tbl a{color:var(--blue);font-weight:700;text-decoration:none;font-family:'DM Mono',monospace;font-size:11px}
+.cc-tbl a:hover{text-decoration:underline}
+.cc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px;background:var(--green)}
+.cc-dot.amber{background:var(--amber)} .cc-dot.red{background:var(--red)} .cc-dot.grey{background:#bbb}
+.cc-check{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--mist);font-size:11.5px;align-items:baseline}
+.cc-check:last-child{border-bottom:none}
+.cc-check-l{font-weight:700;color:var(--ink);min-width:190px}
+.cc-check-d{color:#666;flex:1}
+.cc-empty{font-size:11.5px;color:#999;padding:8px 0}
+.cc-ctrl{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#666}
+.cc-ctrl input[type=number]{width:56px;padding:3px 6px;border:1px solid var(--silver);border-radius:5px;font-size:11px;text-align:center}
+.cc-limits{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;padding:10px 0 4px}
 #p1-workspace.show,#p2-workspace.show{display:block}
 .cdf-ctrls{display:contents}
 .cdf-ctrls.hidden{display:none}
@@ -818,6 +848,7 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
         <span id="user-nm"></span>
         <span id="user-role-badge" style="font-size:9.5px;color:#888"></span>
       </div>
+      <button class="btn btn-outline btn-sm" id="cc-btn" style="display:none" onclick="openCommandCenter()" title="Executive Command Center">🛰 Command Center</button>
       <button class="btn btn-outline btn-sm" onclick="doLogout()" title="Sign out">⏻</button>
     </div>
   </div>
@@ -829,6 +860,9 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
   <div class="sync-info" id="sync-info" style="display:none"></div>
   <div class="ph-summary" id="ph-summary"></div>
   <div id="sub-summary" class="sub-sticky"></div>
+
+  <!-- ════════ COMMAND CENTER (Executives) ════════ -->
+  <div id="cc-workspace"></div>
 
   <!-- ════════ PHASE 1 WORKSPACE ════════ -->
   <div id="p1-workspace">
@@ -1246,6 +1280,8 @@ function doLogout() {
   S.user = null;
   S.records = [];
   S.hist = {};
+  S._cc = null;
+  if (S.phaseFilter === 'cc') { S.phaseFilter = 'p3'; S.subFilter = PHASE_DEFAULT_SUB.p3; }
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('lu').value = '';
@@ -1320,6 +1356,8 @@ function startApp() {
   av.style.background = ROLE_COLORS[u.role] || '#555';
   document.getElementById('user-nm').textContent = u.name || u.username;
   document.getElementById('user-role-badge').textContent = u.role;
+  const ccBtn = document.getElementById('cc-btn');
+  if (ccBtn) ccBtn.style.display = u.role === 'EXECUTIVE' ? '' : 'none';
 
   // Default hide-received: on for IS/COORDINATOR, off for EXECUTIVE
   S.hideReceived = (u.role === 'IS' || u.role === 'COORDINATOR');
@@ -1460,6 +1498,18 @@ function renderAll() {
   const ws2 = document.getElementById('p2-workspace');
   const sub = document.getElementById('sub-summary');
   const tcd = document.querySelector('.tcard');
+  const wcc = document.getElementById('cc-workspace');
+  if (wcc) wcc.classList.toggle('show', S.phaseFilter === 'cc');
+
+  if (S.phaseFilter === 'cc') {
+    if (ws1) ws1.classList.remove('show');
+    if (ws2) ws2.classList.remove('show');
+    if (sub) sub.style.display = 'none';
+    if (tcd) tcd.style.display = 'none';
+    renderSummary(S.records);
+    ccRender();
+    return;
+  }
 
   if (S.phaseFilter === 'p1') {
     if (ws1) ws1.classList.add('show');
@@ -5829,6 +5879,425 @@ function histStamp(ts) {
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const h = d.getHours(), m = d.getMinutes();
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} · ${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/* ══════════════════ COMMAND CENTER (Executives) ═══════════════════════════
+   One page to see whether the Hub is working before someone reports it isn't.
+   Read-only: every flag links to its ticket. The checks are pure functions
+   over data the Hub already has, and reuse the Hub's own rules (p4Bucket,
+   isReceivedTicket, p4OrderQty) so this page can never disagree with the rest
+   of the app. Backend-only facts (sheet structure, users, failed requests)
+   come from getHealth.
+════════════════════════════════════════════════════════════════════════════ */
+
+// Days a ticket may sit in each stage before it's flagged. Editable on the
+// page and remembered in this browser; amber past the limit, red past double.
+const CC_STAGE_LIMITS = {
+  'Awaiting IA Review': 3, 'IA Changes Requested': 3, 'PDF Pending': 1,
+  'Awaiting Merchandiser': 3, 'Awaiting Store Manager': 3, 'Store Changes Requested': 3,
+  'WHS Prepare Order': 2, 'Awaiting Actual Count': 3, 'Pending Dispatch': 3,
+  'In Transit': 14, 'On Hold': 7,
+};
+const CC_DEFAULT_CADENCE = 30;   // days, for stores with no cadence in the Bible
+
+function ccPrefs() {
+  if (!S._ccPrefs) {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('acacia_cc') || '{}') || {}; } catch(e) {}
+    S._ccPrefs = {
+      limits:  { ...CC_STAGE_LIMITS, ...(saved.limits || {}) },
+      cadence: Number(saved.cadence) > 0 ? Number(saved.cadence) : CC_DEFAULT_CADENCE,
+      flaggedOnly: saved.flaggedOnly !== false,
+    };
+  }
+  return S._ccPrefs;
+}
+function ccSavePrefs() { try { localStorage.setItem('acacia_cc', JSON.stringify(S._ccPrefs)); } catch(e) {} }
+
+// Date-only strings are local calendar days; anything else is a timestamp.
+function ccDate(v) {
+  if (!v) return null;
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(v);
+  return isNaN(d) ? null : d;
+}
+function ccDaysSince(v, now = new Date()) {
+  const d = ccDate(v);
+  if (!d) return null;
+  const a = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const b = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((a - b) / 86400000);
+}
+
+// Where a ticket is right now, and since when. Phase 4 goes through
+// p4Bucket — the same rule as the cards — and Phase 3 mirrors the panels.
+function ccStage(r) {
+  const sm = r.smgrStatus || '', pdf = r.pdfStatus || '', st = r.storeStatus || '', merch = r.merchStatus || '';
+  if (st === 'Approved') {
+    const b = p4Bucket(r);
+    const legs = [r.dSdc, r.dDirect, r.dCdc, r.dSdc2, r.dCdc2].filter(Boolean).sort();
+    const since = {
+      'WHS Prepare Order':     r.storeUpdatedAt,
+      'Awaiting Actual Count': r.sentToWhsAt,
+      'Pending Dispatch':      r.dWhs || r.fulfillAt,
+      'In Transit':            legs[legs.length - 1] || r.dWhs,
+      'On Hold':               r.updatedAt,
+      'Received':              r.dRecv,
+    }[b];
+    return { stage: b || 'Unknown', phase: 'p4', since: since || r.updatedAt || r.createdAt };
+  }
+  const at = (stage, since) => ({ stage, phase: 'p3', since: since || r.updatedAt || r.createdAt });
+  if (!sm)                         return at('Awaiting IA Review', r.createdAt);
+  if (sm === 'Changes Requested')  return at('IA Changes Requested', r.updatedAt);
+  if (pdf !== 'Generated')         return at('PDF Pending', r.smgrApprovedAt);
+  if (st === 'Changes Requested')  return at('Store Changes Requested', r.storeUpdatedAt);
+  if (merch !== 'Reviewed')        return at('Awaiting Merchandiser', r.pdfGeneratedAt);
+  return at('Awaiting Store Manager', r.merchAt);
+}
+
+// Tickets over their stage limit.
+function ccStuck(records, limits, now = new Date()) {
+  return records
+    .filter(r => !isReceivedTicket(r))
+    .map(r => {
+      const s = ccStage(r);
+      const limit = limits[s.stage];
+      const days = ccDaysSince(s.since, now);
+      if (!limit || days === null || days <= limit) return null;
+      return { r, stage: s.stage, days, limit, sev: days > limit * 2 ? 'red' : 'amber' };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.days / b.limit) - (a.days / a.limit));
+}
+
+// One row per Bible store. Spare parts go by LBC outside the replenishment
+// rhythm, so they don't count as the store's deliveries.
+function ccCoverage(records, stores, defaultCadence, reconHistory, now = new Date()) {
+  const byStore = {};
+  records.filter(r => !isSpareParts(r)).forEach(r => {
+    const k = String(r.store || '').trim().toUpperCase();
+    (byStore[k] = byStore[k] || []).push(r);
+  });
+  const lastRecon = {};
+  (reconHistory || []).forEach(h => String(h.stores || '').split(',').forEach(st => {
+    const k = st.trim().toUpperCase();
+    if (k && (!lastRecon[k] || String(h.runAt) > lastRecon[k])) lastRecon[k] = String(h.runAt);
+  }));
+  return stores.map(s => {
+    const t = byStore[s.store] || [];
+    const received = t.filter(isReceivedTicket).map(r => r.dRecv).filter(Boolean).sort();
+    const last = received[received.length - 1] || '';
+    const open = t.filter(r => !isReceivedTicket(r));
+    const cadence = Number(s.cadence) > 0 ? Number(s.cadence) : defaultCadence;
+    const days = last ? ccDaysSince(last, now) : null;
+    const dueIn = days !== null ? cadence - days : null;
+    const inFlight = open.length ? ` · ${open.length} in progress` : ' · nothing in progress';
+    let sev = 'ok', note = '';
+    if (!t.length)            { sev = 'red';   note = 'No tickets on record'; }
+    else if (!last)           { sev = open.length ? 'amber' : 'red'; note = 'No delivery received yet' + inFlight; }
+    else if (dueIn < 0)       { sev = open.length ? 'amber' : 'red'; note = `Overdue by ${-dueIn}d` + inFlight; }
+    else if (dueIn <= 7 && !open.length) { sev = 'amber'; note = `Due in ${dueIn}d · nothing in progress`; }
+    else                      { note = `Next due in ${dueIn}d`; }
+    return {
+      store: s.store, cadence, cadenceSet: Number(s.cadence) > 0, last, days, dueIn,
+      open: open.length, total: t.length, sev, note,
+      recon: lastRecon[s.store] || '',
+    };
+  }).sort((a, b) => ({ red: 0, amber: 1, ok: 2 }[a.sev] - { red: 0, amber: 1, ok: 2 }[b.sev])
+                 || ((a.dueIn ?? -9999) - (b.dueIn ?? -9999)));
+}
+
+// Data problems on tickets. Red = broken or missing something required;
+// amber = worth a look.
+function ccAnomalies(records, storeSet, priceMap, now = new Date()) {
+  const out = [];
+  const add = (r, sev, msg) => out.push({ r, sev, msg });
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const byRef = {}, byCdf = {};
+  records.forEach(r => {
+    const a = String(r.acaciaRef || '').trim(); if (a) (byRef[a] = byRef[a] || []).push(r);
+    const c = String(r.cdf || '').trim();       if (c) (byCdf[c] = byCdf[c] || []).push(r);
+  });
+  const DATE_LABEL = { dWhs:'WHS', dSdc:'WHS → SDC', dDirect:'WHS → Store', dCdc:'WHS → CDC', dSdc2:'SDC → Store', dCdc2:'CDC → Store', dRecv:'Received' };
+  records.forEach(r => {
+    const spare = isSpareParts(r);
+    // Order lines
+    let lines = null;
+    if (String(r.orderLines || '').trim()) {
+      try { lines = JSON.parse(r.orderLines); } catch(e) { add(r, 'red', 'Order lines are unreadable'); }
+    } else { lines = []; }
+    if (Array.isArray(lines)) {
+      if (!lines.length) add(r, 'amber', 'No order lines');
+      else {
+        const qty = l => p4OrderQty(r, l);
+        if (lines.every(l => qty(l) <= 0)) add(r, 'amber', 'Every line is 0 — nothing to ship');
+        if (priceMap && !isReceivedTicket(r)) {
+          const noPrice = lines.filter(l => qty(l) > 0 && !(Number(priceMap[l.barcode]) > 0)).length;
+          if (noPrice) add(r, 'amber', `${noPrice} SKU${noPrice !== 1 ? 's have' : ' has'} no price in PRODUCT_MASTER — prints blank on the PDF`);
+        }
+        if ((r.merchStatus || '') === 'Reviewed' && lines.some(l => !olSet(l.merchOrder))) {
+          add(r, 'amber', 'Merchandiser step recorded, but some lines have no Merch Qty');
+        }
+      }
+    }
+    // Dates
+    const wd = ccDate(r.dWhs);
+    Object.entries(DATE_LABEL).forEach(([k, lbl]) => {
+      const d = ccDate(r[k]);
+      if (!d) return;
+      if (d > today) add(r, 'red', `${lbl} date is in the future (${fmtD(r[k])})`);
+      if (wd && k !== 'dWhs' && d < wd) add(r, 'red', `${lbl} date is before the WHS date`);
+    });
+    const rd = ccDate(r.dRecv);
+    if (rd && ['dSdc','dDirect','dCdc','dSdc2','dCdc2'].some(k => { const d = ccDate(r[k]); return d && d > rd; })) {
+      add(r, 'red', 'Received date is earlier than a delivery leg');
+    }
+    // Phase 4
+    if ((r.storeStatus || '') === 'Approved') {
+      const b = p4Bucket(r);
+      const past = ['Pending Dispatch', 'In Transit', 'On Hold', 'Received'].includes(b);
+      if (past && !spare && !String(r.acaciaRef || '').trim()) add(r, 'red', `No CDF Ref, but already ${b}`);
+      if (spare && ['In Transit', 'Received'].includes(b) && !String(r.truck || '').trim()) add(r, 'red', 'Spare parts shipped with no LBC tracking number');
+      if (!spare && b === 'In Transit' && !String(r.truck || '').trim()) add(r, 'amber', 'In Transit with no truck recorded');
+      if (isReceivedTicket(r) && !r.dRecv) add(r, 'amber', 'Marked Received with no received date');
+      if (!spare && r.smgrApprovedAt && (r.pdfStatus || '') !== 'Generated') add(r, 'red', 'Reached Phase 4 without a generated PDF');
+      const st = r.status || '';
+      const agrees = st === b || (st === 'Completed' && b === 'Received')
+        || (st === 'Preparing Order' && ['WHS Prepare Order', 'Awaiting Actual Count'].includes(b));
+      if (st && !agrees) add(r, 'amber', `Stored status "${st}" disagrees with its dates (${b}) — re-save to correct`);
+    }
+    // Identity
+    if (!String(r.store || '').trim()) add(r, 'red', 'No store');
+    else if (storeSet && !storeSet.has(String(r.store).trim().toUpperCase())) add(r, 'amber', `Store "${r.store}" is not in the Bible`);
+    const ref = String(r.acaciaRef || '').trim();
+    if (ref && byRef[ref].length > 1) add(r, 'red', `CDF Ref ${ref} is also on ${byRef[ref].filter(x => x !== r).map(x => x.cdf).join(', ')}`);
+    const cdf = String(r.cdf || '').trim();
+    if (cdf && byCdf[cdf].length > 1) add(r, 'red', `Store Order ${cdf} appears on ${byCdf[cdf].length} tickets`);
+  });
+  // Red first; within a severity, a ticket's issues sit together.
+  return out.sort((a, b) => (a.sev === b.sev ? String(a.r.cdf || '').localeCompare(String(b.r.cdf || '')) : a.sev === 'red' ? -1 : 1));
+}
+
+// System checks from getHealth plus what the page itself measured.
+function ccSystemChecks(cc) {
+  const out = [];
+  const add = (sev, label, detail) => out.push({ sev, label, detail });
+  const h = cc.health || {};
+  if (cc.ping) add(cc.ping.ok ? (cc.ping.ms > 5000 ? 'amber' : 'ok') : 'red', 'Backend',
+    cc.ping.ok ? `Responding in ${cc.ping.ms} ms` : `Not responding: ${cc.ping.error}`);
+  if (cc.healthError) add('red', 'Health check', `Could not run: ${cc.healthError}`);
+  if (cc.bibleMod) add('ok', 'Bible', `Last updated ${cc.bibleMod.readable || cc.bibleMod}`);
+  if (cc.storesError) add('red', 'Bible stores', `Could not load: ${cc.storesError}`);
+  else if (cc.stores) {
+    const noCad = cc.stores.filter(s => !(Number(s.cadence) > 0)).length;
+    add('ok', 'Bible stores', `${cc.stores.length} stores loaded`);
+    if (noCad) add('amber', 'Delivery cadence', `${noCad} of ${cc.stores.length} stores have no "Delivery Cadence (days)" in the Bible — using the ${ccPrefs().cadence}-day default`);
+  }
+  if (cc.pricesError) add('red', 'Prices', `Could not load PRODUCT_MASTER: ${cc.pricesError}`);
+  else if (cc.prices) add(Object.keys(cc.prices).length ? 'ok' : 'red', 'Prices', `${Object.keys(cc.prices).length} priced SKUs in PRODUCT_MASTER`);
+  add('ok', 'Tickets', `${S.records.length} tickets loaded`);
+
+  if (h.cdf) {
+    if (h.cdf.error) add('red', 'Ticket sheet', `Check failed: ${h.cdf.error}`);
+    else {
+      if (h.cdf.missingColumns.length) add('amber', 'Ticket sheet columns', `Missing: ${h.cdf.missingColumns.join(', ')} — added automatically on the next save`);
+      if (h.cdf.hiddenRows.length) add('red', 'Hidden tickets', `${h.cdf.hiddenRows.length} row${h.cdf.hiddenRows.length !== 1 ? 's' : ''} in CDF_Deliveries have no id and never show in the Hub: `
+        + h.cdf.hiddenRows.slice(0, 8).map(x => `row ${x.row}${x.cdf ? ' (' + x.cdf + ')' : ''}`).join(', '));
+      if (!h.cdf.missingColumns.length && !h.cdf.hiddenRows.length) add('ok', 'Ticket sheet', `${h.cdf.rows} rows · structure complete`);
+    }
+  }
+  if (h.users) {
+    if (h.users.error) add('red', 'Users', `Check failed: ${h.users.error}`);
+    else {
+      const list = h.users.list;
+      const noId = list.filter(u => !u.hasId);
+      if (noId.length) add('red', 'Users who cannot log in', noId.map(u => `${u.username} (row ${u.row}, no id)`).join(', '));
+      const seen = {}, dups = new Set();
+      list.forEach(u => { const k = u.username.toLowerCase(); if (seen[k]) dups.add(u.username); seen[k] = 1; });
+      if (dups.size) add('red', 'Duplicate usernames', [...dups].join(', '));
+      const active = list.filter(u => u.active && u.hasId);
+      const blind = active.filter(u => (u.role === 'IS' || u.role === 'COORDINATOR') && !u.assignedStores);
+      if (blind.length) add('red', 'Users who see no tickets', blind.map(u => u.username).join(', ') + ' — assignedStores is blank');
+      const star = active.filter(u => u.role !== 'EXECUTIVE' && u.assignedStores === '*');
+      if (star.length) add('amber', 'On all-stores access', star.map(u => u.username).join(', ') + ' — assignedStores is "*"');
+      if (!noId.length && !dups.size && !blind.length) add('ok', 'Users', `${active.length} active`);
+    }
+  }
+  if (h.assignments) {
+    if (h.assignments.error) add('red', 'Assignments', `Check failed: ${h.assignments.error}`);
+    else if (h.assignments.mismatches.length) h.assignments.mismatches.forEach(m => add('amber', `Assignments: ${m.username}`,
+      [m.onlyHub.length && `Hub only: ${m.onlyHub.join(', ')}`, m.onlyBible.length && `Bible only: ${m.onlyBible.join(', ')}`].filter(Boolean).join(' · ')));
+    else add('ok', 'Assignments', 'Hub and Bible agree for every scoped user');
+  }
+  if (h.activity && !h.activity.error) {
+    const e24 = cc.errors.filter(e => (Date.now() - new Date(e.timestamp)) < 86400000).length;
+    add(e24 ? 'red' : cc.errors.length ? 'amber' : 'ok', 'Failed actions',
+      e24 ? `${e24} in the last 24 hours · ${cc.errors.length} in 30 days` : cc.errors.length ? `${cc.errors.length} in the last 30 days, none today` : 'None in the last 30 days');
+    if (h.activity.lastAt) add('ok', 'Last activity', histStamp(h.activity.lastAt));
+  }
+  return out.sort((a, b) => ({ red: 0, amber: 1, ok: 2 }[a.sev] - { red: 0, amber: 1, ok: 2 }[b.sev]));
+}
+
+function openCommandCenter() {
+  if (S.user?.role !== 'EXECUTIVE') return;
+  S.phaseFilter = 'cc'; S.subFilter = ''; S.expandedId = null;
+  renderAll();
+  if (!S._cc || !S._cc.loadedAt) ccLoad();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function ccLoad() {
+  S._cc = { loading: true, errors: [] };
+  ccRender(true);
+  const cc = S._cc;
+  const u = S.user.username;
+  if (CFG.offline || !CFG.apiUrl) {
+    cc.loading = false; cc.offline = true; cc.loadedAt = new Date().toISOString(); ccRender(); return;
+  }
+  const t0 = performance.now();
+  const settle = (p, ok, bad) => p.then(ok).catch(e => bad(e.message || String(e)));
+  await Promise.all([
+    settle(gasGet('ping', {}), () => { cc.ping = { ok: true, ms: Math.round(performance.now() - t0) }; }, e => { cc.ping = { ok: false, error: e }; }),
+    settle(loadData(), () => {}, () => {}),
+    settle(gasGet('getHealth', { username: u }), h => { cc.health = h; cc.errors = h?.activity?.errors || []; }, e => { cc.healthError = e; }),
+    settle(gasGet('getBibleStoresForUser', { username: u }), st => { cc.stores = Array.isArray(st) ? st : []; }, e => { cc.storesError = e; }),
+    settle(gasGet('getBibleProductPrices', { username: u }), pm => { cc.prices = pm && typeof pm === 'object' ? pm : {}; }, e => { cc.pricesError = e; }),
+    settle(gasGet('getBibleLastModified', {}), m => { cc.bibleMod = m; }, () => {}),
+  ]);
+  cc.loading = false;
+  cc.loadedAt = new Date().toISOString();
+  if (S.phaseFilter === 'cc') ccRender(true);
+}
+
+function ccOpenTicket(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) { toast('That ticket is no longer in the Hub.', 'err'); return; }
+  S.phaseFilter = (r.storeStatus || '') === 'Approved' ? 'p4' : 'p3';
+  S.subFilter = ''; S.fRoute = ''; S.fType = '';
+  S.searchTerm = r.cdf || '';
+  S.expandedId = uid;
+  renderAll();
+  setTimeout(() => {
+    const row = document.querySelector(`tr[data-id="${CSS.escape(uid)}"]`);
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 60);
+}
+
+function ccSetLimit(stage, v) {
+  const n = parseInt(v, 10);
+  if (!(n > 0)) return;
+  ccPrefs().limits[stage] = n; ccSavePrefs(); ccRender(true);
+}
+function ccResetLimits() { ccPrefs().limits = { ...CC_STAGE_LIMITS }; ccSavePrefs(); ccRender(true); }
+function ccSetCadence(v) { const n = parseInt(v, 10); if (n > 0) { ccPrefs().cadence = n; ccSavePrefs(); ccRender(true); } }
+function ccToggleFlagged(v) { ccPrefs().flaggedOnly = v; ccSavePrefs(); ccRender(true); }
+function ccToggleLimits(open) { ccPrefs().limitsOpen = open; }
+
+// `force` is for the page's own controls. Background refreshes (polling)
+// call without it and skip while someone is typing in a Command Center field,
+// so a half-typed number is never wiped (see handoff §4.1).
+function ccRender(force) {
+  const el = document.getElementById('cc-workspace');
+  if (!el || S.phaseFilter !== 'cc') return;
+  const typing = document.activeElement && el.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+  if (typing && !force) return;
+  const cc = S._cc || { loading: true, errors: [] };
+  const prefs = ccPrefs();
+  const dot = sev => `<span class="cc-dot ${sev === 'ok' ? '' : sev}"></span>`;
+  const tLink = r => `<a href="#" onclick="ccOpenTicket('${esc(r.id || r.cdf)}');return false">${esc(r.cdf || '(no Store Order)')}</a>`;
+  const panel = (id, num, title, badge, body) => `
+    <div class="ph-panel open cc-sec" id="${id}"><div class="wf-panel">
+      <div class="wf-panel-hd"><span class="wf-phase-num" style="background:var(--blue)">${num}</span>
+        <span class="wf-panel-title">${title}</span>${badge}</div>
+      <div class="wf-panel-bd">${body}</div></div></div>`;
+  const badge = (red, amber, okText) => red
+    ? `<span class="wf-status-badge wfs-partial">${red} red${amber ? ` · ${amber} amber` : ''}</span>`
+    : amber ? `<span class="wf-status-badge wfs-changes">${amber} to check</span>`
+    : `<span class="wf-status-badge wfs-approved">${okText}</span>`;
+
+  const head = `<div class="cc-head">
+      <span class="cc-title">🛰 Command Center</span>
+      <span class="cc-sub">${cc.loading ? 'Checking…' : cc.loadedAt ? 'Checked ' + histStamp(cc.loadedAt) : ''}</span>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="ccLoad()" ${cc.loading ? 'disabled' : ''}>↻ Recheck</button>
+    </div>`;
+  if (cc.loading && !cc.loadedAt) { el.innerHTML = head + `<div class="cc-empty">Running checks…</div>`; return; }
+  if (cc.offline) { el.innerHTML = head + `<div class="cc-empty">Offline — the Command Center needs the live backend.</div>`; return; }
+
+  const records  = S.records || [];
+  const storeSet = cc.stores ? new Set(cc.stores.map(s => s.store)) : null;
+  const system   = ccSystemChecks(cc);
+  const coverage = cc.stores ? ccCoverage(records, cc.stores, prefs.cadence, S._reconHistory) : [];
+  const stuck    = ccStuck(records, prefs.limits);
+  const anomalies = ccAnomalies(records, storeSet, cc.prices || null);
+  const count = (arr, sev) => arr.filter(x => x.sev === sev).length;
+  const sysR = count(system, 'red'), sysA = count(system, 'amber');
+  const covR = count(coverage, 'red'), covA = count(coverage, 'amber');
+  const stR = count(stuck, 'red'), stA = count(stuck, 'amber');
+  const anR = count(anomalies, 'red'), anA = count(anomalies, 'amber');
+  const kpi = (target, n, label, sub, red, amber) =>
+    `<div class="cc-kpi ${red ? 'red' : amber ? 'amber' : ''}" onclick="document.getElementById('${target}').scrollIntoView({behavior:'smooth',block:'start'})">
+      <div class="cc-kpi-n">${n}</div><div class="cc-kpi-l">${label}</div><div class="cc-kpi-s">${sub}</div></div>`;
+
+  const kpis = `<div class="cc-kpis">
+    ${kpi('cc-sys', sysR + sysA || '✓', 'System', sysR + sysA ? `${sysR} red · ${sysA} amber` : 'All checks passing', sysR, sysA)}
+    ${kpi('cc-cov', covR + covA || '✓', 'Store deliveries', cc.stores ? `${covR} red · ${covA} amber of ${coverage.length} stores` : 'Stores not loaded', covR, covA)}
+    ${kpi('cc-stuck', stuck.length || '✓', 'Stuck tickets', stuck.length ? `${stR} red · ${stA} amber` : 'Nothing over its limit', stR, stA)}
+    ${kpi('cc-anom', anomalies.length || '✓', 'Data anomalies', anomalies.length ? `${anR} red · ${anA} amber` : 'None found', anR, anA)}
+    ${kpi('cc-err', cc.errors.length || '✓', 'Failed actions', cc.errors.length ? 'Last 30 days' : 'None in 30 days', 0, cc.errors.length)}
+  </div>`;
+
+  const sysBody = system.map(c => `<div class="cc-check">${dot(c.sev)}<span class="cc-check-l">${esc(c.label)}</span><span class="cc-check-d">${esc(c.detail)}</span></div>`).join('');
+
+  const covRows = coverage.filter(c => !prefs.flaggedOnly || c.sev !== 'ok');
+  const covBody = `
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <label class="cc-ctrl"><input type="checkbox" ${prefs.flaggedOnly ? 'checked' : ''} onchange="ccToggleFlagged(this.checked)"> Flagged stores only</label>
+      <label class="cc-ctrl">Default cadence <input type="number" min="1" value="${prefs.cadence}" onchange="ccSetCadence(this.value)"> days <span style="color:#aaa">(stores with no cadence in the Bible)</span></label>
+    </div>
+    ${!cc.stores ? `<div class="cc-empty">Bible stores didn't load — see System.</div>`
+      : !covRows.length ? `<div class="cc-empty">Every store is on schedule.</div>`
+      : `<div style="overflow-x:auto"><table class="cc-tbl"><thead><tr>
+          <th>Store</th><th>Status</th><th>Last delivery</th><th>Cadence</th><th>Open</th><th>Last Phase 1 run</th></tr></thead><tbody>
+          ${covRows.map(c => `<tr>
+            <td style="font-weight:700">${esc(c.store)}</td>
+            <td>${dot(c.sev)}${esc(c.note)}</td>
+            <td>${c.last ? `${fmtD(c.last)} <span style="color:#aaa">· ${c.days}d ago</span>` : '<span style="color:#aaa">—</span>'}</td>
+            <td>${c.cadence}d${c.cadenceSet ? '' : ' <span style="color:#aaa">default</span>'}</td>
+            <td>${c.open || '<span style="color:#aaa">0</span>'}</td>
+            <td>${c.recon ? `${fmtD(c.recon.slice(0, 10))} <span style="color:${ccDaysSince(c.recon) > 30 ? 'var(--amber-d)' : '#aaa'}">· ${ccDaysSince(c.recon)}d ago</span>` : '<span style="color:var(--amber-d)">Never</span>'}</td>
+          </tr>`).join('')}</tbody></table></div>`}`;
+
+  const limitsEditor = `<details style="margin-bottom:8px" ${prefs.limitsOpen ? 'open' : ''} ontoggle="ccToggleLimits(this.open)"><summary class="cc-ctrl" style="cursor:pointer;font-weight:700">Stage limits (days)</summary>
+      <div class="cc-limits">${Object.keys(CC_STAGE_LIMITS).map(st => `<label class="cc-ctrl" style="justify-content:space-between">${esc(st)}
+        <input type="number" min="1" value="${prefs.limits[st]}" onchange="ccSetLimit('${esc(st)}',this.value)"></label>`).join('')}</div>
+      <button class="btn btn-outline btn-sm" onclick="ccResetLimits()">Reset to suggested</button></details>`;
+  const stuckBody = limitsEditor + (!stuck.length ? `<div class="cc-empty">No ticket is over its stage limit.</div>` : `
+    <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Ticket</th><th>Store</th><th>Stage</th><th>In stage</th><th>Limit</th></tr></thead><tbody>
+      ${stuck.map(x => `<tr><td>${dot(x.sev)}${tLink(x.r)}</td><td>${esc(x.r.store || '')}</td><td>${esc(x.stage)}</td>
+        <td style="font-weight:700;color:${x.sev === 'red' ? 'var(--red-d)' : 'var(--amber-d)'}">${x.days}d</td><td>${x.limit}d</td></tr>`).join('')}
+    </tbody></table></div>`);
+
+  const anomBody = !anomalies.length ? `<div class="cc-empty">No data problems found${cc.prices ? '' : ' (prices not checked — PRODUCT_MASTER didn’t load)'}.</div>` : `
+    <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Ticket</th><th>Store</th><th>Issue</th></tr></thead><tbody>
+      ${anomalies.map(a => `<tr><td style="white-space:nowrap">${dot(a.sev)}${tLink(a.r)}</td><td>${esc(a.r.store || '')}</td><td>${esc(a.msg)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+
+  const errBody = cc.healthError ? `<div class="cc-empty">Couldn't read the log — see System.</div>`
+    : !cc.errors.length ? `<div class="cc-empty">No failed actions in the last 30 days.</div>` : `
+    <div style="overflow-x:auto;max-height:360px;overflow-y:auto"><table class="cc-tbl"><thead><tr><th>When</th><th>User</th><th>What failed</th><th>Ticket</th></tr></thead><tbody>
+      ${cc.errors.map(e => {
+        const r = e.recordId ? S.records.find(x => x.id === e.recordId) : null;
+        return `<tr><td style="white-space:nowrap">${histStamp(e.timestamp)}</td><td>${esc(e.username || '')}</td><td>${esc(e.detail || '')}</td>
+          <td>${r ? tLink(r) : e.recordId ? `<span style="color:#aaa">${esc(e.recordId)}</span>` : ''}</td></tr>`;
+      }).join('')}
+    </tbody></table></div>`;
+
+  el.innerHTML = head + kpis
+    + panel('cc-sys',  '1', 'System', badge(sysR, sysA, 'All passing'), sysBody)
+    + panel('cc-cov',  '2', 'Store Deliveries', badge(covR, covA, 'All on schedule'), covBody)
+    + panel('cc-stuck','3', 'Stuck Tickets', badge(stR, stA, 'None'), stuckBody)
+    + panel('cc-anom', '4', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
+    + panel('cc-err',  '5', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody);
 }
 
 /* ══════════════════ GAS HTTP ══════════════════ */
