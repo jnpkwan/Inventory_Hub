@@ -628,10 +628,16 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .cc-grp-l{font-weight:700;color:var(--ink);min-width:230px}
 .cc-grp-m{color:#666;flex:1}
 .cc-grp-t{font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+.cc-sublist{padding:0 0 6px 16px}
+.cc-sublist .cc-check{padding:5px 0}
 .cc-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px 16px}
 .cc-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border:1px solid var(--silver);border-radius:999px;background:#fff;font-family:'DM Mono',monospace;font-size:10.5px;font-weight:700;color:var(--blue);text-decoration:none}
 .cc-chip:hover{border-color:var(--blue);background:var(--blue-pale)}
 .cc-chip span{font-family:'DM Sans',sans-serif;font-weight:600;color:#888}
+.cc-dup{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;padding:4px 6px 4px 10px;border:1px solid var(--silver);border-radius:10px;background:var(--mist)}
+.cc-dup-k{font-family:'DM Mono',monospace;font-size:11px;font-weight:800;color:var(--red-d);margin-right:2px}
+.cc-dup-k::after{content:' →';color:#aaa;font-weight:400}
+.cc-chip-done{opacity:.55;border-style:dashed}
 .cc-chip-plain{color:var(--ink);font-family:inherit;cursor:default}
 .cc-limits{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;padding:10px 0 4px}
 #p1-workspace.show,#p2-workspace.show{display:block}
@@ -6019,6 +6025,10 @@ function ccAnomalies(records, storeSet, priceMap, now = new Date()) {
   });
   const DATE_LABEL = { dWhs:'WHS', dSdc:'WHS → SDC', dDirect:'WHS → Store', dCdc:'WHS → CDC', dSdc2:'SDC → Store', dCdc2:'CDC → Store', dRecv:'Received' };
   records.forEach(r => {
+    // A received ticket is done — nothing on it needs attention any more. It
+    // still counts in the duplicate maps above, so an OPEN ticket reusing a
+    // received ticket's CDF Ref is still caught (the open one is fixable).
+    if (isReceivedTicket(r)) return;
     const spare = isSpareParts(r);
     // Order lines
     let lines = null;
@@ -6115,8 +6125,6 @@ function ccSystemChecks(cc) {
       const active = list.filter(u => u.active && u.hasId);
       const blind = active.filter(u => (u.role === 'IS' || u.role === 'COORDINATOR') && !u.assignedStores);
       if (blind.length) add('red', 'Users who see no tickets', blind.map(u => u.username).join(', ') + ' — assignedStores is blank');
-      const star = active.filter(u => u.role !== 'EXECUTIVE' && u.assignedStores === '*');
-      if (star.length) add('amber', 'On all-stores access', star.map(u => u.username).join(', ') + ' — assignedStores is "*"');
       if (!noId.length && !dups.size && !blind.length) add('ok', 'Users', `${active.length} active`);
     }
   }
@@ -6263,21 +6271,34 @@ function ccRender(force) {
 
   // One summary line per group; its items only when opened.
   const isOpen = key => !!(prefs.open && prefs.open[key]);
-  const groupRow = (key, sev, label, meta, itemsHtml) => `
+  const groupRow = (key, sev, label, meta, itemsHtml, asList) => `
     <div class="cc-grp">
       <div class="cc-grp-hd" onclick="ccToggleGroup('${esc(key)}')">
         ${dot(sev)}<span class="cc-grp-l">${esc(label)}</span><span class="cc-grp-m">${meta}</span>
         <span class="cc-grp-t">${isOpen(key) ? '▾ Hide' : '▸ Show'}</span>
       </div>
-      ${isOpen(key) ? `<div class="cc-chips">${itemsHtml}</div>` : ''}
+      ${isOpen(key) ? `<div class="${asList ? 'cc-sublist' : 'cc-chips'}">${itemsHtml}</div>` : ''}
     </div>`;
-  const chip = (r, extra, tip) => `<a class="cc-chip" href="#" title="${esc(tip || '')}" onclick="ccOpenTicket('${esc(r.id || r.cdf)}');return false">${esc(r.cdf || '(no Store Order)')}${extra ? `<span>${esc(extra)}</span>` : ''}</a>`;
+  const chip = (r, extra, tip, label) => `<a class="cc-chip" href="#" title="${esc(tip || '')}" onclick="ccOpenTicket('${esc(r.id || r.cdf)}');return false">${esc(label || r.cdf || '(no Store Order)')}${extra ? `<span>${esc(extra)}</span>` : ''}</a>`;
+  // Duplicates read as sets: the shared value once, then the tickets sharing it.
+  // Received tickets sharing the value show greyed, as context only.
+  const dupSets = (items, keyOf, chipFor) => {
+    const sets = {};
+    items.forEach(a => { const k = keyOf(a.r); (sets[k] = sets[k] || new Set()).add(a.r); });
+    return Object.entries(sets).sort(([a], [b]) => a.localeCompare(b)).map(([k, rs]) => {
+      const done = records.filter(r => !rs.has(r) && isReceivedTicket(r) && keyOf(r) === k);
+      return `<span class="cc-dup"><span class="cc-dup-k">${esc(k)}</span>${[...rs].map(chipFor).join('')}`
+        + done.map(r => `<span class="cc-chip cc-chip-plain cc-chip-done" title="${esc((r.store || '') + ' · received — shown for context')}">${esc(r.cdf || '')}<span>received</span></span>`).join('')
+        + `</span>`;
+    }).join('');
+  };
   const plural = (n, w) => `${n} ${w}${n !== 1 ? 's' : ''}`;
 
   const problems = system.filter(c => c.sev !== 'ok');
   const passing  = system.filter(c => c.sev === 'ok');
   const sysBody = problems.map(c => `<div class="cc-check">${dot(c.sev)}<span class="cc-check-l">${esc(c.label)}</span><span class="cc-check-d">${esc(c.detail)}</span></div>`).join('')
-    + (passing.length ? groupRow('sys:ok', 'ok', `${plural(passing.length, 'check')} passing`, '', passing.map(c => `<span class="cc-chip cc-chip-plain" title="${esc(c.detail)}">${esc(c.label)}<span>${esc(c.detail)}</span></span>`).join('')) : '');
+    + (passing.length ? groupRow('sys:ok', 'ok', `${plural(passing.length, 'check')} passing`, '',
+        passing.map(c => `<div class="cc-check">${dot('ok')}<span class="cc-check-l">${esc(c.label)}</span><span class="cc-check-d">${esc(c.detail)}</span></div>`).join(''), true) : '');
 
   const covBody = !cc.stores ? `<div class="cc-empty">Bible stores didn't load — see System.</div>`
     : !coverage.length ? `<div class="cc-empty">Every store has had a delivery in the past ${CC_DELIVERY_WINDOW} days or has an order in progress.</div>`
@@ -6302,6 +6323,16 @@ function ccRender(force) {
   const anomBody = !anomalies.length ? `<div class="cc-empty">No data problems found${cc.prices ? '' : ' (prices not checked — PRODUCT_MASTER didn’t load)'}.</div>`
     : ccGroup(anomalies, a => a.kind).map(g => {
         const tickets = new Set(g.items.map(a => a.r)).size;
+        if (g.key === 'Duplicate CDF Ref') {
+          const refs = new Set(g.items.map(a => String(a.r.acaciaRef).trim())).size;
+          return groupRow('anom:' + g.key, g.sev, g.label, `${plural(refs, 'CDF Ref')} on ${plural(tickets, 'ticket')}`,
+            dupSets(g.items, r => String(r.acaciaRef).trim(), r => chip(r, '', `${r.store || ''} · ${ccStage(r).stage}`)));
+        }
+        if (g.key === 'Duplicate Store Order') {
+          const orders = new Set(g.items.map(a => String(a.r.cdf).trim())).size;
+          return groupRow('anom:' + g.key, g.sev, g.label, `${plural(orders, 'Store Order')} on ${plural(tickets, 'ticket')}`,
+            dupSets(g.items, r => String(r.cdf).trim(), r => chip(r, ccStage(r).stage, `${r.store || ''} · ${ccStage(r).stage}`, r.acaciaRef || 'no CDF Ref')));
+        }
         return groupRow('anom:' + g.key, g.sev, g.label, plural(tickets, 'ticket'),
           g.items.map(a => chip(a.r, '', `${a.r.store || ''} · ${a.msg}`)).join(''));
       }).join('');
