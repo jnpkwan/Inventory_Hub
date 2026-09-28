@@ -538,6 +538,10 @@ select.ms{appearance:none; -webkit-appearance:none; background-image:url("data:i
 .btn-danger{background:var(--red); color:#fff; box-shadow:0 6px 20px rgba(214,69,69,.26)}
 .btn-danger:hover{background:var(--red-d); transform:translateY(-1px)}
 .btn-sm{font-size:11.5px; padding:6px 12px}
+/* Undo — one look everywhere so it's recognisable at a glance. Dashed slate
+   on grey: no other button uses it, and it doesn't read as an action colour. */
+.btn-undo{background:var(--grey-pale); color:var(--slate); border:1.5px dashed var(--slate); font-size:11px; font-weight:700; padding:5px 11px; box-shadow:none}
+.btn-undo:hover{background:#fff; color:var(--ink); border-color:var(--ink); transform:translateY(-1px)}
 .btn:disabled{opacity:.45; cursor:not-allowed; box-shadow:none; transform:none}
 
 /* ── Alerts / Toast ── */
@@ -2095,7 +2099,7 @@ function buildDetail(r, span = 13) {
     ? (pdfSt==='Generated'
         ? `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="color:var(--teal);font-weight:600">📄 Generated ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''}${pdfRegen}</div></div>`
         : (role==='IS'||role==='EXECUTIVE')
-          ? `<div class="wf-meta" style="margin-top:2px"><div class="wf-ml">PDF</div><div class="wf-mv"><button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10px" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate PDF</button>${paperSelect()}<button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:10px;margin-left:8px" onclick="event.stopPropagation();undoIaApproval('${uid}')">↶ Undo approval</button></div></div>`
+          ? `<div class="wf-meta" style="margin-top:2px"><div class="wf-ml">PDF</div><div class="wf-mv"><button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10px" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate PDF</button>${paperSelect()}<button class="btn btn-undo" style="margin-left:8px" onclick="event.stopPropagation();undoIaApproval('${uid}')">↶ Undo approval</button></div></div>`
           : `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="font-size:10px;color:var(--amber);font-weight:600">⏳ Pending IS</div></div>`)
     : '';
   const pdfGenBtn = ''; // kept for compat — logic moved to pdfInline
@@ -2292,7 +2296,7 @@ function buildDetail(r, span = 13) {
           : merchDone
             ? `<span style="font-size:10.5px;color:var(--teal);font-weight:600;margin-left:8px">✓ Sent for Store Manager approval</span>`
             : `<span style="font-size:10.5px;color:#aaa;margin-left:8px">Uses Merchandiser quantities · unlocks Store Manager approval</span>`}
-        ${merchDone && storeSt === '' ? `<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();undoMerchReview('${uid}')">↶ Undo</button>` : ''}
+        ${merchDone && storeSt === '' ? `<button class="btn btn-undo" style="margin-left:auto" onclick="event.stopPropagation();undoMerchReview('${uid}')">↶ Undo Updated PDF</button>` : ''}
       </div>` : '';
     merchPanel = `
     <div class="ph-panel" data-phase="merch">
@@ -2419,7 +2423,7 @@ function buildDetail(r, span = 13) {
   //   the adjusted CDF for the warehouse.
   const storeUndo = !locked4 && canUndo && storeSt === 'Changes Requested' ? `
     <div class="wf-actions">
-      <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();undoStoreChanges('${uid}')">↶ Undo change request</button>
+      <button class="btn btn-undo" onclick="event.stopPropagation();undoStoreChanges('${uid}')">↶ Undo change request</button>
       <span style="font-size:10.5px;color:#aaa">Back to Awaiting Coordinator, if the Store Manager actually approved</span>
     </div>` : '';
   const storeActions = !locked4 && canApproveStore && storeSt === '' ? `
@@ -2492,7 +2496,7 @@ function buildDetail(r, span = 13) {
   const viaChanges = !!r.cdfGeneratedAt;
   const canUndoDecision = canUndo && storeSt === 'Approved' && !fulfSt && !isSpareParts(r) && !!r.storeUpdatedBy;
   const undoDecisionBtn = canUndoDecision
-    ? `<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();undoStoreDecision('${uid}')">↶ Undo ${viaChanges ? 'Begin Fulfillment' : 'Store Manager approval'}</button>`
+    ? `<button class="btn btn-undo" style="margin-left:auto" onclick="event.stopPropagation();undoStoreDecision('${uid}')">↶ Undo ${viaChanges ? 'Begin Fulfillment' : 'Store Manager approval'}</button>`
     : '';
   const sendBtn = !locked5 && ((canFulfill && !fulfSt) || undoDecisionBtn) ? `
     <div class="wf-actions">
@@ -2512,7 +2516,7 @@ function buildDetail(r, span = 13) {
   const logActualsBtn = !locked5 && canFulfill && fulfSt==='Sent to WHS' ? `
     <div class="wf-actions" style="margin-top:4px">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markActualsLogged('${uid}')">📋 Confirm Actuals Received &amp; Logged</button>
-      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();undoSentToWHS('${uid}')">↶ Undo Sent to Warehouse</button>
+      <button class="btn btn-undo" style="margin-left:auto" onclick="event.stopPropagation();undoSentToWHS('${uid}')">↶ Undo Sent to Warehouse</button>
     </div>` : '';
   // Executives can always regenerate the order PDF in Phase 4, at the
   // quantities that count (see p4OrderQty).
