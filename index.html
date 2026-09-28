@@ -6127,12 +6127,6 @@ function ccSystemChecks(cc) {
       if (!noId.length && !dups.size && !blind.length) add('ok', 'Users', `${active.length} active`);
     }
   }
-  if (h.assignments) {
-    if (h.assignments.error) add('red', 'Assignments', `Check failed: ${h.assignments.error}`);
-    else if (h.assignments.mismatches.length) h.assignments.mismatches.forEach(m => add('amber', `Assignments: ${m.username}`,
-      [m.onlyHub.length && `Hub only: ${m.onlyHub.join(', ')}`, m.onlyBible.length && `Bible only: ${m.onlyBible.join(', ')}`].filter(Boolean).join(' · ')));
-    else add('ok', 'Assignments', 'Hub and Bible agree for every scoped user');
-  }
   if (h.activity && !h.activity.error) {
     const e24 = cc.errors.filter(e => (Date.now() - new Date(e.timestamp)) < 86400000).length;
     add(e24 ? 'red' : cc.errors.length ? 'amber' : 'ok', 'Failed actions',
