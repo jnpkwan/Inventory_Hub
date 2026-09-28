@@ -629,16 +629,15 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .cc-grp-m{color:#666;flex:1}
 .cc-grp-t{font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
 .cc-sublist{padding:0 0 6px 16px}
+.cc-li{display:flex;gap:14px;padding:5px 0;border-bottom:1px solid var(--mist);font-size:11.5px;align-items:baseline}
+.cc-li:last-child{border-bottom:none}
+.cc-li-a{min-width:230px;font-family:'DM Mono',monospace;font-size:11px;white-space:nowrap}
+.cc-li-b{min-width:140px;font-weight:600;color:var(--ink)}
+.cc-li-c{flex:1;color:#666}
+.cc-li a{color:var(--blue);font-weight:700;text-decoration:none;font-family:'DM Mono',monospace;font-size:11px}
+.cc-li a:hover{text-decoration:underline}
+.cc-li-key{color:var(--red-d);font-weight:800}
 .cc-sublist .cc-check{padding:5px 0}
-.cc-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px 16px}
-.cc-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border:1px solid var(--silver);border-radius:999px;background:#fff;font-family:'DM Mono',monospace;font-size:10.5px;font-weight:700;color:var(--blue);text-decoration:none}
-.cc-chip:hover{border-color:var(--blue);background:var(--blue-pale)}
-.cc-chip span{font-family:'DM Sans',sans-serif;font-weight:600;color:#888}
-.cc-dup{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;padding:4px 6px 4px 10px;border:1px solid var(--silver);border-radius:10px;background:var(--mist)}
-.cc-dup-k{font-family:'DM Mono',monospace;font-size:11px;font-weight:800;color:var(--red-d);margin-right:2px}
-.cc-dup-k::after{content:' →';color:#aaa;font-weight:400}
-.cc-chip-done{opacity:.55;border-style:dashed}
-.cc-chip-plain{color:var(--ink);font-family:inherit;cursor:default}
 .cc-limits{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;padding:10px 0 4px}
 #p1-workspace.show,#p2-workspace.show{display:block}
 .cdf-ctrls{display:contents}
@@ -1699,20 +1698,29 @@ function getFiltered() {
 }
 
 /* ── Summary cards ── */
+/* ── Needs Attention: "no dispatch movement for N days" ─────────────────────
+   Not received, and the latest dispatch date on the ticket is older than the
+   threshold (the Phase 4 spinner, default ATTN_DEFAULT_DAYS). A ticket with no
+   dispatch date yet is never counted. One rule for the Phase 4 card, its
+   filter, its export and the Command Center — they can't disagree.
+────────────────────────────────────────────────────────────────────────── */
+function attnLatestDate(r) {
+  const dates = [r.dWhs, r.dSdc, r.dDirect, r.dCdc, r.dSdc2, r.dCdc2, r.dRecv]
+    .filter(d => d && d.match(/^\d{4}-\d{2}-\d{2}/));
+  return dates.map(d => new Date(d)).filter(d => !isNaN(d)).sort((a, b) => b - a)[0] || null;
+}
+function needsAttention(r, days = S.attnDays || ATTN_DEFAULT_DAYS, now = new Date()) {
+  if (isReceivedTicket(r)) return false;
+  const latest = attnLatestDate(r);
+  return !!latest && (now - latest) / 86400000 > days;
+}
+
 /* ── Phase pipeline summary (top of page) ── */
 function renderSummary(rows) {
   const all = S.records;
 
   // ── Needs-attention IDs (reused across renders) ───────────────────────────
-  const today = new Date();
-  const needsAttn = all.filter(r => {
-    if(isReceivedTicket(r)) return false;
-    const dates=[r.dWhs,r.dSdc,r.dDirect,r.dCdc,r.dSdc2,r.dCdc2,r.dRecv]
-      .filter(d=>d&&d.match(/^\d{4}-\d{2}-\d{2}/));
-    if(!dates.length) return false;
-    const latest=dates.map(d=>new Date(d)).filter(d=>!isNaN(d)).sort((a,b)=>b-a)[0];
-    return latest && (today-latest)/(1000*60*60*24) > (S.attnDays||ATTN_DEFAULT_DAYS);
-  });
+  const needsAttn = all.filter(r => needsAttention(r));
   S._attnIds = new Set(needsAttn.map(r=>r.id||r.cdf));
 
   // ── Phase counts ──────────────────────────────────────────────────────────
@@ -5912,23 +5920,19 @@ function histStamp(ts) {
    come from getHealth.
 ════════════════════════════════════════════════════════════════════════════ */
 
-// Days a ticket may sit in each stage before it's flagged. Editable on the
-// page and remembered in this browser; amber past the limit, red past double.
-const CC_STAGE_LIMITS = {
-  'Awaiting IA Review': 3, 'IA Changes Requested': 3, 'PDF Pending': 1,
-  'Awaiting Merchandiser': 3, 'Awaiting Store Manager': 3, 'Store Changes Requested': 3,
-  'WHS Prepare Order': 2, 'Awaiting Actual Count': 3, 'Pending Dispatch': 3,
-  'In Transit': 14, 'On Hold': 7,
-};
+// Flagged once unchanged in their stage for this many days: every Phase 3
+// stage, plus the two Phase 4 stages before dispatch (CC_IN_STAGE_P4), which
+// have no dispatch date yet for Needs Attention to measure from. The rest of
+// Phase 4 uses Needs Attention (needsAttention), so it agrees with that card.
+const CC_P3_STUCK_DAYS = 7;
+const CC_IN_STAGE_P4 = ['WHS Prepare Order', 'Awaiting Actual Count'];
 const CC_DELIVERY_WINDOW = 30;   // a store with no delivery received in this many days is listed
 
 function ccPrefs() {
   if (!S._ccPrefs) {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem('acacia_cc') || '{}') || {}; } catch(e) {}
-    S._ccPrefs = {
-      limits:  { ...CC_STAGE_LIMITS, ...(saved.limits || {}) },
-    };
+    S._ccPrefs = { open: saved.open || {} };
   }
   return S._ccPrefs;
 }
@@ -5975,16 +5979,28 @@ function ccStage(r) {
   return at('Awaiting Store Manager', r.merchAt);
 }
 
-// Tickets over their stage limit.
-function ccStuck(records, limits, now = new Date()) {
+// Tickets that have stopped moving.
+//   Phase 3, WHS Prepare Order, Awaiting Actual Count: unchanged in their
+//            stage for more than CC_P3_STUCK_DAYS.
+//   Pending Dispatch, In Transit, On Hold: exactly the Needs Attention rule —
+//            the same tickets the Phase 4 card counts, measured from the
+//            latest dispatch date.
+// Amber when over, red past double.
+function ccStuck(records, now = new Date()) {
+  const attnDays = S.attnDays || ATTN_DEFAULT_DAYS;
   return records
     .filter(r => !isReceivedTicket(r))
     .map(r => {
       const s = ccStage(r);
-      const limit = limits[s.stage];
+      const p4 = (r.storeStatus || '') === 'Approved';
+      if (p4 && !CC_IN_STAGE_P4.includes(s.stage)) {
+        if (!needsAttention(r, attnDays, now)) return null;
+        const days = Math.floor((now - attnLatestDate(r)) / 86400000);
+        return { r, stage: s.stage, phase: 4, days, limit: attnDays, sev: days > attnDays * 2 ? 'red' : 'amber' };
+      }
       const days = ccDaysSince(s.since, now);
-      if (!limit || days === null || days <= limit) return null;
-      return { r, stage: s.stage, days, limit, sev: days > limit * 2 ? 'red' : 'amber' };
+      if (days === null || days <= CC_P3_STUCK_DAYS) return null;
+      return { r, stage: s.stage, phase: p4 ? 4 : 3, inStage: true, days, limit: CC_P3_STUCK_DAYS, sev: days > CC_P3_STUCK_DAYS * 2 ? 'red' : 'amber' };
     })
     .filter(Boolean)
     .sort((a, b) => (b.days / b.limit) - (a.days / a.limit));
@@ -6036,8 +6052,9 @@ function ccAnomalies(records, storeSet, priceMap, now = new Date()) {
       try { lines = JSON.parse(r.orderLines); } catch(e) { add(r, 'red', 'Order lines unreadable', 'Order lines are unreadable'); }
     } else { lines = []; }
     if (Array.isArray(lines)) {
-      if (!lines.length) add(r, 'amber', 'No order lines', 'No order lines');
-      else {
+      // An empty order is not flagged: only migrated tickets have one — every
+      // Hub ticket gets its lines from the upload.
+      if (lines.length) {
         const qty = l => p4OrderQty(r, l);
         if (lines.every(l => qty(l) <= 0)) add(r, 'amber', 'Every line is 0', 'Every line is 0 — nothing to ship');
         if (priceMap && !isReceivedTicket(r)) {
@@ -6069,7 +6086,6 @@ function ccAnomalies(records, storeSet, priceMap, now = new Date()) {
       if (spare && ['In Transit', 'Received'].includes(b) && !String(r.truck || '').trim()) add(r, 'red', 'Spare parts with no LBC number', 'Spare parts shipped with no LBC tracking number');
       if (!spare && b === 'In Transit' && !String(r.truck || '').trim()) add(r, 'amber', 'In Transit with no truck', 'In Transit with no truck recorded');
       if (isReceivedTicket(r) && !r.dRecv) add(r, 'amber', 'Received with no date', 'Marked Received with no received date');
-      if (!spare && r.smgrApprovedAt && (r.pdfStatus || '') !== 'Generated') add(r, 'red', 'Phase 4 without a PDF', 'Reached Phase 4 without a generated PDF');
       const st = r.status || '';
       const agrees = st === b || (st === 'Completed' && b === 'Received')
         || (st === 'Preparing Order' && ['WHS Prepare Order', 'Awaiting Actual Count'].includes(b));
@@ -6209,13 +6225,6 @@ function ccOpenTicket(uid) {
   }, 60);
 }
 
-function ccSetLimit(stage, v) {
-  const n = parseInt(v, 10);
-  if (!(n > 0)) return;
-  ccPrefs().limits[stage] = n; ccSavePrefs(); ccRender(true);
-}
-function ccResetLimits() { ccPrefs().limits = { ...CC_STAGE_LIMITS }; ccSavePrefs(); ccRender(true); }
-function ccToggleLimits(open) { ccPrefs().limitsOpen = open; }
 
 // `force` is for the page's own controls. Background refreshes (polling)
 // call without it and skip while someone is typing in a Command Center field,
@@ -6250,7 +6259,7 @@ function ccRender(force) {
   const storeSet = cc.stores ? new Set(cc.stores.map(s => s.store)) : null;
   const system   = ccSystemChecks(cc);
   const coverage = cc.stores ? ccCoverage(records, cc.stores) : [];
-  const stuck    = ccStuck(records, prefs.limits);
+  const stuck    = ccStuck(records);
   const anomalies = ccAnomalies(records, storeSet, cc.prices || null);
   const count = (arr, sev) => arr.filter(x => x.sev === sev).length;
   const sysR = count(system, 'red'), sysA = count(system, 'amber');
@@ -6271,25 +6280,28 @@ function ccRender(force) {
 
   // One summary line per group; its items only when opened.
   const isOpen = key => !!(prefs.open && prefs.open[key]);
-  const groupRow = (key, sev, label, meta, itemsHtml, asList) => `
+  const groupRow = (key, sev, label, meta, itemsHtml) => `
     <div class="cc-grp">
       <div class="cc-grp-hd" onclick="ccToggleGroup('${esc(key)}')">
         ${dot(sev)}<span class="cc-grp-l">${esc(label)}</span><span class="cc-grp-m">${meta}</span>
         <span class="cc-grp-t">${isOpen(key) ? '▾ Hide' : '▸ Show'}</span>
       </div>
-      ${isOpen(key) ? `<div class="${asList ? 'cc-sublist' : 'cc-chips'}">${itemsHtml}</div>` : ''}
+      ${isOpen(key) ? `<div class="cc-sublist">${itemsHtml}</div>` : ''}
     </div>`;
-  const chip = (r, extra, tip, label) => `<a class="cc-chip" href="#" title="${esc(tip || '')}" onclick="ccOpenTicket('${esc(r.id || r.cdf)}');return false">${esc(label || r.cdf || '(no Store Order)')}${extra ? `<span>${esc(extra)}</span>` : ''}</a>`;
-  // Duplicates read as sets: the shared value once, then the tickets sharing it.
-  // Received tickets sharing the value show greyed, as context only.
-  const dupSets = (items, keyOf, chipFor) => {
+  // Expanded groups are plain list rows: ticket (opens it) · store · detail.
+  const tLink = (r, label) => `<a href="#" onclick="ccOpenTicket('${esc(r.id || r.cdf)}');return false">${esc(label || r.cdf || '(no Store Order)')}</a>`;
+  const li = (a, b, c) => `<div class="cc-li"><span class="cc-li-a">${a}</span><span class="cc-li-b">${b}</span><span class="cc-li-c">${c}</span></div>`;
+  // Duplicates: one row per shared value, then the tickets sharing it.
+  // Received tickets sharing the value are named as context, not linked.
+  const dupRows = (items, keyOf, ticketLabel) => {
     const sets = {};
     items.forEach(a => { const k = keyOf(a.r); (sets[k] = sets[k] || new Set()).add(a.r); });
     return Object.entries(sets).sort(([a], [b]) => a.localeCompare(b)).map(([k, rs]) => {
       const done = records.filter(r => !rs.has(r) && isReceivedTicket(r) && keyOf(r) === k);
-      return `<span class="cc-dup"><span class="cc-dup-k">${esc(k)}</span>${[...rs].map(chipFor).join('')}`
-        + done.map(r => `<span class="cc-chip cc-chip-plain cc-chip-done" title="${esc((r.store || '') + ' · received — shown for context')}">${esc(r.cdf || '')}<span>received</span></span>`).join('')
-        + `</span>`;
+      const first = [...rs][0];
+      return li(`<span class="cc-li-key">${esc(k)}</span>`, esc(first.store || ''),
+        [...rs].map(r => tLink(r, ticketLabel(r))).join(' · ')
+        + done.map(r => ` · <span style="color:#aaa">${esc(r.cdf || '')} (received)</span>`).join(''));
     }).join('');
   };
   const plural = (n, w) => `${n} ${w}${n !== 1 ? 's' : ''}`;
@@ -6298,7 +6310,7 @@ function ccRender(force) {
   const passing  = system.filter(c => c.sev === 'ok');
   const sysBody = problems.map(c => `<div class="cc-check">${dot(c.sev)}<span class="cc-check-l">${esc(c.label)}</span><span class="cc-check-d">${esc(c.detail)}</span></div>`).join('')
     + (passing.length ? groupRow('sys:ok', 'ok', `${plural(passing.length, 'check')} passing`, '',
-        passing.map(c => `<div class="cc-check">${dot('ok')}<span class="cc-check-l">${esc(c.label)}</span><span class="cc-check-d">${esc(c.detail)}</span></div>`).join(''), true) : '');
+        passing.map(c => `<div class="cc-check">${dot('ok')}<span class="cc-check-l">${esc(c.label)}</span><span class="cc-check-d">${esc(c.detail)}</span></div>`).join('')) : '');
 
   const covBody = !cc.stores ? `<div class="cc-empty">Bible stores didn't load — see System.</div>`
     : !coverage.length ? `<div class="cc-empty">Every store has had a delivery in the past ${CC_DELIVERY_WINDOW} days or has an order in progress.</div>`
@@ -6308,17 +6320,20 @@ function ccRender(force) {
           <td>${c.last ? `${fmtD(c.last)} <span style="color:#aaa">· ${c.days} days ago</span>` : '<span style="color:#999">None on record</span>'}</td>
         </tr>`).join('')}</tbody></table></div>`;
 
-  const limitsEditor = `<details style="margin-bottom:8px" ${prefs.limitsOpen ? 'open' : ''} ontoggle="ccToggleLimits(this.open)"><summary class="cc-ctrl" style="cursor:pointer;font-weight:700">Stage limits (days)</summary>
-      <div class="cc-limits">${Object.keys(CC_STAGE_LIMITS).map(st => `<label class="cc-ctrl" style="justify-content:space-between">${esc(st)}
-        <input type="number" min="1" value="${prefs.limits[st]}" onchange="ccSetLimit('${esc(st)}',this.value)"></label>`).join('')}</div>
-      <button class="btn btn-outline btn-sm" onclick="ccResetLimits()">Reset to suggested</button></details>`;
-  const stuckBody = (!stuck.length ? `<div class="cc-empty">No ticket is over its stage limit.</div>`
-    : ccGroup(stuck, x => x.stage).map(g => {
+  const attnDays = S.attnDays || ATTN_DEFAULT_DAYS;
+  const stuckRule = `<div class="cc-empty" style="padding:2px 0 6px">Phase 3, WHS Prepare Order and Awaiting Actual Count: unchanged for over ${CC_P3_STUCK_DAYS} days. Pending Dispatch, In Transit and On Hold: Needs Attention — no dispatch movement for over ${attnDays} days.</div>`;
+  const stuckGroups = ccGroup(stuck, x => x.stage)
+    .sort((a, b) => a.items[0].phase - b.items[0].phase || (a.sev === b.sev ? b.items.length - a.items.length : a.sev === 'red' ? -1 : 1));
+  const stuckBody = stuckRule + (!stuck.length ? `<div class="cc-empty">Nothing has stopped moving.</div>`
+    : stuckGroups.map(g => {
+        const inStage = !!g.items[0].inStage;
         const oldest = Math.max(...g.items.map(x => x.days));
-        return groupRow('stuck:' + g.key, g.sev, g.label,
-          `${plural(g.items.length, 'ticket')} over ${g.items[0].limit}d · oldest ${oldest}d`,
-          g.items.sort((a, b) => b.days - a.days).map(x => chip(x.r, `${x.days}d`, `${x.r.store || ''} · ${x.days} days in ${x.stage}`)).join(''));
-      }).join('')) + limitsEditor;
+        return groupRow('stuck:' + g.key, g.sev, `Phase ${g.items[0].phase} · ${g.label}`,
+          inStage ? `${plural(g.items.length, 'ticket')} unchanged ${CC_P3_STUCK_DAYS}d+ · oldest ${oldest}d`
+                  : `${plural(g.items.length, 'ticket')} with no movement for ${attnDays}d+ · oldest ${oldest}d`,
+          g.items.sort((a, b) => b.days - a.days).map(x => li(tLink(x.r), esc(x.r.store || ''),
+            inStage ? `${x.days} days in ${esc(x.stage)}` : `${x.days} days since the last dispatch date`)).join(''));
+      }).join(''));
 
   const anomBody = !anomalies.length ? `<div class="cc-empty">No data problems found${cc.prices ? '' : ' (prices not checked — PRODUCT_MASTER didn’t load)'}.</div>`
     : ccGroup(anomalies, a => a.kind).map(g => {
@@ -6326,15 +6341,15 @@ function ccRender(force) {
         if (g.key === 'Duplicate CDF Ref') {
           const refs = new Set(g.items.map(a => String(a.r.acaciaRef).trim())).size;
           return groupRow('anom:' + g.key, g.sev, g.label, `${plural(refs, 'CDF Ref')} on ${plural(tickets, 'ticket')}`,
-            dupSets(g.items, r => String(r.acaciaRef).trim(), r => chip(r, '', `${r.store || ''} · ${ccStage(r).stage}`)));
+            dupRows(g.items, r => String(r.acaciaRef).trim(), r => r.cdf));
         }
         if (g.key === 'Duplicate Store Order') {
           const orders = new Set(g.items.map(a => String(a.r.cdf).trim())).size;
           return groupRow('anom:' + g.key, g.sev, g.label, `${plural(orders, 'Store Order')} on ${plural(tickets, 'ticket')}`,
-            dupSets(g.items, r => String(r.cdf).trim(), r => chip(r, ccStage(r).stage, `${r.store || ''} · ${ccStage(r).stage}`, r.acaciaRef || 'no CDF Ref')));
+            dupRows(g.items, r => String(r.cdf).trim(), r => `${r.acaciaRef || 'no CDF Ref'} (${ccStage(r).stage})`));
         }
         return groupRow('anom:' + g.key, g.sev, g.label, plural(tickets, 'ticket'),
-          g.items.map(a => chip(a.r, '', `${a.r.store || ''} · ${a.msg}`)).join(''));
+          g.items.map(a => li(tLink(a.r), esc(a.r.store || ''), esc(a.msg))).join(''));
       }).join('');
 
   const errBody = cc.healthError ? `<div class="cc-empty">Couldn't read the log — see System.</div>`
@@ -6345,9 +6360,8 @@ function ccRender(force) {
           `${plural(g.items.length, 'time')} · ${users.slice(0, 3).join(', ')}${users.length > 3 ? '…' : ''} · last ${histStamp(g.items[0].timestamp)}`,
           g.items.map(e => {
             const r = e.recordId ? S.records.find(x => x.id === e.recordId) : null;
-            const tip = `${histStamp(e.timestamp)} · ${e.username || ''} · ${e.detail || ''}`;
-            return r ? chip(r, e.username || '', tip)
-                     : `<span class="cc-chip cc-chip-plain" title="${esc(tip)}">${esc(e.username || '?')}<span>${esc(histStamp(e.timestamp))}</span></span>`;
+            return li(esc(histStamp(e.timestamp)), esc(e.username || '?'),
+              (r ? tLink(r) + ' · ' : '') + esc(e.detail || ''));
           }).join(''));
       }).join('');
 
