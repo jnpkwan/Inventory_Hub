@@ -1645,8 +1645,12 @@ function getFiltered() {
     if (S.hideReceived && !wantsReceived && isReceivedTicket(r)) return false;
     if (fRoute && routeLabel(r)!==fRoute) return false;
     if (fType  && r.type !==fType)  return false;
+    // Match every reference a row can show: store, Store Order, and the CDF
+    // Ref that replaces the Store Order in the lead column from Pending
+    // Dispatch onward (handoff §5) — searching what's on screen must work.
     if (search && !(r.store||'').toLowerCase().includes(search) &&
-                  !(r.cdf||'').toLowerCase().includes(search)) return false;
+                  !(r.cdf||'').toLowerCase().includes(search) &&
+                  !(r.acaciaRef||'').toLowerCase().includes(search)) return false;
     // ── Phase filter ─────────────────────────────────────────────────────────
     const sm = r.smgrStatus||''; const st = r.storeStatus||'';
     const fl = r.fulfillStatus||'';
@@ -1850,7 +1854,7 @@ function renderSummary(rows) {
       +'</div>'
       // ── Phase 4 filter controls row ──────────────────────────────────────────
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 2px 0">'
-        +'<div class="sw" style="min-width:180px;max-width:260px"><input type="text" id="search" placeholder="Search store or CDF…" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
+        +'<div class="sw" style="min-width:180px;max-width:260px"><input type="text" id="search" placeholder="Store, Store Order or CDF Ref…" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
         +selectFilter('f-route', 'fRoute', 'All Routes', ['Direct','Via SDC','Via CDC','LBC'])
         +selectFilter('f-type', 'fType', 'All Types', ['Regular','Spare Parts','Shopee','Supplies'])
         +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="'+(S.attnDays||ATTN_DEFAULT_DAYS)+'" min="1" max="180" onchange="S.attnDays=parseInt(this.value)||ATTN_DEFAULT_DAYS; renderAll()"> days</div>'
