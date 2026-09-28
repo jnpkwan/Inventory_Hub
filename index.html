@@ -629,16 +629,18 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .cc-grp-m{color:#666;flex:1}
 .cc-grp-t{font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
 .cc-sublist{padding:0 0 6px 16px}
-.cc-li{display:flex;gap:14px;padding:5px 0;border-bottom:1px solid var(--mist);font-size:11.5px;align-items:baseline}
+/* One fixed grid for every row, so columns line up down the whole list. A
+   name longer than its column wraps inside it instead of pushing the row. */
+.cc-li{display:grid;grid-template-columns:290px 200px minmax(0,1fr);column-gap:16px;padding:6px 0;border-bottom:1px solid var(--mist);font-size:11.5px;align-items:baseline}
 .cc-li:last-child{border-bottom:none}
-.cc-li-a{min-width:230px;font-family:'DM Mono',monospace;font-size:11px;white-space:nowrap}
-.cc-li-b{min-width:140px;font-weight:600;color:var(--ink)}
-.cc-li-c{flex:1;color:#666}
+.cc-li-a{font-family:'DM Mono',monospace;font-size:11px;overflow-wrap:anywhere}
+.cc-li-b{font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.cc-li-c{color:#666;overflow-wrap:anywhere}
+@media (max-width: 768px){ .cc-li{grid-template-columns:1fr;row-gap:2px} }
 .cc-li a{color:var(--blue);font-weight:700;text-decoration:none;font-family:'DM Mono',monospace;font-size:11px}
 .cc-li a:hover{text-decoration:underline}
 .cc-li-key{color:var(--red-d);font-weight:800}
 .cc-sublist .cc-check{padding:5px 0}
-.cc-limits{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;padding:10px 0 4px}
 #p1-workspace.show,#p2-workspace.show{display:block}
 .cdf-ctrls{display:contents}
 .cdf-ctrls.hidden{display:none}
@@ -5963,12 +5965,12 @@ function ccExportReport() {
     const ws = XLSX.utils.aoa_to_sheet([head, ...rows.map(r => r.cells)]);
     ws['!cols'] = widths.map(w => ({ wch: w }));
     ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: head.length - 1 } }) };
-    head.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: 0, c }); if (ws[ref]) ws[ref].s = p1CellStyle('1B4DA0', true, 'FFFFFF', 9, 'center'); });
+    head.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: 0, c }); if (ws[ref]) ws[ref].s = p1CellStyle('1B4DA0', true, 'FFFFFF', 11, 'center'); });
     rows.forEach((row, i) => head.forEach((_, c) => {
       const ref = XLSX.utils.encode_cell({ r: i + 1, c });
       if (!ws[ref]) return;
       const bg = c === sevCol ? (row.sev === 'red' ? 'FDECEA' : 'FEF6E4') : (i % 2 ? 'F5F5F5' : 'FFFFFF');
-      ws[ref].s = p1CellStyle(bg, c === sevCol, '2C2C2C', 9, centred.includes(c) ? 'center' : 'left');
+      ws[ref].s = p1CellStyle(bg, c === sevCol, '2C2C2C', 11, centred.includes(c) ? 'center' : 'left');
     }));
     return ws;
   };
@@ -5989,13 +5991,13 @@ function ccExportReport() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, sheet(
     ['Severity', 'Issue', 'Detail', 'Store', 'Store Order', 'CDF Ref', 'Stage', 'Last Updated By', 'Last Updated'],
-    anomRows, [9, 30, 58, 22, 26, 15, 22, 16, 17], [0, 8], 0), 'Anomalies');
+    anomRows, [11, 34, 68, 26, 34, 17, 24, 19, 19], [0, 8], 0), 'Anomalies');
   XLSX.utils.book_append_sheet(wb, sheet(
     ['Severity', 'Phase', 'Stage', 'Days', 'Rule', 'Store', 'Store Order', 'CDF Ref', 'Last Updated By', 'Last Updated'],
-    stuckRows, [9, 9, 24, 7, 36, 22, 26, 15, 16, 17], [0, 1, 3, 9], 0), 'Stuck Tickets');
+    stuckRows, [11, 10, 28, 8, 40, 26, 34, 17, 19, 19], [0, 1, 3, 9], 0), 'Stuck Tickets');
   XLSX.utils.book_append_sheet(wb, sheet(
     ['Store', 'Last Delivery', 'Days Since'],
-    covRows, [26, 16, 11], [1, 2], -1), `No Delivery ${CC_DELIVERY_WINDOW}d`);
+    covRows, [30, 18, 13], [1, 2], -1), `No Delivery ${CC_DELIVERY_WINDOW}d`);
   XLSX.writeFile(wb, `acacia-command-center-${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast(`Report downloaded: ${anomRows.length} anomal${anomRows.length !== 1 ? 'ies' : 'y'}, ${stuckRows.length} stuck, ${covRows.length} store${covRows.length !== 1 ? 's' : ''} with no delivery.`);
 }
