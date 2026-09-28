@@ -452,7 +452,7 @@ thead th:first-child{white-space:nowrap}
 .wf-panel{border-radius:var(--rl); border:1.5px solid var(--silver); background:var(--white); overflow:hidden; margin-bottom:10px; box-shadow:var(--sh)}
 .wf-panel:last-child{margin-bottom:0}
 .wf-panel-hd{display:flex; align-items:center; gap:9px; padding:9px 14px; background:linear-gradient(180deg,var(--paper),var(--white)); border-bottom:1px solid var(--silver)}
-.wf-phase-num{display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; font-size:9px; font-weight:800; color:#fff; flex-shrink:0; box-shadow:var(--sh)}
+.wf-phase-num{display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 6px; border-radius:999px; font-size:9px; letter-spacing:.2px; font-weight:800; color:#fff; flex-shrink:0; box-shadow:var(--sh)}
 .wf-panel-title{font-family:"Montserrat",sans-serif; font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:.9px; color:var(--carbon)}
 .wf-status-badge{margin-left:auto; display:inline-flex; align-items:center; gap:4px; font-size:9px; font-weight:700; padding:3px 10px; border-radius:var(--pill); border:1px solid transparent; letter-spacing:.2px}
 .wfs-pending{background:var(--grey-pale); color:var(--slate); border-color:var(--silver-d)}
@@ -2201,7 +2201,7 @@ function buildDetail(r, span = 13) {
     <div class="ph-panel open" data-phase="p3">
       <div class="wf-panel">
         <div class="wf-panel-hd">
-          <span class="wf-phase-num" style="background:#7B1FA2">3</span>
+          <span class="wf-phase-num" style="background:#7B1FA2">3.1</span>
           <span class="wf-panel-title">Inventory Associate Review</span>
           <span class="wf-status-badge ${smBadge}">${smSt||'Awaiting Review'}</span>
         </div>
@@ -2293,7 +2293,7 @@ function buildDetail(r, span = 13) {
     <div class="ph-panel" data-phase="merch">
       <div class="wf-panel">
         <div class="wf-panel-hd">
-          <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">3</span>
+          <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">3.2</span>
           <span class="wf-panel-title">Merchandiser Review</span>
           <span class="wf-status-badge ${merchDone?'wfs-approved':'wfs-pending'}">${merchDone?'Reviewed':'Awaiting Merchandiser'}</span>
         </div>
@@ -2453,7 +2453,7 @@ function buildDetail(r, span = 13) {
     <div class="ph-panel" data-phase="p4">
       <div class="wf-panel" style="${locked4?'opacity:.55;pointer-events:none':''}">
         <div class="wf-panel-hd">
-          <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">3</span>
+          <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">3.3</span>
           <span class="wf-panel-title">Store Manager Approval</span>
           <span class="wf-status-badge ${locked4?'wfs-pending':storeBadge}">${locked4?'Locked — awaiting IA approval':(storeSt||'Awaiting Coordinator')}</span>
         </div>
@@ -2493,44 +2493,60 @@ function buildDetail(r, span = 13) {
     <div class="wf-actions" style="margin-top:4px">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markActualsLogged('${uid}')">📋 Confirm Actuals Received &amp; Logged</button>
     </div>` : '';
-  // 5A meta
+  // 4.1 meta — the warehouse hand-off
   const fulfMeta = fulfSt ? `
     <div class="wf-meta-row">
       ${r.sentToWhsBy?`<div class="wf-meta"><div class="wf-ml">Sent to WHS by</div><div class="wf-mv">${esc(r.sentToWhsBy)}</div></div>`:''}
       ${r.sentToWhsAt?`<div class="wf-meta"><div class="wf-ml">Sent Date</div><div class="wf-mv">${fmtD(r.sentToWhsAt.slice(0,10))}</div></div>`:''}
       ${r.acaciaRef?`<div class="wf-meta"><div class="wf-ml">CDF Ref</div><div class="wf-mv" style="font-family:'DM Mono',monospace;color:var(--blue);font-weight:700">${esc(r.acaciaRef)}</div></div>`:''}
-      <div style="margin-left:auto;display:flex;gap:12px;align-items:flex-start">
-        ${r.boxes?`<div class="wf-meta"><div class="wf-ml">Boxes</div><div class="wf-mv">${esc(r.boxes)}</div></div>`:''}
-        ${r.truck?`<div class="wf-meta"><div class="wf-ml">Truck</div><div class="wf-mv" style="font-family:'DM Mono',monospace">${esc(r.truck)}</div></div>`:''}
-        ${r.cas?`<div class="wf-meta"><div class="wf-ml">CAS No.</div><div class="wf-mv" style="font-family:'DM Mono',monospace">${esc(r.cas)}</div></div>`:''}
-        ${td!==null?`<div class="wf-meta"><div class="wf-ml">Transit</div><div class="wf-mv" style="${isOverdue(r)?'color:#C0392B;font-weight:700':''}">${td}d</div></div>`:''}
-      </div>
     </div>` : '';
-  // 5B dispatch timeline — locked until actuals logged
-  const dispatchBanner = !dispatchUnlocked && fulfSt ? `
-    <div style="font-size:10.5px;color:#aaa;background:#F9F9F9;border:1px solid #EBEBEB;border-radius:6px;padding:6px 10px;display:flex;align-items:center;gap:5px">
-      ⏸ <span>Dispatch tracking unlocks after warehouse actuals are logged.</span>
+  // 4.2 meta — the shipment
+  const dispatchMeta = (r.boxes || r.truck || r.cas || td !== null) ? `
+    <div class="wf-meta-row" style="margin-bottom:8px">
+      ${r.boxes?`<div class="wf-meta"><div class="wf-ml">Boxes</div><div class="wf-mv">${esc(r.boxes)}</div></div>`:''}
+      ${r.truck?`<div class="wf-meta"><div class="wf-ml">Truck</div><div class="wf-mv" style="font-family:'DM Mono',monospace">${esc(r.truck)}</div></div>`:''}
+      ${r.cas?`<div class="wf-meta"><div class="wf-ml">CAS No.</div><div class="wf-mv" style="font-family:'DM Mono',monospace">${esc(r.cas)}</div></div>`:''}
+      ${td!==null?`<div class="wf-meta"><div class="wf-ml">Transit</div><div class="wf-mv" style="${isOverdue(r)?'color:#C0392B;font-weight:700':''}">${td}d</div></div>`:''}
     </div>` : '';
   const dispatchSection = `
-    <hr class="wf-divider" style="margin:6px 0 8px">
-    ${dispatchBanner}
     <div style="${dispatchUnlocked?'':'opacity:.4;pointer-events:none'}">
       <div class="timeline-wrap tl-${tlState}">
         <div class="timeline" style="margin-bottom:2px">${tl}</div>
       </div>
       ${r.remarks?`<div style="font-size:11px;color:#888;margin-top:4px;padding:0 4px"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;color:#aaa">Remarks</span> ${esc(r.remarks)}</div>`:''}
     </div>`;
+  // 4.2's status reads from p4Bucket, the same rule behind the Phase 4 cards,
+  // so the panel and the card a ticket sits under can never disagree.
+  const DISPATCH_BADGE = { 'Pending Dispatch':'wfs-pending', 'In Transit':'wfs-sent', 'On Hold':'wfs-changes', 'Received':'wfs-approved' };
+  const bucket = p4Bucket(r);
+  const dispatchLabel = !dispatchUnlocked ? 'Locked — awaiting warehouse actuals'
+                      : DISPATCH_BADGE[bucket] ? bucket
+                      : (r.status || 'Pending Dispatch');
+  const dispatchBadge = DISPATCH_BADGE[dispatchLabel] || 'wfs-pending';
   const panelP5 = `
     <div class="ph-panel open" data-phase="p5">
       <div class="wf-panel" style="${locked5?'opacity:.55;pointer-events:none':''}">
         <div class="wf-panel-hd">
-          <span class="wf-phase-num" style="background:var(--teal)">4</span>
-          <span class="wf-panel-title">Fulfillment &amp; Dispatch</span>
+          <span class="wf-phase-num" style="background:var(--teal)">4.1</span>
+          <span class="wf-panel-title">Warehouse Fulfillment</span>
           <span class="wf-status-badge ${locked5?'wfs-pending':fulfBadge}">${locked5?'Locked — awaiting store approval':(fulfSt||'Not yet sent to warehouse')}</span>
         </div>
         <div class="wf-panel-bd">
-          ${fulfMeta}${sendBtn}${logActualsBtn}${holdBtn}
+          ${fulfMeta}${sendBtn}${logActualsBtn}
+        </div>
+      </div>
+    </div>
+    <div class="ph-panel open" data-phase="p5b">
+      <div class="wf-panel" style="${locked5?'opacity:.55;pointer-events:none':''}">
+        <div class="wf-panel-hd">
+          <span class="wf-phase-num" style="background:var(--teal)">4.2</span>
+          <span class="wf-panel-title">Dispatch &amp; Delivery</span>
+          <span class="wf-status-badge ${dispatchBadge}">${dispatchLabel}</span>
+        </div>
+        <div class="wf-panel-bd">
+          ${dispatchMeta}
           ${dispatchSection}
+          ${holdBtn}
         </div>
       </div>
     </div>`;
