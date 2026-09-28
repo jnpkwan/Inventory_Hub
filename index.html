@@ -5936,6 +5936,70 @@ function ccPrefs() {
   }
   return S._ccPrefs;
 }
+// The team's fix list, as Excel. Built from the same functions the page draws
+// with, on the same data, so the file matches what's on screen. One sheet each
+// for anomalies, stuck tickets and stores with no delivery, sorted by store so
+// each person can filter to theirs. Follows the Phase 4 export's conventions:
+// numbers as numbers, dates as YYYY-MM-DD text, AutoFilter, blue header.
+function ccExportReport() {
+  const cc = S._cc;
+  if (!cc || !cc.loadedAt || cc.loading) { toast('Wait for the checks to finish, then download.', 'err'); return; }
+  const records  = S.records || [];
+  const storeSet = cc.stores ? new Set(cc.stores.map(s => s.store)) : null;
+  const anomalies = ccAnomalies(records, storeSet, cc.prices || null);
+  const stuck     = ccStuck(records);
+  const coverage  = cc.stores ? ccCoverage(records, cc.stores) : [];
+  const attnDays  = S.attnDays || ATTN_DEFAULT_DAYS;
+
+  const stamp = v => {
+    const d = new Date(v); if (!v || isNaN(d)) return '';
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  const sevText = s => s === 'red' ? 'Red' : 'Amber';
+  const byStore = (a, b) => String(a.store).localeCompare(String(b.store)) || (a.sev === b.sev ? 0 : a.sev === 'red' ? -1 : 1);
+
+  const sheet = (head, rows, widths, centred, sevCol) => {
+    const ws = XLSX.utils.aoa_to_sheet([head, ...rows.map(r => r.cells)]);
+    ws['!cols'] = widths.map(w => ({ wch: w }));
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: head.length - 1 } }) };
+    head.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: 0, c }); if (ws[ref]) ws[ref].s = p1CellStyle('1B4DA0', true, 'FFFFFF', 9, 'center'); });
+    rows.forEach((row, i) => head.forEach((_, c) => {
+      const ref = XLSX.utils.encode_cell({ r: i + 1, c });
+      if (!ws[ref]) return;
+      const bg = c === sevCol ? (row.sev === 'red' ? 'FDECEA' : 'FEF6E4') : (i % 2 ? 'F5F5F5' : 'FFFFFF');
+      ws[ref].s = p1CellStyle(bg, c === sevCol, '2C2C2C', 9, centred.includes(c) ? 'center' : 'left');
+    }));
+    return ws;
+  };
+
+  const anomRows = anomalies.map(a => ({ sev: a.sev, store: a.r.store || '', cells: [
+    sevText(a.sev), a.kind, a.msg, a.r.store || '', a.r.cdf || '', a.r.acaciaRef || '', ccStage(a.r).stage,
+    a.r.updatedBy || '', stamp(a.r.updatedAt),
+  ]})).sort(byStore);
+  const stuckRows = stuck.map(x => ({ sev: x.sev, store: x.r.store || '', cells: [
+    sevText(x.sev), `Phase ${x.phase}`, x.stage, x.days,
+    x.inStage ? `Unchanged in stage over ${CC_P3_STUCK_DAYS} days` : `No dispatch movement over ${attnDays} days`,
+    x.r.store || '', x.r.cdf || '', x.r.acaciaRef || '', x.r.updatedBy || '', stamp(x.r.updatedAt),
+  ]})).sort(byStore);
+  const covRows = coverage.map(c => ({ sev: 'red', store: c.store, cells: [
+    c.store, c.last || 'None on record', c.days ?? '',
+  ]})).sort(byStore);
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet(
+    ['Severity', 'Issue', 'Detail', 'Store', 'Store Order', 'CDF Ref', 'Stage', 'Last Updated By', 'Last Updated'],
+    anomRows, [9, 30, 58, 22, 26, 15, 22, 16, 17], [0, 8], 0), 'Anomalies');
+  XLSX.utils.book_append_sheet(wb, sheet(
+    ['Severity', 'Phase', 'Stage', 'Days', 'Rule', 'Store', 'Store Order', 'CDF Ref', 'Last Updated By', 'Last Updated'],
+    stuckRows, [9, 9, 24, 7, 36, 22, 26, 15, 16, 17], [0, 1, 3, 9], 0), 'Stuck Tickets');
+  XLSX.utils.book_append_sheet(wb, sheet(
+    ['Store', 'Last Delivery', 'Days Since'],
+    covRows, [26, 16, 11], [1, 2], -1), `No Delivery ${CC_DELIVERY_WINDOW}d`);
+  XLSX.writeFile(wb, `acacia-command-center-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  toast(`Report downloaded: ${anomRows.length} anomal${anomRows.length !== 1 ? 'ies' : 'y'}, ${stuckRows.length} stuck, ${covRows.length} store${covRows.length !== 1 ? 's' : ''} with no delivery.`);
+}
+
 function ccSavePrefs() { try { localStorage.setItem('acacia_cc', JSON.stringify(S._ccPrefs)); } catch(e) {} }
 
 // Date-only strings are local calendar days; anything else is a timestamp.
@@ -6250,7 +6314,8 @@ function ccRender(force) {
   const head = `<div class="cc-head">
       <span class="cc-title">🛰 Command Center</span>
       <span class="cc-sub">${cc.loading ? 'Checking…' : cc.loadedAt ? 'Checked ' + histStamp(cc.loadedAt) : ''}</span>
-      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="ccLoad()" ${cc.loading ? 'disabled' : ''}>↻ Recheck</button>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="ccExportReport()" ${cc.loadedAt && !cc.loading && !cc.offline ? '' : 'disabled'} title="Excel for the team: anomalies, stuck tickets and stores with no delivery">⬇ Download report</button>
+      <button class="btn btn-outline btn-sm" onclick="ccLoad()" ${cc.loading ? 'disabled' : ''}>↻ Recheck</button>
     </div>`;
   if (cc.loading && !cc.loadedAt) { el.innerHTML = head + `<div class="cc-empty">Running checks…</div>`; return; }
   if (cc.offline) { el.innerHTML = head + `<div class="cc-empty">Offline — the Command Center needs the live backend.</div>`; return; }
@@ -6322,8 +6387,12 @@ function ccRender(force) {
 
   const attnDays = S.attnDays || ATTN_DEFAULT_DAYS;
   const stuckRule = `<div class="cc-empty" style="padding:2px 0 6px">Phase 3, WHS Prepare Order and Awaiting Actual Count: unchanged for over ${CC_P3_STUCK_DAYS} days. Pending Dispatch, In Transit and On Hold: Needs Attention — no dispatch movement for over ${attnDays} days.</div>`;
-  const stuckGroups = ccGroup(stuck, x => x.stage)
-    .sort((a, b) => a.items[0].phase - b.items[0].phase || (a.sev === b.sev ? b.items.length - a.items.length : a.sev === 'red' ? -1 : 1));
+  // Workflow order, so the list reads the way a ticket travels.
+  const STAGE_ORDER = ['Awaiting IA Review', 'IA Changes Requested', 'PDF Pending', 'Awaiting Merchandiser',
+    'Awaiting Store Manager', 'Store Changes Requested', 'WHS Prepare Order', 'Awaiting Actual Count',
+    'Pending Dispatch', 'In Transit', 'On Hold'];
+  const stageRank = st => { const i = STAGE_ORDER.indexOf(st); return i < 0 ? STAGE_ORDER.length : i; };
+  const stuckGroups = ccGroup(stuck, x => x.stage).sort((a, b) => stageRank(a.key) - stageRank(b.key));
   const stuckBody = stuckRule + (!stuck.length ? `<div class="cc-empty">Nothing has stopped moving.</div>`
     : stuckGroups.map(g => {
         const inStage = !!g.items[0].inStage;
