@@ -2057,6 +2057,7 @@ function buildDetail(r, span = 13) {
   const canApproveSM  = role==='IS' || role==='EXECUTIVE';
   const canApproveStore = role==='COORDINATOR'||role==='EXECUTIVE';
   const canFulfill    = role==='IS'||role==='EXECUTIVE';
+  const canUndo       = role==='IS'||role==='EXECUTIVE';   // every Undo is IA/Executive only
 
   // ── Phase state values ────────────────────────────────────────────────────
   const smSt   = r.smgrStatus||'';
@@ -2076,21 +2077,25 @@ function buildDetail(r, span = 13) {
 
   // ── Phase 3 panel — Approvals ─────────────────────────────────────────────
   const smBadge  = smSt==='Approved'?'wfs-approved':smSt==='Changes Requested'?'wfs-changes':'wfs-pending';
-  // SM Approve goes straight through — no confirmation modal. The action is
-  // recorded by username + timestamp on the row, so it's auditable, and the
-  // ticket is recoverable via Request Changes if mis-clicked.
-  // (Request Changes still uses the modal because it requires a reason note.)
+  // IA Approve goes straight through — no confirmation modal. The action is
+  // recorded by username + timestamp, and a mis-click is recovered with
+  // "Undo approval", offered until the PDF is generated.
   const smActions = canApproveSM && smSt!=='Approved' ? `
     <div class="wf-actions">
       <button class="btn btn-approve" onclick="event.stopPropagation();saveApproval('${uid}','sm','approve')">✓ Approve Order</button>
     </div>` : '';
   const smResubmit = '';
   // PDF badge/button shown inline in the meta row — no extra divider line
+  // Executives can always regenerate the IA's PDF — a lost file shouldn't
+  // strand a ticket. It prints IA quantities, which is what that PDF is.
+  const pdfRegen = role==='EXECUTIVE'
+    ? ` <button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:10px;margin-left:6px" onclick="event.stopPropagation();generatePDF('${uid}')">↻ Regenerate</button>${paperSelect()}`
+    : '';
   const pdfInline = smSt==='Approved'
     ? (pdfSt==='Generated'
-        ? `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="color:var(--teal);font-weight:600">📄 Generated ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''}</div></div>`
+        ? `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="color:var(--teal);font-weight:600">📄 Generated ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''}${pdfRegen}</div></div>`
         : (role==='IS'||role==='EXECUTIVE')
-          ? `<div class="wf-meta" style="margin-top:2px"><div class="wf-ml">PDF</div><div class="wf-mv"><button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10px" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate PDF</button>${paperSelect()}</div></div>`
+          ? `<div class="wf-meta" style="margin-top:2px"><div class="wf-ml">PDF</div><div class="wf-mv"><button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10px" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate PDF</button>${paperSelect()}<button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:10px;margin-left:8px" onclick="event.stopPropagation();undoIaApproval('${uid}')">↶ Undo approval</button></div></div>`
           : `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="font-size:10px;color:var(--amber);font-weight:600">⏳ Pending IS</div></div>`)
     : '';
   const pdfGenBtn = ''; // kept for compat — logic moved to pdfInline
@@ -2412,6 +2417,11 @@ function buildDetail(r, span = 13) {
   // - At "Changes Requested": NO approve/reject buttons. The store has already declared
   //   what they want changed; the only next step is to finalize quantities and generate
   //   the adjusted CDF for the warehouse.
+  const storeUndo = !locked4 && canUndo && storeSt === 'Changes Requested' ? `
+    <div class="wf-actions">
+      <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();undoStoreChanges('${uid}')">↶ Undo change request</button>
+      <span style="font-size:10.5px;color:#aaa">Back to Awaiting Coordinator, if the Store Manager actually approved</span>
+    </div>` : '';
   const storeActions = !locked4 && canApproveStore && storeSt === '' ? `
     <div class="wf-actions">
       <button class="btn btn-approve" onclick="event.stopPropagation();openApprovalModal('${uid}','store','approve')">✓ Store Manager Approved</button>
@@ -2465,7 +2475,7 @@ function buildDetail(r, span = 13) {
             ${r.storeUpdatedBy?`<div class="wf-meta"><div class="wf-ml">Logged by</div><div class="wf-mv">${esc(r.storeUpdatedBy)}</div></div>`:''}
             ${r.storeUpdatedAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.storeUpdatedAt.slice(0,10))}</div></div>`:''}
           </div>
-          ${storeActions}
+          ${storeActions}${storeUndo}
           ${cdfGenBtn}
           ${pushToFulfillBtn}
         </div>
@@ -2474,10 +2484,20 @@ function buildDetail(r, span = 13) {
 
   // ── Phase 4 panel — Fulfillment & Dispatch ─────────────────────────────────
   const fulfBadge = fulfSt==='Actuals Logged'?'wfs-fulfilled':fulfSt==='Partial'?'wfs-partial':fulfSt==='Sent to WHS'?'wfs-sent':'wfs-pending';
-  // 5A send to WHS button
-  const sendBtn = !locked5 && canFulfill && !fulfSt ? `
+  // Undo the step that put the ticket into Phase 4, while nothing has gone to
+  // the warehouse yet. Begin Fulfillment always has an Adjusted CDF behind it;
+  // a direct Store Manager approval never does — so cdfGeneratedAt says which
+  // one to reverse. Spare parts are approved in Acacia and never had a Phase 3
+  // decision to go back to.
+  const viaChanges = !!r.cdfGeneratedAt;
+  const canUndoDecision = canUndo && storeSt === 'Approved' && !fulfSt && !isSpareParts(r) && !!r.storeUpdatedBy;
+  const undoDecisionBtn = canUndoDecision
+    ? `<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();undoStoreDecision('${uid}')">↶ Undo ${viaChanges ? 'Begin Fulfillment' : 'Store Manager approval'}</button>`
+    : '';
+  const sendBtn = !locked5 && ((canFulfill && !fulfSt) || undoDecisionBtn) ? `
     <div class="wf-actions">
-      <button class="btn btn-fulfill" onclick="event.stopPropagation();markSentToWHS('${uid}')">📦 Mark as Sent to Warehouse</button>
+      ${canFulfill && !fulfSt ? `<button class="btn btn-fulfill" onclick="event.stopPropagation();markSentToWHS('${uid}')">📦 Mark as Sent to Warehouse</button>` : ''}
+      ${undoDecisionBtn}
     </div>` : '';
   const holdBtn = !locked5 && canFulfill && dispatchUnlocked ? `
     <div class="wf-actions" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--silver)">
@@ -2492,6 +2512,14 @@ function buildDetail(r, span = 13) {
   const logActualsBtn = !locked5 && canFulfill && fulfSt==='Sent to WHS' ? `
     <div class="wf-actions" style="margin-top:4px">
       <button class="btn btn-fulfill" onclick="event.stopPropagation();markActualsLogged('${uid}')">📋 Confirm Actuals Received &amp; Logged</button>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();undoSentToWHS('${uid}')">↶ Undo Sent to Warehouse</button>
+    </div>` : '';
+  // Executives can always regenerate the order PDF in Phase 4, at the
+  // quantities that count (see p4OrderQty).
+  const execOrderPdf = role === 'EXECUTIVE' ? `
+    <div class="wf-actions" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--silver)">
+      <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();generateOrderPDF('${uid}')">📄 Regenerate Order PDF</button>${paperSelect()}
+      <span style="font-size:10.5px;color:#aaa">Final quantities — Store, else Merchandiser, else IA</span>
     </div>` : '';
   // 4.1 meta — the warehouse hand-off
   const fulfMeta = fulfSt ? `
@@ -2532,7 +2560,7 @@ function buildDetail(r, span = 13) {
           <span class="wf-status-badge ${locked5?'wfs-pending':fulfBadge}">${locked5?'Locked — awaiting store approval':(fulfSt||'Not yet sent to warehouse')}</span>
         </div>
         <div class="wf-panel-bd">
-          ${fulfMeta}${sendBtn}${logActualsBtn}
+          ${fulfMeta}${sendBtn}${logActualsBtn}${execOrderPdf}
         </div>
       </div>
     </div>
@@ -2570,7 +2598,10 @@ function buildDetail(r, span = 13) {
   const showP5 = storeSt==='Approved';                     // Store approved → fulfillment begins
   // If all approval gates are already cleared (e.g. new CDF bypassing phases 1-3),
   // skip Phase 3 panels entirely and open straight to Phase 4
-  const allPreApproved = smSt==='Approved' && pdfSt==='Generated' && storeSt==='Approved';
+  // Spare parts are approved in Acacia and never go through Phase 3 (no PDF),
+  // so they open straight to Phase 4 too.
+  const allPreApproved = (smSt==='Approved' && pdfSt==='Generated' && storeSt==='Approved')
+                      || (isSpareParts(r) && storeSt==='Approved');
 
   return `<tr class="det-tr"><td colspan="${span}"><div class="det-inner">
     ${allPreApproved ? '' : panelP3}
@@ -3259,7 +3290,7 @@ async function spSubmit() {
       const lines = rows.map(r => ({
         barcode: String(r.sku).trim(), productName: String(r.desc).trim(),
         brand: '', category: 'Spare Parts', cdfIncrement: 1,
-        finalOrder: parseFloat(r.qty) || 0, allocated: parseFloat(r.qty) || 0, storeOrder: 0,
+        finalOrder: parseFloat(r.qty) || 0, allocated: parseFloat(r.qty) || 0,
       }));
       const created = await gasPost('addCDF', {
         username: S.user.username,
@@ -4996,6 +5027,7 @@ async function generateMerchPDF(uid) {
 // which locks the Store Manager panel again. Not offered once the Store
 // Manager decision is logged, since that decision was made on these numbers.
 async function undoMerchReview(uid) {
+  if (!['IS','EXECUTIVE'].includes(S.user?.role)) { toast('Only an IA or Executive can undo.', 'err'); return; }
   const r = S.records.find(x => (x.id || x.cdf) === uid);
   if (!r) return;
   if ((r.storeStatus || '') !== '') { toast('The Store Manager decision is already logged — this can no longer be undone.', 'err'); return; }
@@ -5219,6 +5251,126 @@ async function pushToFulfillment(uid) {
     toast('✅ Ticket pushed to Phase 4 — warehouse fulfillment unlocked.');
   } catch(err) {
     toast('Push failed: ' + err.message, 'err');
+  }
+}
+
+/* ══════════════════ UNDO ══════════════════════════════════════════════════
+   Each Undo reverses one step, is offered to IAs and Executives only (never
+   coordinators, even for a step a coordinator took), and only until the next
+   person acts on the ticket. Every one writes through the
+   strict update (nothing changes on screen unless the server took it) and
+   lands in History like any other save.
+════════════════════════════════════════════════════════════════════════════ */
+async function p3RunUndo(uid, patch, doneMsg) {
+  if (!['IS','EXECUTIVE'].includes(S.user?.role)) { toast('Only an IA or Executive can undo.', 'err'); return false; }
+  try {
+    await apiUpdateCDFStrict(uid, patch);
+  } catch(e) {
+    toast('❌ Undo failed: ' + e.message, 'err');
+    return false;
+  }
+  toast(doneMsg);
+  S.expandedId = uid;
+  await loadData();
+  renderAll();
+  return true;
+}
+
+// 3.1 — IA approval, until the PDF is generated.
+async function undoIaApproval(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  if ((r.smgrStatus || '') !== 'Approved' || (r.pdfStatus || '') === 'Generated' || (r.storeStatus || '') !== '' || isSpareParts(r)) {
+    toast('The PDF is already generated — the approval can no longer be undone.', 'err'); return;
+  }
+  await p3RunUndo(uid, { smgrStatus: '', smgrApprovedBy: '', smgrApprovedAt: '' },
+    '↶ Approval undone — back in Awaiting IA Review. Quantities are editable again.');
+}
+
+// 3.3 — Store Manager change request, until Begin Fulfillment. Withdraws the
+// request entirely: typed Store Qty, SKUs uploaded at that stage and the
+// Adjusted CDF stamp all belonged to it.
+async function undoStoreChanges(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  if ((r.storeStatus || '') !== 'Changes Requested') { toast('This ticket is no longer in Store Changes Requested.', 'err'); return; }
+  let lines = [];
+  try { lines = r.orderLines ? JSON.parse(r.orderLines) : []; } catch(e) { lines = []; }
+  const typed   = lines.filter(l => !l.added && olSet(l.storeOrder)).length;
+  const added   = lines.filter(l => l.added === 'store').length;
+  const unsaved = !!P3_EDITS['store:' + uid];
+  const loses = [
+    typed   && `${typed} Store Qty entr${typed !== 1 ? 'ies' : 'y'}`,
+    added   && `${added} SKU${added !== 1 ? 's' : ''} added at this stage`,
+    unsaved && 'unsaved Store Qty edits',
+    r.cdfGeneratedAt && 'the Adjusted CDF stamp',
+  ].filter(Boolean);
+  if (loses.length && !confirm(`Undo the change request on ${r.cdf}?\n\nThis clears ${loses.join(', ')}.\nThe ticket goes back to Awaiting Coordinator.`)) return;
+  const kept = lines.filter(l => l.added !== 'store').map(l => { const c = { ...l }; delete c.storeOrder; return c; });
+  const ok = await p3RunUndo(uid, {
+    storeStatus: '', storeNotes: '', storeUpdatedBy: '', storeUpdatedAt: '',
+    cdfGeneratedAt: '', cdfGeneratedBy: '',
+    orderLines: JSON.stringify(kept),
+  }, '↶ Change request withdrawn — back in Awaiting Coordinator.');
+  if (ok) delete P3_EDITS['store:' + uid];
+}
+
+// 4.1 — the step that moved the ticket into Phase 4 (Store Manager approval,
+// or Begin Fulfillment), until the IA marks it Sent to Warehouse.
+async function undoStoreDecision(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  if ((r.storeStatus || '') !== 'Approved' || (r.fulfillStatus || '') !== '' || isSpareParts(r)) {
+    toast('This ticket has already gone to the warehouse — it can no longer be undone.', 'err'); return;
+  }
+  if (r.cdfGeneratedAt) {
+    await p3RunUndo(uid, { storeStatus: 'Changes Requested' },
+      '↶ Begin Fulfillment undone — back in Store Changes Requested.');
+  } else {
+    await p3RunUndo(uid, { storeStatus: '', storeUpdatedBy: '', storeUpdatedAt: '' },
+      '↶ Store Manager approval undone — back in Awaiting Coordinator.');
+  }
+}
+
+// 4.1 — Sent to Warehouse, until the actuals are confirmed.
+async function undoSentToWHS(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  if ((r.fulfillStatus || '') !== 'Sent to WHS') { toast('Actuals are already confirmed — this can no longer be undone.', 'err'); return; }
+  await p3RunUndo(uid, { fulfillStatus: '', sentToWhsBy: '', sentToWhsAt: '' },
+    '↶ Back in WHS Prepare Order. If the warehouse already started picking, let them know.');
+}
+
+// The quantity a Phase 4 order ships at. Spare parts tickets created before
+// this build carry a placeholder Store Qty of 0 on every line; they never had
+// a Store Manager step, so their IA quantity is the real one.
+function p4OrderQty(r, l) { return isSpareParts(r) ? olIaQty(l) : olQty(l); }
+
+// Executive-only: the order at its final quantities, any time in Phase 4.
+// A download only — nothing on the ticket changes.
+async function generateOrderPDF(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  let lines = [];
+  try { lines = r.orderLines ? JSON.parse(r.orderLines) : []; } catch(e) { lines = []; }
+  const pdfLines = lines.map(l => ({ ...l, finalOrder: p4OrderQty(r, l) })).filter(l => l.finalOrder > 0);
+  if (!pdfLines.length) { toast('No lines with a quantity above 0.', 'err'); return; }
+  toast('Generating PDF…');
+  try {
+    let storeInfo = {};
+    if (P2.storesInfo && P2.storesInfo[r.store]) {
+      storeInfo = P2.storesInfo[r.store];
+    } else {
+      const storesArr = await gasGet('getBibleStoresForUser', { username: S.user.username });
+      if (Array.isArray(storesArr)) {
+        const found = storesArr.find(s => s.store === r.store);
+        if (found) storeInfo = found;
+      }
+    }
+    await p3GeneratePDF(r, await p3EnrichLinesWithPrices(pdfLines), storeInfo);
+    toast('✅ Order PDF downloaded.');
+  } catch(err) {
+    toast('PDF generation failed: ' + err.message, 'err');
   }
 }
 
