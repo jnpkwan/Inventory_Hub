@@ -1220,7 +1220,12 @@ const STATUS_META = {
   'Completed':       {cls:'s-completed',dot:'#00695C', icon:'🏁'}
 };
 
-const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', IS:'#22A749', COORDINATOR:'#00695C'};
+const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORDINATOR:'#00695C'};
+// MANAGER has Executive permissions for now. Every permission check reads the
+// role through permRole(), so giving Managers their own permissions later
+// starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
+const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
+function permRole(role) { return ROLE_ACTS_AS[role] || role; }
 
 // Phase 4 status cards. Every key in STATUS_META gets a card, so the breakdown
 // always accounts for every record in the phase. Workflow order, not alphabetical.
@@ -1376,7 +1381,7 @@ function startApp() {
   document.getElementById('user-nm').textContent = u.name || u.username;
   document.getElementById('user-role-badge').textContent = u.role;
   const ccBtn = document.getElementById('cc-btn');
-  if (ccBtn) ccBtn.style.display = u.role === 'EXECUTIVE' ? '' : 'none';
+  if (ccBtn) ccBtn.style.display = permRole(u.role) === 'EXECUTIVE' ? '' : 'none';
 
   // Default hide-received: on for IS/COORDINATOR, off for EXECUTIVE
   S.hideReceived = (u.role === 'IS' || u.role === 'COORDINATOR');
@@ -1791,7 +1796,7 @@ function renderSummary(rows) {
     const pdfPend   = all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')!=='Generated'&&(r.storeStatus||'')!=='Approved').length;
     const coordAwait= all.filter(r=>r.smgrStatus==='Approved'&&(r.pdfStatus||'')==='Generated'&&(r.storeStatus||'')==='').length;
     const storeChg  = all.filter(r=>r.storeStatus==='Changes Requested').length;
-    const roleNow   = S.user?.role || '';
+    const roleNow   = permRole(S.user?.role || '');
     const uploadCard = (roleNow==='IS'||roleNow==='EXECUTIVE')
       ? '<div class="ssc" style="border-color:var(--green);cursor:pointer" onclick="p3OpenUploadModal()">'
           +'<div class="ssc-n" style="color:var(--green)">📋</div>'
@@ -1833,7 +1838,7 @@ function renderSummary(rows) {
     // Spare parts orders are approved in a separate workflow, so they enter at
     // Phase 4 and are tracked through fulfilment like any other ticket.
     // IAs raise them (executives too, as admins); coordinators cannot.
-    const spCard = ['IS','EXECUTIVE'].includes(S.user?.role||'')
+    const spCard = ['IS','EXECUTIVE'].includes(permRole(S.user?.role||''))
       ? '<div class="ssc" style="border-color:var(--green-d);cursor:pointer" onclick="spOpenModal()">'
           +'<div class="ssc-n" style="color:var(--green-d)">🔧</div>'
           +'<div class="ssc-l" style="color:var(--green-d);font-weight:700">Order Spare Parts</div>'
@@ -2019,7 +2024,7 @@ function renderTable(rows) {
     const isEx = S.expandedId === r.id || S.expandedId === r.cdf;
     const hub1 = r.route==='Direct' ? '' : (r.dSdc||r.dCdc||'');
     const hub2 = r.route==='Direct' ? (r.dDirect||'') : (r.dSdc2||r.dCdc2||'');
-    const canEdit = S.user.role==='EXECUTIVE'||S.user.role==='IS';
+    const canEdit = ['EXECUTIVE','IS'].includes(permRole(S.user.role));
     const uid  = r.id||r.cdf;
     const upAt = r.updatedAt ? fmtD(r.updatedAt.slice(0,10)) : '—';
 
@@ -2135,7 +2140,7 @@ function buildDetail(r, span = 13) {
 
   // ── Role / permission flags ───────────────────────────────────────────────
   const uid  = esc(r.id||r.cdf);
-  const role = S.user.role;
+  const role = permRole(S.user.role);
   const canEdit       = role==='EXECUTIVE'||role==='IS';
   const canDelete     = role==='EXECUTIVE';
   // Phase 3 review belongs to the Inventory Associate (role 'IS'). The step was
@@ -2838,7 +2843,7 @@ function buildForm(r) {
 // already logged — so for them this form is the only way in. It used to be
 // executive-only outright, leaving 123 tickets with no way to get a CDF Ref
 // from the people who actually hold it.
-const refLocked = isEdit && S.user.role !== 'EXECUTIVE' && !!String(r.acaciaRef||'').trim();
+const refLocked = isEdit && permRole(S.user.role) !== 'EXECUTIVE' && !!String(r.acaciaRef||'').trim();
   const p6Banner = isEdit && p6Locked ? `
     <div class="alert alert-info" style="margin-bottom:12px;font-size:11.5px">
       ⏸ <strong>Dispatch dates are locked</strong> — confirm actuals in Phase 4 to unlock.
@@ -2858,7 +2863,7 @@ const refLocked = isEdit && S.user.role !== 'EXECUTIVE' && !!String(r.acaciaRef|
     </div><div class="fg">
       <label>CDF Ref ${refLocked
         ? '<span style="color:#999;font-weight:400;text-transform:none;font-size:10px">— executives only</span>'
-        : (isEdit && S.user.role !== 'EXECUTIVE'
+        : (isEdit && permRole(S.user.role) !== 'EXECUTIVE'
             ? '<span style="color:#999;font-weight:400;text-transform:none;font-size:10px">— locks once saved</span>'
             : '')}</label>
       ${isEdit ? `
@@ -3234,7 +3239,7 @@ const SP = { rows: null };
 function spBlankRow() { return { store:'', acaciaRef:'', sku:'', desc:'', qty:'' }; }
 
 function spOpenModal() {
-  if (!['IS','EXECUTIVE'].includes(S.user?.role||'')) {
+  if (!['IS','EXECUTIVE'].includes(permRole(S.user?.role||''))) {
     toast('Only Inventory Associates can raise a spare parts order.', 'err'); return;
   }
   SP.rows = [spBlankRow(), spBlankRow(), spBlankRow()];
@@ -5140,7 +5145,7 @@ async function generateMerchPDF(uid) {
 // which locks the Store Manager panel again. Not offered once the Store
 // Manager decision is logged, since that decision was made on these numbers.
 async function undoMerchReview(uid) {
-  if (!['IS','EXECUTIVE'].includes(S.user?.role)) { toast('Only an IA or Executive can undo.', 'err'); return; }
+  if (!['IS','EXECUTIVE'].includes(permRole(S.user?.role))) { toast('Only an IA or Executive can undo.', 'err'); return; }
   const r = S.records.find(x => (x.id || x.cdf) === uid);
   if (!r) return;
   if ((r.storeStatus || '') !== '') { toast('The Store Manager decision is already logged — this can no longer be undone.', 'err'); return; }
@@ -5375,7 +5380,7 @@ async function pushToFulfillment(uid) {
    lands in History like any other save.
 ════════════════════════════════════════════════════════════════════════════ */
 async function p3RunUndo(uid, patch, doneMsg) {
-  if (!['IS','EXECUTIVE'].includes(S.user?.role)) { toast('Only an IA or Executive can undo.', 'err'); return false; }
+  if (!['IS','EXECUTIVE'].includes(permRole(S.user?.role))) { toast('Only an IA or Executive can undo.', 'err'); return false; }
   try {
     await apiUpdateCDFStrict(uid, patch);
   } catch(e) {
@@ -6210,6 +6215,17 @@ function ccSystemChecks(cc) {
       if (!noId.length && !dups.size && !blind.length) add('ok', 'Users', `${active.length} active`);
     }
   }
+  if (h.backup) {
+    const b = h.backup;
+    if (b.error) add('red', 'Backups', `Check failed: ${b.error}`);
+    else if (!b.lastAt) add('red', 'Backups', 'No backup has ever run. In the Apps Script editor, run installBackupTrigger once.');
+    else {
+      const hrs = (Date.now() - new Date(b.lastAt)) / 3600000;
+      if (hrs > 48)          add('red', 'Backups', `Last backup was ${Math.floor(hrs / 24)} days ago (${histStamp(b.lastAt)}) — the nightly job has stopped`);
+      else if (!b.scheduled) add('red', 'Backups', `Last backup ${histStamp(b.lastAt)}, but the nightly schedule is missing — run installBackupTrigger again`);
+      else                   add('ok',  'Backups', `Last backup ${histStamp(b.lastAt)} · runs nightly at 2 AM`);
+    }
+  }
   if (h.activity && !h.activity.error) {
     const e24 = cc.errors.filter(e => (Date.now() - new Date(e.timestamp)) < 86400000).length;
     add(e24 ? 'red' : cc.errors.length ? 'amber' : 'ok', 'Failed actions',
@@ -6247,7 +6263,7 @@ function ccToggleGroup(key) {
 }
 
 function openCommandCenter() {
-  if (S.user?.role !== 'EXECUTIVE') return;
+  if (permRole(S.user?.role) !== 'EXECUTIVE') return;
   S.phaseFilter = 'cc'; S.subFilter = ''; S.expandedId = null;
   renderAll();
   if (!S._cc || !S._cc.loadedAt) ccLoad();
@@ -6578,7 +6594,7 @@ const P1_YELLOW_UNIT  = 2;
 const P1_YELLOW_VALUE = 500;
 
 /* ── Role helpers ────────────────────────────────────────────────────────── */
-function p1CanEdit()      { return S.user && (S.user.role === 'IS' || S.user.role === 'EXECUTIVE'); }
+function p1CanEdit()      { return S.user && ['IS','EXECUTIVE'].includes(permRole(S.user.role)); }
 function p1AssignedSet()  {
   // Returns a Set of uppercase store names this user may see, or null = all stores.
   // One rule everywhere:  '*' = every store  ·  a list = those stores  ·  blank = none.
@@ -6586,7 +6602,7 @@ function p1AssignedSet()  {
   // reads blank as no access at all — so a user with an empty cell saw every store
   // listed in the UI and zero records behind it.
   if (!S.user) return null;
-  if (S.user.role === 'EXECUTIVE') return null;
+  if (permRole(S.user.role) === 'EXECUTIVE') return null;
   const raw = (S.user.assignedStores || '').trim();
   if (raw === '*') return null;
   return new Set(raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
