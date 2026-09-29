@@ -580,8 +580,6 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .fbar-clear{font-size:11px; font-weight:700; color:var(--slate); cursor:pointer;
   text-decoration:underline; text-underline-offset:2px; margin-left:4px}
 .fbar-clear:hover{color:var(--blue)}
-.btn-toggle .tog-dot{width:7px; height:7px; border-radius:50%; background:currentColor; opacity:.45; transition:opacity .16s}
-.btn-toggle.active .tog-dot{opacity:1}
 .spinner{width:16px; height:16px; border:2px solid var(--silver); border-top-color:var(--green); border-radius:50%; animation:spin .7s linear infinite; flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -1205,7 +1203,6 @@ const S = {
   editingId:    null,
   pollTimer:    null,
   idleTimer:    null,
-  hideReceived: false,
   _attnIds:     new Set(),
   _wfCache:     {},   // preserves workflow fields across Sheet reloads
   hist:         {},   // per-ticket history, keyed by record id. Kept here, not in the
@@ -1558,11 +1555,6 @@ function startApp() {
   const ccBtn = document.getElementById('cc-btn');
   if (ccBtn) ccBtn.style.display = permRole(u.role) === 'EXECUTIVE' ? '' : 'none';
 
-  // Default hide-received: on for IS/COORDINATOR, off for EXECUTIVE
-  S.hideReceived = (u.role === 'IS' || u.role === 'COORDINATOR');
-  const hideBtn = document.getElementById('hide-recv-btn');
-  if (hideBtn) hideBtn.classList.toggle('active', S.hideReceived);
-
   // Month filtering was removed: a July ticket still in transit is work that
   // needs doing in September, and scoping the view to one month hid it.
   // S.month survives only as the default month stamped on a NEW manual record.
@@ -1778,13 +1770,11 @@ function selectFilter(id, key, allLabel, values) {
 function clearFilter(which) {
   if (which === 'all') {
     S.fRoute = ''; S.fType = ''; S.searchTerm = ''; S.subFilter = '';
-    S.hideReceived = false;
   }
   else if (which === 'route')    S.fRoute = '';
   else if (which === 'type')     S.fType = '';
   else if (which === 'search')   S.searchTerm = '';
   else if (which === 'sub')      S.subFilter = '';
-  else if (which === 'received') S.hideReceived = false;
   S.expandedId = null;
   renderAll();
 }
@@ -1806,7 +1796,6 @@ function activeFilterBar() {
   if (S.fRoute)      add('route',  'Route: ' + S.fRoute);
   if (S.fType)       add('type',   'Type: ' + S.fType);
   if (S.searchTerm)  add('search', `Search: "${S.searchTerm}"`);
-  if (S.hideReceived) add('received', 'Received hidden');
   if (!chips.length) return '';
   return '<div class="fbar"><span class="fbar-l">Filtered by</span>' + chips.join('')
     + `<span class="fbar-clear" onclick="clearFilter('all')">Clear all</span></div>`;
@@ -1823,26 +1812,13 @@ function setShownCount(shown, total) {
   rc.style.fontWeight = filtering ? '700' : '400';
 }
 
-function toggleHideReceived() {
-  S.hideReceived = !S.hideReceived;
-  S.expandedId = null;
-  const btn = document.getElementById('hide-recv-btn');
-  if (btn) btn.classList.toggle('active', S.hideReceived);
-  renderAll();
-}
-
 function getFiltered() {
   const search = String(S.searchTerm ?? (document.getElementById('search')?.value || '')).toLowerCase();
   const fRoute = S.fRoute || '';
   const fType  = S.fType  || '';
-  // Hide Received is ON by default for IS and COORDINATOR (set at login) so field
-  // users land on active work. But clicking the Received card is an explicit
-  // request to see received tickets — and this filter runs before the card
-  // filter, so it used to throw them all away first: card said 8, table said 0.
-  // The card wins while it is selected; the preference resumes on any other card.
-  const wantsReceived = S.subFilter === 'p4_recv';
+  // Received tickets are filtered by the breakdown cards (the Received card),
+  // not by a separate toggle — there's no Hide Received any more.
   return applyOwnerView(S.records).filter(r => {
-    if (S.hideReceived && !wantsReceived && isReceivedTicket(r)) return false;
     if (fRoute && routeLabel(r)!==fRoute) return false;
     if (fType  && r.type !==fType)  return false;
     // Match every reference a row can show: store, Store Order, and the CDF
@@ -2067,7 +2043,6 @@ function renderSummary(rows) {
         +selectFilter('f-route', 'fRoute', 'All Routes', ['Direct','Via SDC','Via CDC','LBC'])
         +selectFilter('f-type', 'fType', 'All Types', ['Regular','Spare Parts','Shopee','Supplies'])
         +'<div class="dw">⚠ Flag &gt;<input type="number" id="dd" value="'+(S.attnDays||ATTN_DEFAULT_DAYS)+'" min="1" max="180" onchange="S.attnDays=parseInt(this.value)||ATTN_DEFAULT_DAYS; renderAll()"> days</div>'
-        +'<button id="hide-recv-btn" class="btn-toggle" onclick="toggleHideReceived()" title="Toggle visibility of Received records"><span class="tog-dot"></span> Hide Received</button>'
         // Export by breakdown card. This block is already the Phase 4 branch, so
         // no phase check is needed — no other phase has these buckets.
         +'<button class="btn-toggle" onclick="p4OpenExportModal()" title="Export Phase 4 tickets to Excel" style="margin-left:auto">⬇ Export</button>'
@@ -3675,7 +3650,7 @@ function p4Bucket(r) {
   //     exactly what the save derivation now calls Pending Dispatch. Older rows
   //     still carry the stale value.
   //   'Completed' — an end state; the app already treats it as Received
-  //     everywhere else (hideReceived, the attention flag).
+  //     everywhere else (the Received card, the attention flag).
 }
 
 /** True when a ticket is received — by its card if in Phase 4, else by status. */
