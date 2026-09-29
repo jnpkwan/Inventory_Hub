@@ -1226,7 +1226,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-29 · 15:45';
+const HUB_BUILD = '2026-09-29 · 16:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1370,7 +1370,11 @@ function startIdleTimer() {
 }
 
 /* ══════════════════ SESSION RESTORE ══════════════════ */
-(function restoreSession() {
+// Called once, at the very END of this script (see "Start" at the bottom).
+// Restoring a session runs startApp, which needs every declaration in this
+// file to exist. Run from up here, anything declared further down (let/const)
+// wasn't ready yet, so start-up stopped partway after every refresh.
+function restoreSession() {
   try {
     const saved = localStorage.getItem('acacia_session');
     if (saved) {
@@ -1388,9 +1392,14 @@ function startIdleTimer() {
         return;
       }
     }
-  } catch(e) {}
+  } catch(e) {
+    // Never swallow a start-up failure: it silently disables live updates,
+    // the store lists and the idle logout.
+    console.error('Session restore failed:', e);
+    if (S.user) toast('The Hub did not finish starting — ' + (e.message || e) + '. Reload, or log in again.', 'err');
+  }
   // No saved session — stay on login screen
-})();
+}
 
 /* ══════════════════ APP START ══════════════════ */
 // Store list for every store dropdown: the Bible STORES tab, scoped to the
@@ -8815,6 +8824,9 @@ document.addEventListener('keydown', e=>{
 });
 
 /* ── Pre-fill saved API URL ── */
+
+/* ── Start ── Last on purpose: everything above is declared by now. */
+restoreSession();
 
 </script>
 </body>
