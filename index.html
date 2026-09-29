@@ -1227,7 +1227,21 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // role through permRole(), so giving Managers their own permissions later
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
-function permRole(role) { return ROLE_ACTS_AS[role] || role; }
+function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
+
+// ── How the Users tab is read — mirrors _normRole/_storeKey/_storeList in Code.gs
+//   Role:   'IS', 'is', 'IS ' → 'IS'
+//   Stores: separated by commas, semicolons or line breaks (Alt+Enter)
+//   Store:  capitals, extra spaces and dash style don't matter
+function normRole(role) { return String(role == null ? '' : role).trim().toUpperCase(); }
+function storeKey(name) {
+  return String(name == null ? '' : name).toUpperCase()
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\s*-\s*/g, ' - ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function storeList(raw) { return String(raw == null ? '' : raw).split(/[,;\r\n]+/).map(storeKey).filter(Boolean); }
 
 // Phase 4 status cards. Every key in STATUS_META gets a card, so the breakdown
 // always accounts for every record in the phase. Workflow order, not alphabetical.
@@ -1434,10 +1448,20 @@ function loadUsers() {
 // the sheet without a reload.
 const USERS_REFRESH_MS = 5 * 60 * 1000;
 function refreshUsers() { _usersReq = null; return loadUsers(); }
+// Also re-read it the moment the Hub tab is looked at again — the usual case
+// is editing the Users tab in another tab, then switching back.
+let _usersOnFocus = false;
+function watchUsersOnFocus() {
+  if (_usersOnFocus) return;
+  _usersOnFocus = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && S.user && !CFG.offline && CFG.apiUrl) refreshUsers();
+  });
+}
 function ownerStoreSet(raw) {
   const r = String(raw || '').trim();
   if (!r || r === '*') return null;
-  return new Set(r.split(',').map(x => x.trim().toUpperCase()).filter(Boolean));
+  return new Set(storeList(r));
 }
 function canPickOwner() { return !!S.user && ['IS', 'EXECUTIVE'].includes(permRole(S.user.role)); }
 // The freshest copy of a user: the Users list if loaded, else the login record.
@@ -1445,7 +1469,7 @@ function ownerUser(username) {
   return (S.users || []).find(u => u.username === username) || (S.user && S.user.username === username ? S.user : null);
 }
 function ownerIAs() {
-  return (S.users || []).filter(u => u.role === 'IS' && String(u.active).trim().toLowerCase() === 'true' && ownerStoreSet(u.assignedStores))
+  return (S.users || []).filter(u => normRole(u.role) === 'IS' && String(u.active).trim().toLowerCase() === 'true' && ownerStoreSet(u.assignedStores))
     .sort((a, b) => String(a.name || a.username).localeCompare(String(b.name || b.username)));
 }
 function getOwnerView() {
@@ -1476,7 +1500,7 @@ function ownerStores() {
 }
 function applyOwnerView(records) {
   const set = ownerStores();
-  return set ? records.filter(r => set.has(String(r.store || '').trim().toUpperCase())) : records;
+  return set ? records.filter(r => set.has(storeKey(r.store))) : records;
 }
 function ownerToggle() {
   if (!canPickOwner()) return '';
@@ -1525,6 +1549,7 @@ function startApp() {
 
   // User chip
   const u = S.user;
+  u.role = normRole(u.role);   // 'is' / 'IS ' in the sheet or an old saved session
   const av = document.getElementById('user-av');
   av.textContent = (u.name||u.username)[0].toUpperCase();
   av.style.background = ROLE_COLORS[u.role] || '#555';
@@ -1556,6 +1581,7 @@ function startApp() {
     S.pollTimer = setInterval(loadData, 30000);
     clearInterval(S.usersTimer);
     S.usersTimer = setInterval(refreshUsers, USERS_REFRESH_MS);
+    watchUsersOnFocus();
   }
 
   // Measure toolbar bottom for sub-card sticky position
@@ -1610,8 +1636,8 @@ async function loadData() {
     if (CFG.offline && S.user.role === 'COORDINATOR') {
       const raw = (S.user.assignedStores || '').trim();
       if (raw !== '*') {
-        const assigned = raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
-        records = records.filter(r => assigned.includes((r.store||'').toUpperCase()));
+        const assigned = storeList(raw);
+        records = records.filter(r => assigned.includes(storeKey(r.store)));
       }
     }
 
@@ -6174,7 +6200,7 @@ function ccExportReport() {
   // The IA(s) whose Users-tab store list includes the ticket's store.
   const users = cc.health && cc.health.users && !cc.health.users.error ? cc.health.users.list : [];
   const iaMap = ccStoreIAs(users).byStore;
-  const iaFor = r => (iaMap[String(r.store || '').trim().toUpperCase()] || []).map(u => u.username).join(', ');
+  const iaFor = r => (iaMap[storeKey(r.store)] || []).map(u => u.username).join(', ');
 
   const stamp = v => {
     const d = new Date(v); if (!v || isNaN(d)) return '';
@@ -6408,10 +6434,10 @@ function ccAnomalies(records, storeSet, priceMap, now = new Date()) {
 // every IA listing its store. IAs on '*' cover every store, so they can't be
 // told apart — they're returned separately, never given invented numbers.
 function ccStoreIAs(users) {
-  const ias = (users || []).filter(u => u.active && u.hasId && u.role === 'IS');
+  const ias = (users || []).filter(u => u.active && u.hasId && normRole(u.role) === 'IS');
   const star = ias.filter(u => String(u.assignedStores || '').trim() === '*');
   const listed = ias.filter(u => { const a = String(u.assignedStores || '').trim(); return a && a !== '*'; })
-    .map(u => ({ u, stores: new Set(String(u.assignedStores).split(',').map(x => x.trim().toUpperCase()).filter(Boolean)) }));
+    .map(u => ({ u, stores: new Set(storeList(u.assignedStores)) }));
   const byStore = {};
   listed.forEach(x => x.stores.forEach(st => (byStore[st] = byStore[st] || []).push(x.u)));
   return { ias, star, listed, byStore };
@@ -6432,7 +6458,7 @@ function ccByIA(users, stuck, anomalies) {
   const rowOf = new Map(rows.map(r => [r.u, r]));
   const unassigned = [];
   tickets.forEach(t => {
-    const owners = byStore[String(t.r.store || '').trim().toUpperCase()];
+    const owners = byStore[storeKey(t.r.store)];
     if (!owners) unassigned.push(t); else owners.forEach(u => rowOf.get(u).items.push(t));
   });
   rows.forEach(r => r.items.sort((a, b) => (a.sev === b.sev ? String(a.r.store).localeCompare(String(b.r.store)) : a.sev === 'red' ? -1 : 1)));
@@ -6477,9 +6503,20 @@ function ccSystemChecks(cc) {
       if (dups.size) add('red', 'Duplicate usernames', [...dups].join(', '));
       const active = list.filter(u => u.active && u.hasId);
       // Only Coordinators: an IA with a blank list still sees every store.
-      const blind = active.filter(u => u.role === 'COORDINATOR' && !u.assignedStores);
+      const blind = active.filter(u => normRole(u.role) === 'COORDINATOR' && !storeList(u.assignedStores).length && String(u.assignedStores || '').trim() !== '*');
       if (blind.length) add('red', 'Users who see no tickets', blind.map(u => u.username).join(', ') + ' — assignedStores is blank');
       if (!noId.length && !dups.size && !blind.length) add('ok', 'Users', `${active.length} active`);
+      // A misspelt store in someone's list silently hides that store's tickets
+      // from their view — list every name the Bible doesn't have.
+      if (cc.stores) {
+        const known = new Set(cc.stores.map(st => storeKey(st.store)));
+        const bad = active.filter(u => ['IS', 'COORDINATOR'].includes(normRole(u.role)))
+          .map(u => ({ u, miss: storeList(u.assignedStores).filter(k => k !== '*' && !known.has(k)) }))
+          .filter(x => x.miss.length);
+        if (bad.length) add('amber', 'Store lists: names not in the Bible',
+          bad.map(x => `${x.u.username}: ${x.miss.join(', ')}`).join(' · ') + ' — fix the spelling in the Users tab');
+        else if (active.some(u => storeList(u.assignedStores).some(k => k !== '*'))) add('ok', 'Store lists', 'Every store in the Users tab matches the Bible');
+      }
     }
   }
   if (h.backup) {
@@ -6902,7 +6939,7 @@ function p1AssignedSet()  {
   if (S.user.role === 'IS') return null;   // IAs access every store; their list is ownership only
   const raw = (S.user.assignedStores || '').trim();
   if (raw === '*') return null;
-  return new Set(raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
+  return new Set(storeList(raw));
 }
 
 /* ── Workspace render — main entry from renderAll ────────────────────────── */
