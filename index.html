@@ -621,6 +621,9 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .cc-ctrl input[type=number]{width:56px;padding:3px 6px;border:1px solid var(--silver);border-radius:5px;font-size:11px;text-align:center}
 .owner-view{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--slate)}
 .owner-view select{text-transform:none;letter-spacing:0;font-weight:600}
+.cc-subhd{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--slate);padding:12px 0 4px;border-bottom:1px solid var(--silver)}
+.cc-subhd:first-child{padding-top:4px}
+.cc-subhd span{font-weight:600;color:#999}
 .cc-grp{border-bottom:1px solid var(--mist)}
 .cc-grp:last-child{border-bottom:none}
 .cc-grp-hd{display:flex;align-items:baseline;gap:10px;padding:8px 0;cursor:pointer;font-size:11.5px}
@@ -1226,7 +1229,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-29 · 20:15';
+const HUB_BUILD = '2026-09-29 · 20:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -6512,6 +6515,17 @@ function ccStoreIAs(users) {
   listed.forEach(x => x.stores.forEach(st => (byStore[st] = byStore[st] || []).push(x.u)));
   return { ias, star, listed, byStore };
 }
+// Workflow order of stages, shared by Stuck Tickets and Issues by IA.
+const CC_STAGE_ORDER = ['Awaiting IA Review', 'IA Changes Requested', 'PDF Pending', 'Awaiting Merchandiser',
+  'Awaiting Store Manager', 'Store Changes Requested', 'WHS Prepare Order', 'Awaiting Actual Count',
+  'Pending Dispatch', 'In Transit', 'On Hold'];
+// Data-issue kinds, most serious first, for grouping in Issues by IA.
+const CC_ANOMALY_ORDER = ['Duplicate CDF Ref', 'Duplicate Store Order', 'No CDF Ref past Pending Dispatch',
+  'Spare parts with no LBC number', 'Order lines unreadable', 'Date in the future', 'Date before the WHS date',
+  'Received before a delivery leg', 'No store', 'In Transit with no truck', 'Status disagrees with dates',
+  'Received with no date', 'Every line is 0', 'Store not in the Bible', 'SKUs with no price',
+  'Merchandiser step without Merch Qty'];
+
 function ccByIA(users, stuck, anomalies) {
   const { ias, star, listed, byStore } = ccStoreIAs(users);
   const tickets = new Map();
@@ -6522,8 +6536,31 @@ function ccByIA(users, stuck, anomalies) {
     t[kind] = true;
     tickets.set(r, t);
   };
-  stuck.forEach(x => note(x.r, x.sev, x.inStage ? `${x.days}d in ${x.stage}` : `${x.days}d with no dispatch movement`, 'stuck'));
-  anomalies.forEach(a => note(a.r, a.sev, a.kind, 'anom'));
+  stuck.forEach(x => {
+    note(x.r, x.sev, x.inStage ? `${x.days}d in ${x.stage}` : `${x.days}d with no dispatch movement`, 'stuck');
+    const t = tickets.get(x.r); if (!t.stuckAt) t.stuckAt = x;
+  });
+  anomalies.forEach(a => {
+    note(a.r, a.sev, a.kind, 'anom');
+    const t = tickets.get(a.r); (t.kinds = t.kinds || []).push(a.kind);
+  });
+  // Each ticket is filed under ONE category — its stuck stage if it's stuck,
+  // otherwise its most serious data issue — so it's listed once. Its detail
+  // still shows every issue it has.
+  tickets.forEach(t => {
+    if (t.stuckAt) {
+      const st = t.stuckAt.stage, i = CC_STAGE_ORDER.indexOf(st);
+      t.cat = t.stuckAt.inStage ? `Stuck in ${st}` : `No dispatch movement · ${st}`;
+      t.catRank = i < 0 ? CC_STAGE_ORDER.length : i;
+      t.days = t.stuckAt.days;
+    } else {
+      const ranked = (t.kinds || []).map(k => ({ k, i: CC_ANOMALY_ORDER.indexOf(k) < 0 ? 999 : CC_ANOMALY_ORDER.indexOf(k) }))
+        .sort((a, b) => a.i - b.i)[0] || { k: 'Other', i: 999 };
+      t.cat = ranked.k;
+      t.catRank = 100 + ranked.i;
+      t.days = 0;
+    }
+  });
   const rows = listed.map(x => ({ u: x.u, storeCount: x.stores.size, items: [] }));
   const rowOf = new Map(rows.map(r => [r.u, r]));
   const unassigned = [];
@@ -6531,7 +6568,11 @@ function ccByIA(users, stuck, anomalies) {
     const owners = byStore[storeKey(t.r.store)];
     if (!owners) unassigned.push(t); else owners.forEach(u => rowOf.get(u).items.push(t));
   });
-  rows.forEach(r => r.items.sort((a, b) => (a.sev === b.sev ? String(a.r.store).localeCompare(String(b.r.store)) : a.sev === 'red' ? -1 : 1)));
+  // By category in workflow order; the longest-waiting first; then by store.
+  const byCat = (a, b) => a.catRank - b.catRank || a.cat.localeCompare(b.cat) || b.days - a.days
+    || String(a.r.store).localeCompare(String(b.r.store));
+  rows.forEach(r => r.items.sort(byCat));
+  unassigned.sort(byCat);
   rows.sort((a, b) => b.items.length - a.items.length || String(a.u.name || a.u.username).localeCompare(String(b.u.name || b.u.username)));
   return { rows, unassigned, star, noIAs: !ias.length };
 }
@@ -6784,9 +6825,7 @@ function ccRender(force) {
   const attnDays = S.attnDays || ATTN_DEFAULT_DAYS;
   const stuckRule = `<div class="cc-empty" style="padding:2px 0 6px">Phase 3, WHS Prepare Order and Awaiting Actual Count: unchanged for over ${CC_P3_STUCK_DAYS} days. Pending Dispatch, In Transit and On Hold: Needs Attention — no dispatch movement for over ${attnDays} days.</div>`;
   // Workflow order, so the list reads the way a ticket travels.
-  const STAGE_ORDER = ['Awaiting IA Review', 'IA Changes Requested', 'PDF Pending', 'Awaiting Merchandiser',
-    'Awaiting Store Manager', 'Store Changes Requested', 'WHS Prepare Order', 'Awaiting Actual Count',
-    'Pending Dispatch', 'In Transit', 'On Hold'];
+  const STAGE_ORDER = CC_STAGE_ORDER;
   const stageRank = st => { const i = STAGE_ORDER.indexOf(st); return i < 0 ? STAGE_ORDER.length : i; };
   const stuckGroups = ccGroup(stuck, x => x.stage).sort((a, b) => stageRank(a.key) - stageRank(b.key));
   const stuckBody = stuckRule + (!stuck.length ? `<div class="cc-empty">Nothing has stopped moving.</div>`
@@ -6823,6 +6862,17 @@ function ccRender(force) {
 
   const users = cc.health && cc.health.users && !cc.health.users.error ? cc.health.users.list : null;
   const byIA = users ? ccByIA(users, stuck, anomalies) : null;
+  // One IA's tickets under category headings ("Stuck in WHS Prepare Order · 3").
+  const iaItems = items => {
+    const counts = {};
+    items.forEach(t => { counts[t.cat] = (counts[t.cat] || 0) + 1; });
+    let last = null;
+    return items.map(t => {
+      const head = t.cat !== last ? `<div class="cc-subhd">${esc(t.cat)} <span>· ${counts[t.cat]}</span></div>` : '';
+      last = t.cat;
+      return head + li(tLink(t.r), esc(t.r.store || ''), esc(t.issues.join(' · ')));
+    }).join('');
+  };
   const iaBody = !users ? `<div class="cc-empty">Users didn't load — see System.</div>`
     : byIA.noIAs ? `<div class="cc-empty">No active IAs in the Users tab.</div>`
     : (byIA.rows.map(x => {
@@ -6833,11 +6883,11 @@ function ccRender(force) {
         return groupRow('ia:' + x.u.username, sev, `${x.u.name || x.u.username} (${x.u.username})`,
           n ? `${plural(n, 'ticket')} with issues · ${st} stuck · ${an} with data issues · ${hit} of ${plural(x.storeCount, 'store')}`
             : `No issues · ${plural(x.storeCount, 'store')}`,
-          n ? x.items.map(t => li(tLink(t.r), esc(t.r.store || ''), esc(t.issues.join(' · ')))).join('') : `<div class="cc-empty">Nothing to fix.</div>`);
+          n ? iaItems(x.items) : `<div class="cc-empty">Nothing to fix.</div>`);
       }).join('')
       + (byIA.unassigned.length ? groupRow('ia:__none', byIA.unassigned.some(t => t.sev === 'red') ? 'red' : 'amber', 'No IA assigned',
           `${plural(byIA.unassigned.length, 'ticket')} with issues at stores no IA lists`,
-          byIA.unassigned.map(t => li(tLink(t.r), esc(t.r.store || ''), esc(t.issues.join(' · ')))).join('')) : '')
+          iaItems(byIA.unassigned)) : '')
       + (byIA.star.length ? `<div class="cc-empty" style="padding-top:8px">Not shown: ${esc(byIA.star.map(u => u.username).join(', '))} — their assignedStores is "*", so their stores can't be told apart from anyone else's. Give each their store list in the Users tab.</div>` : ''));
   const iaFlagged = byIA ? byIA.rows.filter(x => x.items.length).length : 0;
 
