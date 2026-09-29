@@ -4483,6 +4483,16 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   // ── Filter lines ──────────────────────────────────────────────────────────
   const pdfLines = lines.filter(l => l.finalOrder !== null && l.finalOrder !== undefined && Number(l.finalOrder) > 0);
   if (!pdfLines.length) throw new Error('No lines with Final Qty > 0. Set quantities before generating the PDF.');
+  // Brand, then category, then product name — for every PDF the Hub makes
+  // (IA, Updated, Adjusted CDF, Order PDF all come through here). A blank
+  // brand or category sorts last, not first; "Item 2" comes before "Item 10".
+  const sortKey = v => String(v == null ? '' : v).trim();
+  const byText = (a, b) => (!a && b) ? 1 : (a && !b) ? -1 : a.localeCompare(b, 'en', { sensitivity: 'base', numeric: true });
+  pdfLines.sort((a, b) =>
+    byText(sortKey(a.brand), sortKey(b.brand))
+    || byText(sortKey(a.category), sortKey(b.category))
+    || byText(sortKey(a.productName), sortKey(b.productName))
+    || byText(sortKey(a.barcode), sortKey(b.barcode)));
   const totalUnits = pdfLines.reduce((s,l) => s+(Number(l.finalOrder)||0), 0);
 
   // ── Logo (pre-fetch as base64 + read true aspect ratio) ──────────────────
