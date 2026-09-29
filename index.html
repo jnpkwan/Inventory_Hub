@@ -1226,7 +1226,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-29 · 15:30';
+const HUB_BUILD = '2026-09-29 · 15:45';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1326,6 +1326,7 @@ function doLogout() {
   S.users = [];
   S.usersError = '';
   _usersReq = null;
+  clearTimeout(_usersRetry);
   S.ownerView = null;
   S.ownerViewChosen = false;
   S.records = [];
@@ -1424,26 +1425,62 @@ function loadStores() {
    Remembered per person, in this browser.
 ────────────────────────────────────────────────────────────────────────── */
 let _usersReq = null;
-function loadUsers() {
+let _usersRetry = null;
+const USERS_CACHE_KEY = 'acacia_users';
+const USERS_RETRY_MS  = [3000, 8000, 20000];   // after a failed load
+const USERS_TIMEOUT_MS = 20000;                 // a request stuck longer than this counts as failed
+
+// The last good IA list, kept in this browser so the store view is ready the
+// moment the page opens — and survives a request that Apps Script drops.
+// Only what the view needs is kept (no passwords are ever sent anyway).
+function usersFromCache() {
+  try { const c = JSON.parse(localStorage.getItem(USERS_CACHE_KEY) || 'null'); return Array.isArray(c) ? c : []; }
+  catch(e) { return []; }
+}
+function usersToCache(list) {
+  try {
+    localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(list.map(u => ({
+      username: u.username, name: u.name, role: u.role, assignedStores: u.assignedStores, active: u.active }))));
+  } catch(e) {}
+}
+
+function loadUsers(attempt = 0) {
   if (CFG.offline || !CFG.apiUrl || !S.user) return Promise.resolve(S.users || []);
   if (_usersReq) return _usersReq;
-  // A unique URL every time: a cached copy of this list (browser or service
-  // worker) is exactly how an IA keeps seeing an old store list after edits.
-  _usersReq = gasGet('getUsers', { _: Date.now() })
+  clearTimeout(_usersRetry);
+  // A unique URL every time, so no cache can answer with an old list.
+  const request = gasGet('getUsers', { _: Date.now() });
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('no reply after 20 seconds')), USERS_TIMEOUT_MS));
+  const redraw  = () => { if (S.phaseFilter === 'p3' || S.phaseFilter === 'p4') renderAll(); };
+  const who = S.user.username;
+  const stale = () => !S.user || S.user.username !== who;   // a reply from before a logout
+  _usersReq = Promise.race([request, timeout])
     .then(list => {
-      S.users = Array.isArray(list) ? list : [];
+      if (stale()) return S.users || [];
+      if (!Array.isArray(list)) throw new Error('unexpected reply from the backend');
+      S.users = list;
       S.usersError = '';
+      S.usersGaveUp = false;
+      usersToCache(list);
       // A default picked before the list arrived is re-decided on fresh data;
       // a view the person chose themselves is kept.
       if (!S.ownerViewChosen) S.ownerView = null;
-      if (S.phaseFilter === 'p3' || S.phaseFilter === 'p4') renderAll();
+      redraw();
       return S.users;
     })
     .catch(e => {
+      if (stale()) return S.users || [];
       _usersReq = null;
       S.usersError = e.message || String(e);
-      // Say so on the first load; a failed background refresh keeps the list it has.
-      if (!(S.users || []).length) toast('Could not load the IA list for the store view: ' + (e.message || e), 'err');
+      // Apps Script drops the odd request when the page fires several at once.
+      // Try again a few times before calling it a failure.
+      S.usersGaveUp = attempt >= USERS_RETRY_MS.length;
+      if (!S.usersGaveUp) {
+        _usersRetry = setTimeout(() => loadUsers(attempt + 1), USERS_RETRY_MS[attempt]);
+      } else if (!(S.users || []).length) {
+        toast('Could not load the IA list for the store view: ' + S.usersError, 'err');
+      }
+      redraw();   // so the dropdown shows the reason, not "didn't load yet"
       return S.users || [];
     });
   return _usersReq;
@@ -1452,7 +1489,7 @@ function loadUsers() {
 // Re-read the list every 5 minutes so "My stores" and each IA's stores follow
 // the sheet without a reload.
 const USERS_REFRESH_MS = 5 * 60 * 1000;
-function refreshUsers() { _usersReq = null; return loadUsers(); }
+function refreshUsers() { _usersReq = null; clearTimeout(_usersRetry); return loadUsers(); }
 // Also re-read it the moment the Hub tab is looked at again — the usual case
 // is editing the Users tab in another tab, then switching back.
 let _usersOnFocus = false;
@@ -1520,7 +1557,7 @@ function ownerToggle() {
   // No other IAs to offer? Say why, rather than show a bare "All stores".
   const why = others.length ? ''
     : !(S.users || []).length
-      ? `<option value="" disabled>IA list didn't load${S.usersError ? ' — ' + esc(S.usersError) : ' yet'} · reload to retry</option>`
+      ? `<option value="" disabled>${!S.usersError ? 'Loading the IA list…' : 'IA list didn\'t load — ' + esc(S.usersError) + (S.usersGaveUp ? ' · reload the page' : ' · retrying')}</option>`
       : `<option value="" disabled>No other IA has a store list in the Users tab</option>`;
   return `<label class="owner-view" onclick="event.stopPropagation()">Showing
     <select class="fs${v !== 'all' ? ' active' : ''}" onchange="setOwnerView(this.value)">
@@ -1575,6 +1612,7 @@ function startApp() {
 
   // Store list for dropdowns and the IA list for the store view — non-blocking
   loadStores();
+  if (!(S.users || []).length) S.users = usersFromCache();   // ready instantly; replaced when the fresh list arrives
   loadUsers();
 
   // Fetch reconciliation history once at login (non-blocking — phase 1 card sub-label)
