@@ -742,7 +742,7 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
   header::after{background:linear-gradient(90deg,var(--green),var(--blue))}
   .hi{padding:0 16px; height:56px; gap:10px}
   .htitle{display:none} .hdiv{display:none}
-  .conn-dot{width:8px; height:8px} #conn-lbl{display:none}
+  .conn-dot{width:8px; height:8px} #conn-lbl{display:none} #hub-build{display:none}
   .hright{gap:8px}
   .user-chip{padding:4px 10px 4px 5px; gap:6px; font-size:11px}
   #user-role-badge{display:none}
@@ -862,6 +862,7 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
     <div class="hright">
       <div class="conn-dot" id="conn-dot"></div>
       <span id="conn-lbl" style="font-size:11px;color:#aaa"></span>
+      <span id="hub-build" title="Hub build — compare with the latest release to confirm you're current" style="font-size:10px;color:#bbb;white-space:nowrap"></span>
       <div class="user-chip">
         <div class="user-av" id="user-av"></div>
         <span id="user-nm"></span>
@@ -1223,6 +1224,10 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // MANAGER has Executive permissions for now. Every permission check reads the
 // role through permRole(), so giving Managers their own permissions later
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
+// Shown next to "Live" so anyone can confirm which build they're running.
+// Change it with every release of this file.
+const HUB_BUILD = '2026-09-29 · 15:30';
+
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
 
@@ -1319,6 +1324,7 @@ function doLogout() {
   S.stores = [];
   _storesReq = null;
   S.users = [];
+  S.usersError = '';
   _usersReq = null;
   S.ownerView = null;
   S.ownerViewChosen = false;
@@ -1426,6 +1432,7 @@ function loadUsers() {
   _usersReq = gasGet('getUsers', { _: Date.now() })
     .then(list => {
       S.users = Array.isArray(list) ? list : [];
+      S.usersError = '';
       // A default picked before the list arrived is re-decided on fresh data;
       // a view the person chose themselves is kept.
       if (!S.ownerViewChosen) S.ownerView = null;
@@ -1434,6 +1441,7 @@ function loadUsers() {
     })
     .catch(e => {
       _usersReq = null;
+      S.usersError = e.message || String(e);
       // Say so on the first load; a failed background refresh keeps the list it has.
       if (!(S.users || []).length) toast('Could not load the IA list for the store view: ' + (e.message || e), 'err');
       return S.users || [];
@@ -1509,9 +1517,14 @@ function ownerToggle() {
   // why — so a missing or '*' entry in the Users tab is visible, not silent.
   const mine = me ? opt('me', 'My stores')
     : S.user.role === 'IS' ? `<option value="" disabled>My stores — none assigned in the Users tab</option>` : '';
+  // No other IAs to offer? Say why, rather than show a bare "All stores".
+  const why = others.length ? ''
+    : !(S.users || []).length
+      ? `<option value="" disabled>IA list didn't load${S.usersError ? ' — ' + esc(S.usersError) : ' yet'} · reload to retry</option>`
+      : `<option value="" disabled>No other IA has a store list in the Users tab</option>`;
   return `<label class="owner-view" onclick="event.stopPropagation()">Showing
     <select class="fs${v !== 'all' ? ' active' : ''}" onchange="setOwnerView(this.value)">
-      ${mine}${opt('all', 'All stores')}
+      ${mine}${opt('all', 'All stores')}${why}
       ${others.map(u => opt(u.username, `${u.name || u.username}'s stores`)).join('')}
     </select></label>`;
 }
@@ -1585,6 +1598,8 @@ function startApp() {
   window.addEventListener('resize', setToolbarBottom);
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  const hb = document.getElementById('hub-build');
+  if (hb) hb.textContent = 'build ' + HUB_BUILD;
 
   // Start idle auto-logout timer
   touchActivity();
