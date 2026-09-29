@@ -629,13 +629,31 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .kpi-win button.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .kpi-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px}
 .kpi-t{background:var(--mist);border-radius:10px;padding:10px 12px}
-.kpi-n{font-family:'Montserrat',sans-serif;font-weight:800;font-size:20px;color:var(--ink);line-height:1.1}
-.kpi-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--slate);margin-top:3px}
-.kd{font-size:11px;font-weight:700;margin-left:6px;vertical-align:3px;white-space:nowrap}
-.kd-g{color:var(--green-dd)} .kd-b{color:var(--red-d)} .kd-n{color:#999}
-.kpi-aim{font-size:10px;font-weight:600;margin-top:5px;color:#888}
+.kpi-n{font-family:'Montserrat',sans-serif;font-weight:800;font-size:28px;color:var(--ink);line-height:1.1}
+.kpi-l{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--slate);margin-top:4px}
+/* Rated tiles: a thick coloured edge and the number in the rating colour */
+.kpi-t.kt-good{border-left:6px solid #1A713E}.kpi-t.kt-good .kpi-n{color:#1A713E}
+.kpi-t.kt-warn{border-left:6px solid #C98A00}.kpi-t.kt-warn .kpi-n{color:#8A5A00}
+.kpi-t.kt-bad{border-left:6px solid #C0392B}.kpi-t.kt-bad .kpi-n{color:#A3261B}
+/* Rated values in the tables */
+.kv{display:inline-block;padding:3px 11px;border-radius:999px;font-weight:800;font-size:13.5px;line-height:1.35}
+.kv-good{background:#E3F4E8;color:#1A713E}
+.kv-warn{background:#FDF1D8;color:#8A5A00}
+.kv-bad{background:#FBE3E1;color:#A3261B}
+.kpi-legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px}
+.kpi-keytxt{font-size:12.5px;font-weight:600;color:#666;text-transform:none;letter-spacing:0;margin-left:4px}
+#cc-kpi .cc-tbl td{font-size:13.5px;padding-top:8px;padding-bottom:8px}
+#cc-kpi .cc-tbl th{font-size:11.5px}
+#cc-kpi .kpi-h{font-size:12px}
+#cc-kpi .kpi-win{font-size:12px}
+#cc-kpi .kpi-win button{font-size:12.5px;padding:5px 13px}
+#cc-kpi .kpi-own,#cc-kpi .kpi-wait{font-size:12px;padding:3px 10px}
+#cc-kpi .cc-empty{font-size:12.5px}
+.kd{font-size:15px;font-weight:800;margin-left:8px;vertical-align:4px;white-space:nowrap}
+.kd-g{color:#1A713E} .kd-b{color:#C0392B} .kd-n{color:#888}
+.kpi-aim{font-size:12.5px;font-weight:600;margin-top:6px;color:#666}
 .kpi-aim-up::first-letter,.kpi-aim-down::first-letter{font-weight:800;color:var(--blue)}
-.kpi-dir{display:inline-block;font-size:11px;font-weight:800;color:var(--blue);margin-left:2px;cursor:help;text-transform:none}
+.kpi-dir{display:inline-block;font-size:15px;font-weight:800;color:var(--blue);margin-left:3px;text-transform:none;vertical-align:-1px}
 .kpi-own{font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-pale);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .kpi-wait{font-size:10px;font-weight:600;color:var(--slate);background:var(--mist);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .kpi-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--slate);padding:10px 0 6px}
@@ -1244,7 +1262,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-30 · 00:15';
+const HUB_BUILD = '2026-09-30 · 00:45';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -6303,14 +6321,18 @@ function ccExportReport() {
   const sevText = s => s === 'red' ? 'Red' : 'Amber';
   const byStore = (a, b) => String(a.store).localeCompare(String(b.store)) || (a.sev === b.sev ? 0 : a.sev === 'red' ? -1 : 1);
 
+  // A cell may be { v, rate } — its value, filled green / amber / red (KPI_FILL).
+  const cellV = c => (c && typeof c === 'object' && 'v' in c) ? c.v : c;
   const sheet = (head, rows, widths, centred, sevCol) => {
-    const ws = XLSX.utils.aoa_to_sheet([head, ...rows.map(r => r.cells)]);
+    const ws = XLSX.utils.aoa_to_sheet([head, ...rows.map(r => r.cells.map(cellV))]);
     ws['!cols'] = widths.map(w => ({ wch: w }));
     ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: head.length - 1 } }) };
     head.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: 0, c }); if (ws[ref]) ws[ref].s = p1CellStyle('1B4DA0', true, 'FFFFFF', 11, 'center'); });
     rows.forEach((row, i) => head.forEach((_, c) => {
       const ref = XLSX.utils.encode_cell({ r: i + 1, c });
       if (!ws[ref]) return;
+      const rate = row.cells[c] && typeof row.cells[c] === 'object' ? row.cells[c].rate : null;
+      if (rate && KPI_FILL[rate]) { ws[ref].s = p1CellStyle(KPI_FILL[rate][0], true, KPI_FILL[rate][1], 11, centred.includes(c) ? 'center' : 'left'); return; }
       const bg = c === sevCol ? (row.sev === 'red' ? 'FDECEA' : 'FEF6E4') : (i % 2 ? 'F5F5F5' : 'FFFFFF');
       ws[ref].s = p1CellStyle(bg, c === sevCol, '2C2C2C', 11, centred.includes(c) ? 'center' : 'left');
     }));
@@ -6352,7 +6374,9 @@ function ccExportReport() {
     const row = cells => ({ sev: 'amber', store: '', cells });
     XLSX.utils.book_append_sheet(wb, sheet(
       ['Step', 'Type', 'Done', 'Median (days, aim lower)', `Median, previous ${kd}d (days)`, 'Slowest 10% over (days, aim lower)', `Within ${KPI_ON_TIME_DAYS}d (%, aim higher)`],
-      K.steps.map((x, i) => row([x.label, x.own ? 'Own work' : `Waiting on ${x.waitOn}`, x.done, days(x.median), days(P.steps[i].median), days(x.p90), pct(x.onTime)])),
+      K.steps.map((x, i) => row([x.label, x.own ? 'Own work' : `Waiting on ${x.waitOn}`, x.done,
+        { v: days(x.median), rate: kpiRateDays(x.median, KPI_TARGETS.stepDays) }, days(P.steps[i].median),
+        { v: days(x.p90), rate: kpiRateDays(x.p90, KPI_TARGETS.tailDays) }, { v: pct(x.onTime), rate: kpiRateHigh(x.onTime, KPI_TARGETS.onTime) }])),
       [22, 26, 8, 24, 26, 32, 24], [2, 3, 4, 5, 6], -1), `KPI Steps ${kd}d`);
     const own = ccStoreIAs(users);
     const byIAx = ccByIA(users, stuck, anomalies);
@@ -6363,8 +6387,11 @@ function ccExportReport() {
         const lst = own.listed.find(x => x.u === u), p = peopleBy[u.username];
         const open = lst ? records.filter(r => lst.stores.has(storeKey(r.store)) && !isReceivedTicket(r)).length : '';
         const issues = byIAx.rows.find(x => x.u.username === u.username)?.items.length ?? '';
-        return row([nameOf(u.username), u.username, lst ? lst.stores.size : 'All (*)', open, issues, p ? p.ownDone : 0,
-                    p ? days(p.reviewMedian) : '', p ? days(p.whsMedian) : '', p ? pct(p.ownOnTime) : '']);
+        const iRate = issues === '' ? null : open ? kpiRateLow(issues / open, KPI_TARGETS.issueShare) : (issues ? 'bad' : 'good');
+        return row([nameOf(u.username), u.username, lst ? lst.stores.size : 'All (*)', open, { v: issues, rate: iRate }, p ? p.ownDone : 0,
+                    { v: p ? days(p.reviewMedian) : '', rate: p ? kpiRateDays(p.reviewMedian, KPI_TARGETS.stepDays) : null },
+                    { v: p ? days(p.whsMedian) : '', rate: p ? kpiRateDays(p.whsMedian, KPI_TARGETS.stepDays) : null },
+                    { v: p ? pct(p.ownOnTime) : '', rate: p ? kpiRateHigh(p.ownOnTime, KPI_TARGETS.onTime) : null }]);
       }), [22, 16, 9, 22, 24, 21, 29, 33, 31], [2, 3, 4, 5, 6, 7, 8], -1), `KPI IA Scorecard ${kd}d`);
     XLSX.utils.book_append_sheet(wb, sheet(
       ['Person', 'Username', 'Steps (aim higher)', 'Per day (aim higher)', 'What they did'],
@@ -6373,8 +6400,17 @@ function ccExportReport() {
       [22, 16, 18, 20, 60], [2, 3], -1), `KPI Others ${kd}d`);
     XLSX.utils.book_append_sheet(wb, sheet(
       ['Week to', 'Orders created', 'Deliveries received (aim higher)', 'Backlog change (aim lower; below 0 = shrinking)'],
-      K.flow.weeks.map(w => row([new Date(w.end).toISOString().slice(0, 10), w.created, w.received, w.created - w.received])),
+      K.flow.weeks.map(w => row([new Date(w.end).toISOString().slice(0, 10), w.created, w.received, { v: w.created - w.received, rate: kpiRateNet(w.created - w.received) }])),
       [14, 16, 30, 42], [1, 2, 3], -1), `KPI Flow ${kd}d`);
+    // What the colours mean — the same targets the Command Center uses.
+    const t = KPI_TARGETS, P100 = v => Math.round(v * 100) + '%';
+    XLSX.utils.book_append_sheet(wb, sheet(['Measure', 'Green — on target', 'Amber — watch', 'Red — act now'], [
+      row(['Step median time', { v: `up to ${t.stepDays[0]} days`, rate: 'good' }, { v: `up to ${t.stepDays[1]} days`, rate: 'warn' }, { v: `over ${t.stepDays[1]} days`, rate: 'bad' }]),
+      row(['Slowest 10%, and created → received', { v: `up to ${t.tailDays[0]} days`, rate: 'good' }, { v: `up to ${t.tailDays[1]} days`, rate: 'warn' }, { v: `over ${t.tailDays[1]} days`, rate: 'bad' }]),
+      row([`Within ${KPI_ON_TIME_DAYS} days`, { v: `${P100(t.onTime[0])} or more`, rate: 'good' }, { v: `${P100(t.onTime[1])} or more`, rate: 'warn' }, { v: `under ${P100(t.onTime[1])}`, rate: 'bad' }]),
+      row(["Current issues (share of the IA's open tickets)", { v: `up to ${P100(t.issueShare[0])}`, rate: 'good' }, { v: `up to ${P100(t.issueShare[1])}`, rate: 'warn' }, { v: `over ${P100(t.issueShare[1])}`, rate: 'bad' }]),
+      row(['Backlog change', { v: 'shrinking or flat (0 or below)', rate: 'good' }, '', { v: 'growing (above 0)', rate: 'bad' }]),
+    ], [40, 30, 22, 26], [], -1), 'KPI Colours');
   }
   XLSX.writeFile(wb, `acacia-command-center-${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast(`Report downloaded: ${anomRows.length} anomal${anomRows.length !== 1 ? 'ies' : 'y'}, ${stuckRows.length} stuck, ${covRows.length} store${covRows.length !== 1 ? 's' : ''} with no delivery.`);
@@ -6744,6 +6780,20 @@ function kpiCompute(records, days, now = Date.now(), skip = new Set()) {
            flow: { created, received, net: created - received, weeks: weeks.reverse() },
            _events: events };
 }
+// ── Good / watch / act — one set of targets for the page AND the report ──
+// Stated in plain words at the top of the section; change them here only.
+const KPI_TARGETS = {
+  stepDays:   [2, 7],       // a step's median: green ≤ 2 days, amber ≤ 7, red beyond
+  tailDays:   [7, 14],      // slowest 10%, and created → received: green ≤ 7, amber ≤ 14
+  onTime:     [0.90, 0.75], // share within 7 days: green ≥ 90%, amber ≥ 75%
+  issueShare: [0.15, 0.30], // an IA's current issues ÷ open tickets: green ≤ 15%, amber ≤ 30%
+};
+function kpiRateDays(ms, [g, a]) { return ms == null ? null : ms <= g * KPI_DAY ? 'good' : ms <= a * KPI_DAY ? 'warn' : 'bad'; }
+function kpiRateHigh(v, [g, a])  { return v == null ? null : v >= g ? 'good' : v >= a ? 'warn' : 'bad'; }
+function kpiRateLow(v, [g, a])   { return v == null ? null : v <= g ? 'good' : v <= a ? 'warn' : 'bad'; }
+function kpiRateNet(n)           { return n == null ? null : n <= 0 ? 'good' : 'bad'; }
+const KPI_FILL = { good: ['E3F4E8', '1A713E'], warn: ['FDF1D8', '8A5A00'], bad: ['FBE3E1', 'A3261B'] };   // report fill, text
+
 // Per-person step durations for one step key (used by the IA scorecard).
 function kpiPersonMedian(K, who, key) {
   return kpiMedian(K._events.filter(e => e.who === who && e.step === key && e.dur != null).map(e => e.dur));
@@ -7084,8 +7134,11 @@ function ccRender(force) {
     const nameOf = u => { const x = userOf(u); return x && x.name ? `${x.name} (${u})` : u; };
     const pct = v => v == null ? '—' : Math.round(v * 100) + '%';
     // ↑/↓ against the previous period. `better` says which way is good.
+    // No arrows until an earlier period actually has data (before the Hub went
+    // live everything compares against zero — "▲ 483" means nothing).
+    const hasPrev = P.events > 0 || P.flow.created > 0 || P.flow.received > 0;
     const delta = (cur, prev, better, fmt) => {
-      if (cur == null || prev == null || cur === prev) return '';
+      if (!hasPrev || cur == null || prev == null || cur === prev) return '';
       const up = cur > prev, good = better === 'none' ? null : (better === 'up') === up;
       const cls = good == null ? 'kd-n' : good ? 'kd-g' : 'kd-b';
       return `<span class="kd ${cls}" title="Previous ${kd} days: ${fmt(prev)}">${up ? '▲' : '▼'} ${fmt(Math.abs(cur - prev))}</span>`;
@@ -7094,32 +7147,37 @@ function ccRender(force) {
     const pts = v => Math.round(v * 100) + ' pts';
     // Which way is good. Tiles say it in words; table headings get an arrow.
     const AIM = { up: ['↑', 'Aim higher', 'Higher is better'], down: ['↓', 'Aim lower', 'Lower is better'] };
-    const tile = (n, l, d, aim, note) => `<div class="kpi-t"><div class="kpi-n">${n}${d || ''}</div><div class="kpi-l">${l}</div>
+    const val = (text, rate) => rate ? `<span class="kv kv-${rate}">${text}</span>` : text;
+    const tile = (n, l, d, aim, note, rate) => `<div class="kpi-t${rate ? ' kt-' + rate : ''}"><div class="kpi-n">${n}${d || ''}</div><div class="kpi-l">${l}</div>
       ${aim ? `<div class="kpi-aim kpi-aim-${aim}">${AIM[aim][0]} ${AIM[aim][1]}${note ? ' · ' + note : ''}</div>` : ''}</div>`;
-    const th = (label, aim) => aim ? `<th>${label} <span class="kpi-dir" title="${AIM[aim][2]}">${AIM[aim][0]}</span></th>` : `<th>${label}</th>`;
+    const th = (label, aim) => aim ? `<th>${label} <span class="kpi-dir">${AIM[aim][0]}</span></th>` : `<th>${label}</th>`;
     const net = K.flow.net;
     const kpiBody = `
       <div class="kpi-win">Last ${[7, 30, 90].map(d => `<button class="${d === kd ? 'on' : ''}" onclick="ccSetKpiDays(${d})">${d} days</button>`).join('')}
-        <span style="text-transform:none;letter-spacing:0;font-weight:600;color:#999;margin-left:6px">▲▼ compare with the ${kd} days before · <span class="kpi-dir">↑</span> aim higher · <span class="kpi-dir">↓</span> aim lower</span></div>
+        <span class="kpi-keytxt">${hasPrev ? `▲▼ against the ${kd} days before` : `No earlier ${kd} days to compare with yet`} · <span class="kpi-dir">↑</span> aim higher · <span class="kpi-dir">↓</span> aim lower</span></div>
+      <div class="kpi-legend">
+        <span class="kv kv-good">On target</span><span class="kv kv-warn">Watch</span><span class="kv kv-bad">Act now</span>
+        <span class="kpi-keytxt">Step times: green up to ${KPI_TARGETS.stepDays[0]} days, amber up to ${KPI_TARGETS.stepDays[1]}. Slowest 10% and created → received: green up to ${KPI_TARGETS.tailDays[0]}, amber up to ${KPI_TARGETS.tailDays[1]}. Within ${KPI_ON_TIME_DAYS} days: green ${Math.round(KPI_TARGETS.onTime[0]*100)}%+, amber ${Math.round(KPI_TARGETS.onTime[1]*100)}%+. Issues (share of an IA's open tickets): green up to ${Math.round(KPI_TARGETS.issueShare[0]*100)}%, amber up to ${Math.round(KPI_TARGETS.issueShare[1]*100)}%. Backlog: green when not growing.</span>
+      </div>
       <div class="kpi-tiles">
         ${tile(K.events, 'Steps completed', delta(K.events, P.events, 'up', num), 'up')}
         ${tile(K.received, 'Deliveries received', delta(K.received, P.received, 'up', num), 'up')}
-        ${tile(kpiDur(K.e2eMedian), 'Median created → received', delta(K.e2eMedian, P.e2eMedian, 'down', kpiDur), 'down')}
-        ${tile(pct(K.ownOnTime), `Own work within ${KPI_ON_TIME_DAYS} days`, delta(K.ownOnTime, P.ownOnTime, 'up', pts), 'up')}
-        ${tile((net > 0 ? '+' : '') + net, `Backlog change · ${K.flow.created} in, ${K.flow.received} out`, delta(net, P.flow.net, 'down', num), 'down', 'below 0 means shrinking')}
+        ${tile(kpiDur(K.e2eMedian), 'Median created → received', delta(K.e2eMedian, P.e2eMedian, 'down', kpiDur), 'down', '', kpiRateDays(K.e2eMedian, KPI_TARGETS.tailDays))}
+        ${tile(pct(K.ownOnTime), `Own work within ${KPI_ON_TIME_DAYS} days`, delta(K.ownOnTime, P.ownOnTime, 'up', pts), 'up', '', kpiRateHigh(K.ownOnTime, KPI_TARGETS.onTime))}
+        ${tile((net > 0 ? '+' : '') + net, `Backlog change · ${K.flow.created} in, ${K.flow.received} out`, delta(net, P.flow.net, 'down', num), 'down', 'below 0 means shrinking', kpiRateNet(net))}
       </div>
       ${!K.events && !K.flow.created && !K.flow.received ? `<div class="cc-empty">Nothing recorded through the Hub in the last ${kd} days yet.</div>` : `
       <div class="kpi-h">By step</div>
       <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Step</th><th>Type</th><th>Done</th>${th('Median time', 'down')}<th>vs before</th>${th('Slowest 10% over', 'down')}${th(`Within ${KPI_ON_TIME_DAYS}d`, 'up')}</tr></thead><tbody>
         ${K.steps.map((x, i) => `<tr><td style="font-weight:700">${esc(x.label)}</td>
           <td>${x.own ? '<span class="kpi-own">Own work</span>' : `<span class="kpi-wait">Waiting on ${esc(x.waitOn)}</span>`}</td>
-          <td>${x.done}</td><td>${kpiDur(x.median)}</td><td>${delta(x.median, P.steps[i].median, 'down', kpiDur) || '<span style="color:#ccc">—</span>'}</td>
-          <td>${kpiDur(x.p90)}</td><td>${pct(x.onTime)}</td></tr>`).join('')}
+          <td>${x.done}</td><td>${val(kpiDur(x.median), kpiRateDays(x.median, KPI_TARGETS.stepDays))}</td><td>${delta(x.median, P.steps[i].median, 'down', kpiDur) || '<span style="color:#ccc">—</span>'}</td>
+          <td>${val(kpiDur(x.p90), kpiRateDays(x.p90, KPI_TARGETS.tailDays))}</td><td>${val(pct(x.onTime), kpiRateHigh(x.onTime, KPI_TARGETS.onTime))}</td></tr>`).join('')}
       </tbody></table></div>`}
       <div class="kpi-h">Orders in vs deliveries out</div>
       <div style="overflow-x:auto"><table class="cc-tbl" style="max-width:640px"><thead><tr><th>Week to</th><th>Orders created</th>${th('Deliveries received', 'up')}${th('Backlog change', 'down')}</tr></thead><tbody>
         ${K.flow.weeks.map(w => { const n = w.created - w.received; return `<tr><td>${fmtD(new Date(w.end).toISOString().slice(0, 10))}</td><td>${w.created}</td><td>${w.received}</td>
-          <td style="font-weight:700;color:${n > 0 ? 'var(--red-d)' : n < 0 ? 'var(--green-dd)' : '#999'}">${n > 0 ? '+' : ''}${n}</td></tr>`; }).join('')}
+          <td>${val((n > 0 ? '+' : '') + n, kpiRateNet(n))}</td></tr>`; }).join('')}
       </tbody></table></div>
       ${(() => {
         // IA scorecard: their stores (Users tab) + their own work.
@@ -7139,8 +7197,12 @@ function ccRender(force) {
       <div class="kpi-h">IA scorecard</div>
       <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>IA</th><th>Stores</th>${th('Open tickets', 'down')}${th('Current issues', 'down')}${th('Own steps', 'up')}${th('Median review', 'down')}${th('Median send to WHS', 'down')}${th(`Own work within ${KPI_ON_TIME_DAYS}d`, 'up')}</tr></thead><tbody>
         ${iaRows.map(x => `<tr><td style="font-weight:700;white-space:nowrap">${esc(nameOf(x.u.username))}</td>
-          <td>${x.stores ?? '<span style="color:#999">All (*)</span>'}</td><td>${x.open ?? dash}</td><td>${x.issues ?? dash}</td>
-          <td>${x.p ? x.p.ownDone : 0}</td><td>${x.p ? kpiDur(x.p.reviewMedian) : '—'}</td><td>${x.p ? kpiDur(x.p.whsMedian) : '—'}</td><td>${x.p ? pct(x.p.ownOnTime) : '—'}</td></tr>`).join('')
+          <td>${x.stores ?? '<span style="color:#999">All (*)</span>'}</td><td>${x.open ?? dash}</td>
+          <td>${x.issues == null ? dash : val(x.issues, x.open ? kpiRateLow(x.issues / x.open, KPI_TARGETS.issueShare) : (x.issues ? 'bad' : 'good'))}</td>
+          <td>${x.p ? x.p.ownDone : 0}</td>
+          <td>${x.p ? val(kpiDur(x.p.reviewMedian), kpiRateDays(x.p.reviewMedian, KPI_TARGETS.stepDays)) : '—'}</td>
+          <td>${x.p ? val(kpiDur(x.p.whsMedian), kpiRateDays(x.p.whsMedian, KPI_TARGETS.stepDays)) : '—'}</td>
+          <td>${x.p ? val(pct(x.p.ownOnTime), kpiRateHigh(x.p.ownOnTime, KPI_TARGETS.onTime)) : '—'}</td></tr>`).join('')
           || `<tr><td colspan="8" class="cc-empty">No active IAs in the Users tab.</td></tr>`}
       </tbody></table></div>
       ${others.length ? `
