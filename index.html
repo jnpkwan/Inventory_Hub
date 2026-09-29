@@ -6173,8 +6173,14 @@ function ccAnomalies(records, storeSet, priceMap, now = new Date()) {
         const qty = l => p4OrderQty(r, l);
         if (lines.every(l => qty(l) <= 0)) add(r, 'amber', 'Every line is 0', 'Every line is 0 — nothing to ship');
         if (priceMap && !isReceivedTicket(r)) {
-          const noPrice = lines.filter(l => qty(l) > 0 && !(Number(priceMap[l.barcode]) > 0)).length;
-          if (noPrice) add(r, 'amber', 'SKUs with no price', `${noPrice} SKU${noPrice !== 1 ? 's have' : ' has'} no price in PRODUCT_MASTER — prints blank on the PDF`);
+          // Name each product, so the fix in PRODUCT_MASTER is obvious.
+          const noPrice = lines.filter(l => qty(l) > 0 && !(Number(priceMap[l.barcode]) > 0));
+          if (noPrice.length) {
+            const a = { r, sev: 'amber', kind: 'SKUs with no price',
+              msg: 'No price in PRODUCT_MASTER: ' + noPrice.map(l => `${String(l.productName || '').trim() || 'Unnamed product'} (${l.barcode || 'no barcode'})`).join('; '),
+              skus: noPrice.map(l => String(l.barcode || '').trim()).filter(Boolean) };
+            out.push(a);
+          }
         }
         if ((r.merchStatus || '') === 'Reviewed' && lines.some(l => !olSet(l.merchOrder))) {
           add(r, 'amber', 'Merchandiser step without Merch Qty', 'Merchandiser step recorded, but some lines have no Merch Qty');
@@ -6516,7 +6522,11 @@ function ccRender(force) {
           return groupRow('anom:' + g.key, g.sev, g.label, `${plural(orders, 'Store Order')} on ${plural(tickets, 'ticket')}`,
             dupRows(g.items, r => String(r.cdf).trim(), r => `${r.acaciaRef || 'no CDF Ref'} (${ccStage(r).stage})`));
         }
-        return groupRow('anom:' + g.key, g.sev, g.label, plural(tickets, 'ticket'),
+        // For missing prices, also count distinct products: one fix in
+        // PRODUCT_MASTER clears every ticket that carries that SKU.
+        const products = g.key === 'SKUs with no price' ? new Set(g.items.flatMap(a => a.skus || [])).size : 0;
+        return groupRow('anom:' + g.key, g.sev, g.label,
+          plural(tickets, 'ticket') + (products ? ` · ${plural(products, 'product')} to price in PRODUCT_MASTER` : ''),
           g.items.map(a => li(tLink(a.r), esc(a.r.store || ''), esc(a.msg))).join(''));
       }).join('');
 
