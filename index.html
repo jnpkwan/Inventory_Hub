@@ -633,6 +633,9 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .kpi-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--slate);margin-top:3px}
 .kd{font-size:11px;font-weight:700;margin-left:6px;vertical-align:3px;white-space:nowrap}
 .kd-g{color:var(--green-dd)} .kd-b{color:var(--red-d)} .kd-n{color:#999}
+.kpi-aim{font-size:10px;font-weight:600;margin-top:5px;color:#888}
+.kpi-aim-up::first-letter,.kpi-aim-down::first-letter{font-weight:800;color:var(--blue)}
+.kpi-dir{display:inline-block;font-size:11px;font-weight:800;color:var(--blue);margin-left:2px;cursor:help;text-transform:none}
 .kpi-own{font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-pale);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .kpi-wait{font-size:10px;font-weight:600;color:var(--slate);background:var(--mist);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .kpi-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--slate);padding:10px 0 6px}
@@ -1241,7 +1244,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-29 · 23:45';
+const HUB_BUILD = '2026-09-30 · 00:15';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -6341,36 +6344,37 @@ function ccExportReport() {
   // (sortable); a blank means nothing to time, never zero.
   if (kpiIsViewer()) {
     const kd = [7, 30, 90].includes(ccPrefs().kpiDays) ? ccPrefs().kpiDays : 30;
-    const K = kpiCompute(records, kd), P = kpiCompute(records, kd, K.now - kd * KPI_DAY);
+    const X = kpiExecs(users);
+    const K = kpiCompute(records, kd, Date.now(), X), P = kpiCompute(records, kd, K.now - kd * KPI_DAY, X);
     const days = ms => ms == null ? '' : Math.round(ms / 8640000) / 10;
     const pct  = v => v == null ? '' : Math.round(v * 100);
     const nameOf = u => { const x = users.find(v => v.username === u); return x && x.name ? x.name : u; };
     const row = cells => ({ sev: 'amber', store: '', cells });
     XLSX.utils.book_append_sheet(wb, sheet(
-      ['Step', 'Type', 'Done', 'Median (days)', `Median, previous ${kd}d (days)`, 'Slowest 10% over (days)', `Within ${KPI_ON_TIME_DAYS}d (%)`],
+      ['Step', 'Type', 'Done', 'Median (days, aim lower)', `Median, previous ${kd}d (days)`, 'Slowest 10% over (days, aim lower)', `Within ${KPI_ON_TIME_DAYS}d (%, aim higher)`],
       K.steps.map((x, i) => row([x.label, x.own ? 'Own work' : `Waiting on ${x.waitOn}`, x.done, days(x.median), days(P.steps[i].median), days(x.p90), pct(x.onTime)])),
-      [22, 26, 8, 14, 26, 22, 14], [2, 3, 4, 5, 6], -1), `KPI Steps ${kd}d`);
+      [22, 26, 8, 24, 26, 32, 24], [2, 3, 4, 5, 6], -1), `KPI Steps ${kd}d`);
     const own = ccStoreIAs(users);
     const byIAx = ccByIA(users, stuck, anomalies);
     const peopleBy = Object.fromEntries(K.people.map(p => [p.who, p]));
     XLSX.utils.book_append_sheet(wb, sheet(
-      ['IA', 'Username', 'Stores', 'Open tickets', 'Current issues', 'Own steps', 'Median review (days)', 'Median send to WHS (days)', `Own work within ${KPI_ON_TIME_DAYS}d (%)`],
+      ['IA', 'Username', 'Stores', 'Open tickets (aim lower)', 'Current issues (aim lower)', 'Own steps (aim higher)', 'Median review (days, aim lower)', 'Median send to WHS (days, aim lower)', `Own work within ${KPI_ON_TIME_DAYS}d (%, aim higher)`],
       own.ias.map(u => {
         const lst = own.listed.find(x => x.u === u), p = peopleBy[u.username];
         const open = lst ? records.filter(r => lst.stores.has(storeKey(r.store)) && !isReceivedTicket(r)).length : '';
         const issues = byIAx.rows.find(x => x.u.username === u.username)?.items.length ?? '';
         return row([nameOf(u.username), u.username, lst ? lst.stores.size : 'All (*)', open, issues, p ? p.ownDone : 0,
                     p ? days(p.reviewMedian) : '', p ? days(p.whsMedian) : '', p ? pct(p.ownOnTime) : '']);
-      }), [22, 16, 9, 12, 13, 10, 18, 22, 18], [2, 3, 4, 5, 6, 7, 8], -1), `KPI IA Scorecard ${kd}d`);
+      }), [22, 16, 9, 22, 24, 21, 29, 33, 31], [2, 3, 4, 5, 6, 7, 8], -1), `KPI IA Scorecard ${kd}d`);
     XLSX.utils.book_append_sheet(wb, sheet(
-      ['Person', 'Username', 'Steps', 'Per day', 'What they did'],
+      ['Person', 'Username', 'Steps (aim higher)', 'Per day (aim higher)', 'What they did'],
       K.people.filter(p => !own.ias.some(u => u.username === p.who))
         .map(x => row([nameOf(x.who), x.who, x.done, Math.round(x.perDay * 10) / 10, x.mix.map(m => `${m.n} ${m.label}`).join(' · ')])),
-      [22, 16, 9, 10, 60], [2, 3], -1), `KPI Others ${kd}d`);
+      [22, 16, 18, 20, 60], [2, 3], -1), `KPI Others ${kd}d`);
     XLSX.utils.book_append_sheet(wb, sheet(
-      ['Week to', 'Orders created', 'Deliveries received', 'Backlog change'],
+      ['Week to', 'Orders created', 'Deliveries received (aim higher)', 'Backlog change (aim lower; below 0 = shrinking)'],
       K.flow.weeks.map(w => row([new Date(w.end).toISOString().slice(0, 10), w.created, w.received, w.created - w.received])),
-      [14, 16, 20, 16], [1, 2, 3], -1), `KPI Flow ${kd}d`);
+      [14, 16, 30, 42], [1, 2, 3], -1), `KPI Flow ${kd}d`);
   }
   XLSX.writeFile(wb, `acacia-command-center-${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast(`Report downloaded: ${anomRows.length} anomal${anomRows.length !== 1 ? 'ies' : 'y'}, ${stuckRows.length} stuck, ${covRows.length} store${covRows.length !== 1 ? 's' : ''} with no delivery.`);
@@ -6676,14 +6680,16 @@ function kpiMigrated(r) {
 
 // Everything in the window [now − days, now]. Pass an earlier `now` for the
 // previous period (the comparison arrows).
-function kpiCompute(records, days, now = Date.now()) {
+// `skip`: usernames whose actions aren't counted (Executives — the dashboard
+// measures the team, not the people reading it).
+function kpiCompute(records, days, now = Date.now(), skip = new Set()) {
   const from = now - days * KPI_DAY;
   const events = [];
   records.forEach(r => {
     const created = kpiTime(r.createdAt);
     KPI_STEPS.forEach(st => {
       const end = kpiTime(r[st.end]), who = String(r[st.by] || '').trim();
-      if (end == null || !who || !st.done(r)) return;
+      if (end == null || !who || !st.done(r) || skip.has(who.toLowerCase())) return;
       if (end < from || end > now) return;
       if (created != null && Math.abs(end - created) < 60000) return;   // auto-stamped at creation
       const start = kpiTime(st.start(r));
@@ -6741,6 +6747,14 @@ function kpiCompute(records, days, now = Date.now()) {
 // Per-person step durations for one step key (used by the IA scorecard).
 function kpiPersonMedian(K, who, key) {
   return kpiMedian(K._events.filter(e => e.who === who && e.step === key && e.dur != null).map(e => e.dur));
+}
+// Executives' usernames, from the Users tab (health check or the loaded
+// list), plus whoever is signed in if they're one. Lower-cased.
+function kpiExecs(users) {
+  const list = (users && users.length ? users : (S.users || []));
+  const set = new Set(list.filter(u => normRole(u.role) === 'EXECUTIVE').map(u => String(u.username || '').trim().toLowerCase()));
+  if (S.user && normRole(S.user.role) === 'EXECUTIVE') set.add(String(S.user.username).toLowerCase());
+  return set;
 }
 function kpiIsViewer() { return normRole(S.user?.role) === 'EXECUTIVE'; }   // Managers excluded for now
 function ccSetKpiDays(d) { ccPrefs().kpiDays = d; ccSavePrefs(); ccRender(true); }
@@ -7063,8 +7077,9 @@ function ccRender(force) {
   let kpiPanel = '';
   if (kpiIsViewer()) {
     const kd = [7, 30, 90].includes(prefs.kpiDays) ? prefs.kpiDays : 30;
-    const K = kpiCompute(records, kd);
-    const P = kpiCompute(records, kd, K.now - kd * KPI_DAY);   // the period before, for ↑/↓
+    const X = kpiExecs(users);                                        // Executives aren't counted
+    const K = kpiCompute(records, kd, Date.now(), X);
+    const P = kpiCompute(records, kd, K.now - kd * KPI_DAY, X);   // the period before, for ↑/↓
     const userOf = u => (users || []).find(v => v.username === u);
     const nameOf = u => { const x = userOf(u); return x && x.name ? `${x.name} (${u})` : u; };
     const pct = v => v == null ? '—' : Math.round(v * 100) + '%';
@@ -7077,28 +7092,32 @@ function ccRender(force) {
     };
     const num = v => String(Math.round(v * 10) / 10);
     const pts = v => Math.round(v * 100) + ' pts';
-    const tile = (n, l, d) => `<div class="kpi-t"><div class="kpi-n">${n}${d || ''}</div><div class="kpi-l">${l}</div></div>`;
+    // Which way is good. Tiles say it in words; table headings get an arrow.
+    const AIM = { up: ['↑', 'Aim higher', 'Higher is better'], down: ['↓', 'Aim lower', 'Lower is better'] };
+    const tile = (n, l, d, aim, note) => `<div class="kpi-t"><div class="kpi-n">${n}${d || ''}</div><div class="kpi-l">${l}</div>
+      ${aim ? `<div class="kpi-aim kpi-aim-${aim}">${AIM[aim][0]} ${AIM[aim][1]}${note ? ' · ' + note : ''}</div>` : ''}</div>`;
+    const th = (label, aim) => aim ? `<th>${label} <span class="kpi-dir" title="${AIM[aim][2]}">${AIM[aim][0]}</span></th>` : `<th>${label}</th>`;
     const net = K.flow.net;
     const kpiBody = `
       <div class="kpi-win">Last ${[7, 30, 90].map(d => `<button class="${d === kd ? 'on' : ''}" onclick="ccSetKpiDays(${d})">${d} days</button>`).join('')}
-        <span style="text-transform:none;letter-spacing:0;font-weight:600;color:#999;margin-left:6px">▲▼ compare with the ${kd} days before</span></div>
+        <span style="text-transform:none;letter-spacing:0;font-weight:600;color:#999;margin-left:6px">▲▼ compare with the ${kd} days before · <span class="kpi-dir">↑</span> aim higher · <span class="kpi-dir">↓</span> aim lower</span></div>
       <div class="kpi-tiles">
-        ${tile(K.events, 'Steps completed', delta(K.events, P.events, 'up', num))}
-        ${tile(K.received, 'Deliveries received', delta(K.received, P.received, 'up', num))}
-        ${tile(kpiDur(K.e2eMedian), 'Median created → received', delta(K.e2eMedian, P.e2eMedian, 'down', kpiDur))}
-        ${tile(pct(K.ownOnTime), `Own work within ${KPI_ON_TIME_DAYS} days`, delta(K.ownOnTime, P.ownOnTime, 'up', pts))}
-        ${tile((net > 0 ? '+' : '') + net, `Backlog change · ${K.flow.created} in, ${K.flow.received} out`, delta(net, P.flow.net, 'down', num))}
+        ${tile(K.events, 'Steps completed', delta(K.events, P.events, 'up', num), 'up')}
+        ${tile(K.received, 'Deliveries received', delta(K.received, P.received, 'up', num), 'up')}
+        ${tile(kpiDur(K.e2eMedian), 'Median created → received', delta(K.e2eMedian, P.e2eMedian, 'down', kpiDur), 'down')}
+        ${tile(pct(K.ownOnTime), `Own work within ${KPI_ON_TIME_DAYS} days`, delta(K.ownOnTime, P.ownOnTime, 'up', pts), 'up')}
+        ${tile((net > 0 ? '+' : '') + net, `Backlog change · ${K.flow.created} in, ${K.flow.received} out`, delta(net, P.flow.net, 'down', num), 'down', 'below 0 means shrinking')}
       </div>
       ${!K.events && !K.flow.created && !K.flow.received ? `<div class="cc-empty">Nothing recorded through the Hub in the last ${kd} days yet.</div>` : `
       <div class="kpi-h">By step</div>
-      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Step</th><th>Type</th><th>Done</th><th>Median time</th><th>vs before</th><th>Slowest 10% over</th><th>Within ${KPI_ON_TIME_DAYS}d</th></tr></thead><tbody>
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Step</th><th>Type</th><th>Done</th>${th('Median time', 'down')}<th>vs before</th>${th('Slowest 10% over', 'down')}${th(`Within ${KPI_ON_TIME_DAYS}d`, 'up')}</tr></thead><tbody>
         ${K.steps.map((x, i) => `<tr><td style="font-weight:700">${esc(x.label)}</td>
           <td>${x.own ? '<span class="kpi-own">Own work</span>' : `<span class="kpi-wait">Waiting on ${esc(x.waitOn)}</span>`}</td>
           <td>${x.done}</td><td>${kpiDur(x.median)}</td><td>${delta(x.median, P.steps[i].median, 'down', kpiDur) || '<span style="color:#ccc">—</span>'}</td>
           <td>${kpiDur(x.p90)}</td><td>${pct(x.onTime)}</td></tr>`).join('')}
       </tbody></table></div>`}
       <div class="kpi-h">Orders in vs deliveries out</div>
-      <div style="overflow-x:auto"><table class="cc-tbl" style="max-width:640px"><thead><tr><th>Week to</th><th>Orders created</th><th>Deliveries received</th><th>Backlog change</th></tr></thead><tbody>
+      <div style="overflow-x:auto"><table class="cc-tbl" style="max-width:640px"><thead><tr><th>Week to</th><th>Orders created</th>${th('Deliveries received', 'up')}${th('Backlog change', 'down')}</tr></thead><tbody>
         ${K.flow.weeks.map(w => { const n = w.created - w.received; return `<tr><td>${fmtD(new Date(w.end).toISOString().slice(0, 10))}</td><td>${w.created}</td><td>${w.received}</td>
           <td style="font-weight:700;color:${n > 0 ? 'var(--red-d)' : n < 0 ? 'var(--green-dd)' : '#999'}">${n > 0 ? '+' : ''}${n}</td></tr>`; }).join('')}
       </tbody></table></div>
@@ -7118,7 +7137,7 @@ function ccRender(force) {
         const dash = '<span style="color:#ccc">—</span>';
         return `
       <div class="kpi-h">IA scorecard</div>
-      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>IA</th><th>Stores</th><th>Open tickets</th><th>Current issues</th><th>Own steps</th><th>Median review</th><th>Median send to WHS</th><th>Own work within ${KPI_ON_TIME_DAYS}d</th></tr></thead><tbody>
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>IA</th><th>Stores</th>${th('Open tickets', 'down')}${th('Current issues', 'down')}${th('Own steps', 'up')}${th('Median review', 'down')}${th('Median send to WHS', 'down')}${th(`Own work within ${KPI_ON_TIME_DAYS}d`, 'up')}</tr></thead><tbody>
         ${iaRows.map(x => `<tr><td style="font-weight:700;white-space:nowrap">${esc(nameOf(x.u.username))}</td>
           <td>${x.stores ?? '<span style="color:#999">All (*)</span>'}</td><td>${x.open ?? dash}</td><td>${x.issues ?? dash}</td>
           <td>${x.p ? x.p.ownDone : 0}</td><td>${x.p ? kpiDur(x.p.reviewMedian) : '—'}</td><td>${x.p ? kpiDur(x.p.whsMedian) : '—'}</td><td>${x.p ? pct(x.p.ownOnTime) : '—'}</td></tr>`).join('')
@@ -7126,12 +7145,12 @@ function ccRender(force) {
       </tbody></table></div>
       ${others.length ? `
       <div class="kpi-h">Coordinators and others</div>
-      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Person</th><th>Steps</th><th>Per day</th><th>What they did</th></tr></thead><tbody>
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Person</th>${th('Steps', 'up')}${th('Per day', 'up')}<th>What they did</th></tr></thead><tbody>
         ${others.map(x => `<tr><td style="font-weight:700;white-space:nowrap">${esc(nameOf(x.who))}</td><td>${x.done}</td><td>${x.perDay.toFixed(1)}</td>
           <td style="color:#666">${esc(x.mix.map(m => `${m.n} ${m.label}`).join(' · '))}</td></tr>`).join('')}
       </tbody></table></div>` : ''}`;
       })()}
-      <div class="cc-empty" style="padding-top:8px">Credited to whoever did the step; timed from the step before it. <b>Own work</b> is time the team controls — only that counts toward a person. <b>Waiting</b> steps show the process, not the person. Steps auto-stamped when a ticket is created, and migrated tickets, aren't counted. Early weeks are thin — trust the counts first, the times after about a month.</div>`;
+      <div class="cc-empty" style="padding-top:8px">Credited to whoever did the step; timed from the step before it. <b>Own work</b> is time the team controls — only that counts toward a person. <b>Waiting</b> steps show the process, not the person. Executives' own actions, steps auto-stamped when a ticket is created, and migrated tickets aren't counted. Early weeks are thin — trust the counts first, the times after about a month.</div>`;
     kpiPanel = panel('cc-kpi', '7', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
   }
 
