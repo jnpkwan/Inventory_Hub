@@ -2422,7 +2422,22 @@ function buildDetail(r, span = 13) {
           </table>
         </div>
       </div>` : '';
-    const pdfBtn = canRunMerch && !locked4 ? `
+    // Two ways to finish 3.2. With changes, the IA sends the Updated PDF.
+    // With none, the store already has the right PDF (the IA's), so the SC —
+    // or an IA/Executive — just records the approval. Judged on SAVED lines:
+    // any Merch Qty that differs from the IA's, or a SKU added at this stage.
+    const savedChanged = mLines.some(l => l.added === 'merch' || (olSet(l.merchOrder) && Number(l.merchOrder) !== olIaQty(l)));
+    const noChangeDone = merchDone && !savedChanged;
+    const canApproveNoChange = ['COORDINATOR', 'IS', 'EXECUTIVE'].includes(role) && !merchDone && !locked4;
+    const noChangeRow = !canApproveNoChange ? ''
+      : savedChanged
+        ? (role === 'COORDINATOR' ? `<div class="wf-actions"><span style="font-size:10.5px;color:var(--amber-d);font-weight:600">Merchandiser changes are entered — the IA sends the Updated PDF to finish this step.</span></div>` : '')
+        : `<div class="wf-actions">
+            <button class="btn btn-approve" id="p3-merch-ok-${uid}" ${mDirty ? 'disabled style="opacity:.45;cursor:not-allowed"' : ''}
+              onclick="event.stopPropagation();approveMerchNoChanges('${uid}')">✓ Merchandiser Approved — no changes</button>
+            <span style="font-size:10.5px;color:#aaa;margin-left:8px">No new PDF needed · unlocks Store Manager approval</span>
+          </div>`;
+    const pdfBtn = canRunMerch && !locked4 && !noChangeDone ? `
       <div class="wf-actions">
         <button class="btn btn-blue" id="p3-merch-pdf-${uid}" style="font-weight:700;letter-spacing:.3px;${mDirty?'opacity:.45;cursor:not-allowed':''}" ${mDirty?'disabled':''}
           onclick="event.stopPropagation();generateMerchPDF('${uid}')">📄 ${merchDone ? 'Re-download Updated PDF' : 'Download Updated PDF'}</button>${paperSelect()}
@@ -2439,16 +2454,16 @@ function buildDetail(r, span = 13) {
           <span class="wf-phase-num" style="background:var(--amber);color:var(--carbon)">3.2</span>
           <span class="wf-panel-title">Merchandiser Review</span>
           ${canUndo && merchDone && storeSt === '' && !locked4
-            ? undoBtn('undoMerchReview','Undo Updated PDF','Reopens Merchandiser quantities for editing and locks Store Manager approval again. Available until the Store Manager decision is logged.') : ''}
-          <span class="wf-status-badge ${merchDone?'wfs-approved':'wfs-pending'}">${merchDone?'Reviewed':'Awaiting Merchandiser'}</span>
+            ? undoBtn('undoMerchReview', noChangeDone ? 'Undo Merchandiser approval' : 'Undo Updated PDF','Reopens Merchandiser quantities for editing and locks Store Manager approval again. Available until the Store Manager decision is logged.') : ''}
+          <span class="wf-status-badge ${merchDone?'wfs-approved':'wfs-pending'}">${!merchDone ? 'Awaiting Merchandiser' : noChangeDone ? 'Approved — no changes' : 'Reviewed'}</span>
         </div>
         <div class="wf-panel-bd">
           ${table}
           <div class="wf-meta-row">
-            ${r.merchBy?`<div class="wf-meta"><div class="wf-ml">Updated PDF by</div><div class="wf-mv">${esc(r.merchBy)}</div></div>`:''}
+            ${r.merchBy?`<div class="wf-meta"><div class="wf-ml">${noChangeDone ? 'Approved (no changes) by' : 'Updated PDF by'}</div><div class="wf-mv">${esc(r.merchBy)}</div></div>`:''}
             ${r.merchAt?`<div class="wf-meta"><div class="wf-ml">Date</div><div class="wf-mv">${fmtD(r.merchAt.slice(0,10))}</div></div>`:''}
           </div>
-          ${pdfBtn}
+          ${noChangeRow}${pdfBtn}
         </div>
       </div>
     </div>`;
@@ -5107,6 +5122,9 @@ function p3MerchLineChanged(input, uid) {
   if (dirtyEl) { dirtyEl.textContent = '● Unsaved changes'; dirtyEl.style.color = 'var(--amber)'; }
   const saveBtn = document.getElementById('p3-merch-save-' + uid);
   if (saveBtn) { saveBtn.disabled = false; saveBtn.style.background = 'var(--amber)'; saveBtn.style.cursor = 'pointer'; }
+  // Unsaved edits mean it isn't "no changes" any more.
+  const okBtn = document.getElementById('p3-merch-ok-' + uid);
+  if (okBtn && !okBtn.disabled) { okBtn.disabled = true; okBtn.style.opacity = '.45'; okBtn.style.cursor = 'not-allowed'; }
   // Never let an Updated PDF go out with unsaved numbers.
   const pdfBtn = document.getElementById('p3-merch-pdf-' + uid);
   if (pdfBtn && !pdfBtn.disabled) {
@@ -5186,6 +5204,40 @@ async function generateMerchPDF(uid) {
     return;
   }
   toast('✅ Updated PDF downloaded. Store Manager step unlocked.');
+  S.expandedId = uid;
+  await loadData();
+  renderAll();
+}
+
+// Finishes 3.2 when the Merchandiser has no changes: no new PDF, since the
+// store already has the IA's. Records the same thing the Updated PDF path
+// does — a Merch Qty on every line (the IA's) and the review stamp — in one
+// write. Refused if any change is saved or typed: those need the Updated PDF.
+async function approveMerchNoChanges(uid) {
+  if (!['COORDINATOR', 'IS', 'EXECUTIVE'].includes(permRole(S.user?.role))) return;
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  if ((r.merchStatus || '') === 'Reviewed') { toast('The Merchandiser step is already done.', 'err'); return; }
+  if (P3_EDITS['merch:' + uid]) { toast('There are unsaved Merch Qty edits — save them (Updated PDF) or reload to discard.', 'err'); return; }
+  let lines = [];
+  try { lines = r.orderLines ? JSON.parse(r.orderLines) : []; } catch(e) { toast('This ticket\'s order lines are unreadable.', 'err'); return; }
+  if (lines.some(l => l.added === 'merch' || (olSet(l.merchOrder) && Number(l.merchOrder) !== olIaQty(l)))) {
+    toast('This order has Merchandiser changes — the IA sends the Updated PDF instead.', 'err'); return;
+  }
+  if (!confirm(`Approve ${r.cdf} for the Merchandiser with no changes?\n\nNo new PDF is made — the store already has the IA's PDF. The Store Manager step unlocks next.`)) return;
+  lines = lines.map(l => ({ ...l, merchOrder: olMerchQty(l) }));
+  try {
+    await apiUpdateCDFStrict(uid, {
+      orderLines:  JSON.stringify(lines),
+      merchStatus: 'Reviewed',
+      merchBy:     S.user.username,
+      merchAt:     new Date().toISOString(),
+    });
+  } catch(e) {
+    toast('❌ Could not record the approval: ' + e.message + ' — nothing was saved.', 'err');
+    return;
+  }
+  toast('✅ Merchandiser approved — no changes. Store Manager step unlocked.');
   S.expandedId = uid;
   await loadData();
   renderAll();
