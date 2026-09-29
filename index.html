@@ -624,6 +624,14 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .cc-subhd{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--slate);padding:12px 0 4px;border-bottom:1px solid var(--silver)}
 .cc-subhd:first-child{padding-top:4px}
 .cc-subhd span{font-weight:600;color:#999}
+.kpi-win{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--slate);margin-bottom:10px}
+.kpi-win button{border:1px solid var(--silver);background:#fff;border-radius:999px;padding:3px 10px;font-size:10.5px;font-weight:700;color:var(--slate);cursor:pointer;text-transform:none;letter-spacing:0}
+.kpi-win button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.kpi-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+.kpi-t{background:var(--mist);border-radius:10px;padding:10px 12px}
+.kpi-n{font-family:'Montserrat',sans-serif;font-weight:800;font-size:20px;color:var(--ink);line-height:1.1}
+.kpi-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--slate);margin-top:3px}
+.kpi-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--slate);padding:10px 0 6px}
 .cc-grp{border-bottom:1px solid var(--mist)}
 .cc-grp:last-child{border-bottom:none}
 .cc-grp-hd{display:flex;align-items:baseline;gap:10px;padding:8px 0;cursor:pointer;font-size:11.5px}
@@ -1229,7 +1237,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-29 · 20:30';
+const HUB_BUILD = '2026-09-29 · 21:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -6320,6 +6328,24 @@ function ccExportReport() {
   XLSX.utils.book_append_sheet(wb, sheet(
     ['Store', 'Last Received Delivery', 'Days Since'],
     covRows, [30, 26, 13], [1, 2], -1), `No Delivery ${CC_DELIVERY_WINDOW}d`);
+  // Team KPIs — Executives only, like the section. Times are numbers of days
+  // (sortable); a blank means no timed steps, never zero.
+  if (kpiIsViewer()) {
+    const kd = [7, 30, 90].includes(ccPrefs().kpiDays) ? ccPrefs().kpiDays : 30;
+    const K = kpiCompute(records, kd);
+    const days = ms => ms == null ? '' : Math.round(ms / 8640000) / 10;
+    const pct  = v => v == null ? '' : Math.round(v * 100);
+    const nameOf = u => { const x = users.find(v => v.username === u); return x && x.name ? x.name : u; };
+    XLSX.utils.book_append_sheet(wb, sheet(
+      ['Step', 'Done', 'Median (days)', 'Slowest 10% over (days)', `Within ${KPI_ON_TIME_DAYS}d (%)`],
+      K.steps.map(x => ({ sev: 'amber', store: '', cells: [x.label, x.done, days(x.median), days(x.p90), pct(x.onTime)] })),
+      [24, 9, 15, 24, 16], [1, 2, 3, 4], -1), `KPI Steps ${kd}d`);
+    XLSX.utils.book_append_sheet(wb, sheet(
+      ['Person', 'Username', 'Steps', 'Per day', `Within ${KPI_ON_TIME_DAYS}d (%)`, 'What they did'],
+      K.people.map(x => ({ sev: 'amber', store: '', cells: [nameOf(x.who), x.who, x.done, Math.round(x.perDay * 10) / 10, pct(x.onTime),
+        x.mix.map(m => `${m.n} ${m.label}`).join(' · ')] })),
+      [24, 16, 9, 10, 16, 60], [2, 3, 4], -1), `KPI People ${kd}d`);
+  }
   XLSX.writeFile(wb, `acacia-command-center-${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast(`Report downloaded: ${anomRows.length} anomal${anomRows.length !== 1 ? 'ies' : 'y'}, ${stuckRows.length} stuck, ${covRows.length} store${covRows.length !== 1 ? 's' : ''} with no delivery.`);
 }
@@ -6576,6 +6602,84 @@ function ccByIA(users, stuck, anomalies) {
   rows.sort((a, b) => b.items.length - a.items.length || String(a.u.name || a.u.username).localeCompare(String(b.u.name || b.u.username)));
   return { rows, unassigned, star, noIAs: !ias.length };
 }
+
+/* ── Team KPIs (Executives only) ─────────────────────────────────────────────
+   Built from the "who / when" stamps each step writes on the ticket. A step
+   is credited to the person who did it (so covering for someone counts for
+   the one covering), timed from the step before it, and measured in medians
+   so a few stragglers can't swamp it. Excluded, so nobody looks instant:
+     · stamps written within a minute of the ticket's creation — tickets that
+       skip Phase 3 (manual adds, spare parts) are auto-stamped at creation;
+     · steps the ticket isn't actually past (e.g. an IA "Request Changes"
+       writes the same stamp as an approval).
+────────────────────────────────────────────────────────────────────────── */
+const KPI_STEPS = [
+  { key: 'ia',    label: 'IA review',          end: 'smgrApprovedAt', by: 'smgrApprovedBy', start: r => r.createdAt,                  done: r => r.smgrStatus === 'Approved' },
+  { key: 'pdf',   label: 'PDF generated',      end: 'pdfGeneratedAt', by: 'pdfGeneratedBy', start: r => r.smgrApprovedAt,             done: r => r.pdfStatus === 'Generated' },
+  { key: 'merch', label: 'Merchandiser step',  end: 'merchAt',        by: 'merchBy',        start: r => r.pdfGeneratedAt,             done: r => r.merchStatus === 'Reviewed' },
+  { key: 'store', label: 'Store Manager step', end: 'storeUpdatedAt', by: 'storeUpdatedBy', start: r => r.merchAt || r.pdfGeneratedAt, done: r => r.storeStatus === 'Approved' },
+  { key: 'whs',   label: 'Sent to warehouse',  end: 'sentToWhsAt',    by: 'sentToWhsBy',    start: r => r.storeUpdatedAt,             done: r => !!r.fulfillStatus },
+  { key: 'act',   label: 'Actuals confirmed',  end: 'fulfillAt',      by: 'fulfillBy',      start: r => r.sentToWhsAt,                done: r => ['Actuals Logged', 'Partial'].includes(r.fulfillStatus) },
+];
+const KPI_ON_TIME_DAYS = 7;   // the same limit Stuck Tickets uses
+
+function kpiTime(v) { const t = new Date(v).getTime(); return isNaN(t) ? null : t; }
+function kpiMedian(xs) {
+  if (!xs.length) return null;
+  const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+function kpiPct(xs, p) { if (!xs.length) return null; const a = xs.slice().sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(p * a.length))]; }
+function kpiDur(ms) {
+  if (ms == null) return '—';
+  const h = ms / 3600000;
+  return h < 24 ? `${Math.max(1, Math.round(h))}h` : `${(h / 24).toFixed(1)}d`;
+}
+
+// Every credited step completed in the window, plus deliveries received in it.
+function kpiCompute(records, days, now = Date.now()) {
+  const from = now - days * 86400000, DAY = 86400000;
+  const events = [];
+  records.forEach(r => {
+    const created = kpiTime(r.createdAt);
+    KPI_STEPS.forEach(st => {
+      const end = kpiTime(r[st.end]), who = String(r[st.by] || '').trim();
+      if (end == null || !who || !st.done(r)) return;
+      if (end < from || end > now) return;
+      if (created != null && Math.abs(end - created) < 60000) return;   // auto-stamped at creation
+      const start = kpiTime(st.start(r));
+      const dur = start != null && end >= start ? end - start : null;
+      events.push({ r, step: st.key, who, end, dur });
+    });
+  });
+  const steps = KPI_STEPS.map(st => {
+    const ev = events.filter(e => e.step === st.key), durs = ev.map(e => e.dur).filter(d => d != null);
+    return { key: st.key, label: st.label, done: ev.length, median: kpiMedian(durs), p90: kpiPct(durs, 0.9),
+             onTime: durs.length ? durs.filter(d => d <= KPI_ON_TIME_DAYS * DAY).length / durs.length : null };
+  });
+  const byWho = {};
+  events.forEach(e => { (byWho[e.who] = byWho[e.who] || []).push(e); });
+  const people = Object.entries(byWho).map(([who, ev]) => {
+    const durs = ev.map(e => e.dur).filter(d => d != null);
+    const mix = KPI_STEPS.map(st => ({ label: st.label, n: ev.filter(e => e.step === st.key).length })).filter(x => x.n);
+    return { who, done: ev.length, perDay: ev.length / days, mix,
+             onTime: durs.length ? durs.filter(d => d <= KPI_ON_TIME_DAYS * DAY).length / durs.length : null };
+  }).sort((a, b) => b.done - a.done || a.who.localeCompare(b.who));
+  // Created → received, for tickets received in the window. A received date
+  // before the ticket existed in the Hub (migrated history) is skipped.
+  const e2e = records.filter(r => isReceivedTicket(r)).map(r => {
+    const rec = ccDate(r.dRecv), created = kpiTime(r.createdAt);
+    if (!rec || created == null) return null;
+    const t = rec.getTime() + DAY / 2;   // received dates are whole days
+    return t >= from && t <= now + DAY && t >= created ? t - created : null;
+  }).filter(x => x != null);
+  const allDurs = events.map(e => e.dur).filter(d => d != null);
+  return { days, events: events.length, steps, people,
+           received: e2e.length, e2eMedian: kpiMedian(e2e),
+           onTime: allDurs.length ? allDurs.filter(d => d <= KPI_ON_TIME_DAYS * DAY).length / allDurs.length : null };
+}
+function kpiIsViewer() { return normRole(S.user?.role) === 'EXECUTIVE'; }   // Managers excluded for now
+function ccSetKpiDays(d) { ccPrefs().kpiDays = d; ccSavePrefs(); ccRender(true); }
 
 // System checks from getHealth plus what the page itself measured.
 function ccSystemChecks(cc) {
@@ -6891,6 +6995,37 @@ function ccRender(force) {
       + (byIA.star.length ? `<div class="cc-empty" style="padding-top:8px">Not shown: ${esc(byIA.star.map(u => u.username).join(', '))} — their assignedStores is "*", so their stores can't be told apart from anyone else's. Give each their store list in the Users tab.</div>` : ''));
   const iaFlagged = byIA ? byIA.rows.filter(x => x.items.length).length : 0;
 
+  // Team KPIs — Executives only (not Managers, for now).
+  let kpiPanel = '';
+  if (kpiIsViewer()) {
+    const kd = [7, 30, 90].includes(prefs.kpiDays) ? prefs.kpiDays : 30;
+    const K = kpiCompute(records, kd);
+    const nameOf = u => { const x = (users || []).find(v => v.username === u); return x && x.name ? `${x.name} (${u})` : u; };
+    const pct = v => v == null ? '—' : Math.round(v * 100) + '%';
+    const tile = (n, l) => `<div class="kpi-t"><div class="kpi-n">${n}</div><div class="kpi-l">${l}</div></div>`;
+    const kpiBody = `
+      <div class="kpi-win">Last ${[7, 30, 90].map(d => `<button class="${d === kd ? 'on' : ''}" onclick="ccSetKpiDays(${d})">${d} days</button>`).join('')}</div>
+      <div class="kpi-tiles">
+        ${tile(K.events, 'Steps completed')}
+        ${tile((K.events / kd).toFixed(1), 'Steps per day')}
+        ${tile(K.received, 'Deliveries received')}
+        ${tile(kpiDur(K.e2eMedian), 'Median created → received')}
+        ${tile(pct(K.onTime), `Steps done within ${KPI_ON_TIME_DAYS} days`)}
+      </div>
+      ${!K.events ? `<div class="cc-empty">No steps completed through the Hub in the last ${kd} days yet.</div>` : `
+      <div class="kpi-h">By step</div>
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Step</th><th>Done</th><th>Median time</th><th>Slowest 10% over</th><th>Within ${KPI_ON_TIME_DAYS}d</th></tr></thead><tbody>
+        ${K.steps.map(x => `<tr><td style="font-weight:700">${esc(x.label)}</td><td>${x.done}</td><td>${kpiDur(x.median)}</td><td>${kpiDur(x.p90)}</td><td>${pct(x.onTime)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="kpi-h">By person</div>
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Person</th><th>Steps</th><th>Per day</th><th>Within ${KPI_ON_TIME_DAYS}d</th><th>What they did</th></tr></thead><tbody>
+        ${K.people.map(x => `<tr><td style="font-weight:700;white-space:nowrap">${esc(nameOf(x.who))}</td><td>${x.done}</td><td>${x.perDay.toFixed(1)}</td><td>${pct(x.onTime)}</td>
+          <td style="color:#666">${esc(x.mix.map(m => `${m.n} ${m.label}`).join(' · '))}</td></tr>`).join('')}
+      </tbody></table></div>`}
+      <div class="cc-empty" style="padding-top:8px">Credited to whoever did the step; timed from the step before it. Steps auto-stamped when a ticket is created aren't counted. Early weeks are thin — trust the counts first, the times after about a month.</div>`;
+    kpiPanel = panel('cc-kpi', '7', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
+  }
+
   const errBody = cc.healthError ? `<div class="cc-empty">Couldn't read the log — see System.</div>`
     : !cc.errors.length ? `<div class="cc-empty">No failed actions in the last 30 days.</div>`
     : ccGroup(cc.errors.map(e => ({ ...e, sev: (Date.now() - new Date(e.timestamp)) < 86400000 ? 'red' : 'amber' })), e => ccErrorKind(e.detail)).map(g => {
@@ -6910,7 +7045,8 @@ function ccRender(force) {
     + panel('cc-ia',   '3', 'Issues by IA', !byIA || byIA.noIAs ? '' : iaFlagged ? `<span class="wf-status-badge wfs-changes">${plural(iaFlagged, 'IA')} with issues</span>` : `<span class="wf-status-badge wfs-approved">All clear</span>`, iaBody)
     + panel('cc-stuck','4', 'Stuck Tickets', badge(stR, stA, 'None'), stuckBody)
     + panel('cc-anom', '5', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
-    + panel('cc-err',  '6', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody);
+    + panel('cc-err',  '6', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody)
+    + kpiPanel;
 }
 
 /* ══════════════════ GAS HTTP ══════════════════ */
