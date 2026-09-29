@@ -1410,7 +1410,9 @@ let _usersReq = null;
 function loadUsers() {
   if (CFG.offline || !CFG.apiUrl || !S.user) return Promise.resolve(S.users || []);
   if (_usersReq) return _usersReq;
-  _usersReq = gasGet('getUsers', {})
+  // A unique URL every time: a cached copy of this list (browser or service
+  // worker) is exactly how an IA keeps seeing an old store list after edits.
+  _usersReq = gasGet('getUsers', { _: Date.now() })
     .then(list => {
       S.users = Array.isArray(list) ? list : [];
       // A default picked before the list arrived is re-decided on fresh data;
@@ -1482,9 +1484,13 @@ function ownerToggle() {
   const me = S.user.role === 'IS' && ownerStoreSet(ownerUser(S.user.username)?.assignedStores);
   const opt = (val, label) => `<option value="${esc(val)}" ${v === val ? 'selected' : ''}>${esc(label)}</option>`;
   const others = ownerIAs().filter(u => u.username !== S.user.username);
+  // An IA always sees a "My stores" line. Without a list it's greyed and says
+  // why — so a missing or '*' entry in the Users tab is visible, not silent.
+  const mine = me ? opt('me', 'My stores')
+    : S.user.role === 'IS' ? `<option value="" disabled>My stores — none assigned in the Users tab</option>` : '';
   return `<label class="owner-view" onclick="event.stopPropagation()">Showing
     <select class="fs${v !== 'all' ? ' active' : ''}" onchange="setOwnerView(this.value)">
-      ${me ? opt('me', 'My stores') : ''}${opt('all', 'All stores')}
+      ${mine}${opt('all', 'All stores')}
       ${others.map(u => opt(u.username, `${u.name || u.username}'s stores`)).join('')}
     </select></label>`;
 }
