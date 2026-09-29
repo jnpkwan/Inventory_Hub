@@ -1226,7 +1226,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-29 · 16:00';
+const HUB_BUILD = '2026-09-29 · 18:45';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -4747,11 +4747,6 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     doc.setFillColor(232, 238, 252); doc.rect(MARGIN, sy, IW, sh, 'F');
     doc.setFillColor(...BRAND_GRN);  doc.rect(MARGIN, sy, 3, sh, 'F');
     const ty = sy + sh/2 + 2.2;
-    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...DARK_BLUE);
-    doc.text(record.store, MARGIN + 9, ty);
-    const sw = doc.getTextWidth(record.store);
-    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GREY_MID);
-    doc.text('·  ' + poNumber, MARGIN + 9 + sw + 5, ty);
     // Company mark, centred: small logo + name. The old footer carried the logo
     // on every page; keeping it here preserves that when the two strips merge.
     doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...DARK_BLUE);
@@ -4759,6 +4754,31 @@ async function p3GeneratePDF(record, lines, storeInfo) {
     const coW = doc.getTextWidth(coName);
     const mkH = sh - 2.2*MM, mkW = logoDataUrl ? mkH * logoAspect : 0, mkGap = logoDataUrl ? 4 : 0;
     const groupX = PW/2 - (mkW + mkGap + coW)/2;
+    // Store and Store Order on the left, kept clear of the centred mark: a long
+    // name ends in "…" rather than running into the logo.
+    const leftX = MARGIN + 9, leftMax = groupX - 8 - leftX;
+    const fit = (txt, maxW) => {
+      if (doc.getTextWidth(txt) <= maxW) return txt;
+      let t = txt;
+      while (t.length > 1 && doc.getTextWidth(t + '…') > maxW) t = t.slice(0, -1);
+      return t.trimEnd() + '…';
+    };
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...DARK_BLUE);
+    const storeTxt = fit(String(record.store || ''), leftMax);
+    doc.text(storeTxt, leftX, ty);
+    const sw = doc.getTextWidth(storeTxt);
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GREY_MID);
+    // The Store Order repeats the store name just printed; show the rest
+    // ("ORDER-20260912", "SP-20260925") so the date — the part that tells
+    // orders apart — fits instead of being cut.
+    const storeName = String(record.store || '');
+    const at = storeName ? poNumber.toUpperCase().indexOf(storeName.toUpperCase()) : -1;
+    const poShort = at < 0 ? poNumber
+      : (poNumber.slice(0, at) + '-' + poNumber.slice(at + storeName.length))
+          .replace(/\s*-[\s-]*-\s*/g, '-').replace(/^[\s\-·]+|[\s\-·]+$/g, '') || poNumber;
+    const poRoom = leftMax - sw - 5;
+    if (poRoom > 20) doc.text(fit('·  ' + poShort, poRoom), leftX + sw + 5, ty);
+    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...DARK_BLUE);
     if (logoDataUrl) {
       try { doc.addImage(logoDataUrl, 'PNG', groupX, sy + (sh - mkH)/2, mkW, mkH, '', 'FAST'); } catch(e) {}
     }
@@ -4799,8 +4819,21 @@ async function p3GeneratePDF(record, lines, storeInfo) {
   const rpX = MARGIN + IW - rpW + 11;
   doc.setFont('helvetica','normal'); doc.setFontSize(5.8); doc.setTextColor(160,195,235);
   doc.setCharSpace(1.3); doc.text('CONCESSION DELIVERY FORM', rpX, curY + bannerH/2 - 3.5); doc.setCharSpace(0);
-  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...WHITE);
-  doc.text(doc.splitTextToSize(poNumber, rpW - 18)[0], rpX, curY + bannerH/2 + 7);
+  // The Store Order starts with the store name, so a long store name made it
+  // wrap — and only the first line was printed ("SAN CARLOS -"). Shrink it to
+  // fit on one line instead; below a readable size, wrap to two lines. Never cut.
+  doc.setFont('helvetica','bold'); doc.setTextColor(...WHITE);
+  const poMaxW = rpW - 18;
+  let poSize = 9.5;
+  doc.setFontSize(poSize);
+  while (doc.getTextWidth(poNumber) > poMaxW && poSize > 7) { poSize -= 0.25; doc.setFontSize(poSize); }
+  if (doc.getTextWidth(poNumber) <= poMaxW) {
+    doc.text(poNumber, rpX, curY + bannerH/2 + 7);
+  } else {
+    doc.setFontSize(7);
+    const poLines = doc.splitTextToSize(poNumber, poMaxW).slice(0, 2);
+    doc.text(poLines, rpX, curY + bannerH/2 + 4.5, { lineHeightFactor: 1.05 });
+  }
   curY += bannerH + 2.5*MM;
 
   // ── META BLOCK ────────────────────────────────────────────────────────────
