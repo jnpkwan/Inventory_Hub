@@ -6439,7 +6439,10 @@ async function ccLoad() {
   await Promise.all([
     settle(gasGet('ping', {}), () => { cc.ping = { ok: true, ms: Math.round(performance.now() - t0) }; }, e => { cc.ping = { ok: false, error: e }; }),
     settle(loadData(), () => {}, () => {}),
-    settle(gasGet('getHealth', { username: u }), h => { cc.health = h; cc.errors = h?.activity?.errors || []; }, e => { cc.healthError = e; }),
+    settle(gasGet('getHealth', { username: u }), h => { cc.health = h;
+      // Failed logins are left out: nearly always a mistyped password. The
+      // ActivityLog sheet still records them.
+      cc.errors = (h?.activity?.errors || []).filter(e => !/^login:/i.test(String(e.detail || ''))); }, e => { cc.healthError = e; }),
     settle(gasGet('getBibleStoresForUser', { username: u }), st => { cc.stores = Array.isArray(st) ? st : []; }, e => { cc.storesError = e; }),
     settle(gasGet('getBibleProductPrices', { username: u }), pm => { cc.prices = pm && typeof pm === 'object' ? pm : {}; }, e => { cc.pricesError = e; }),
     settle(gasGet('getBibleLastModified', {}), m => { cc.bibleMod = m; }, () => {}),
