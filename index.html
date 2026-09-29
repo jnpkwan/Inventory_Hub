@@ -1302,6 +1302,8 @@ function doLogout() {
   clearInterval(S.idleTimer);
   S.idleTimer = null;
   S.user = null;
+  S.stores = [];
+  _storesReq = null;
   S.records = [];
   S.hist = {};
   S._cc = null;
@@ -1366,6 +1368,48 @@ function startIdleTimer() {
 })();
 
 /* ══════════════════ APP START ══════════════════ */
+// Store list for every store dropdown: the Bible STORES tab, scoped to the
+// user. Loaded at login; a dropdown that finds it empty asks again. A failure
+// is reported, never swallowed — an empty list with no message is how the
+// edit form ended up with no stores to pick from.
+let _storesReq = null;
+function loadStores() {
+  if (CFG.offline || !CFG.apiUrl || !S.user) return Promise.resolve(S.stores || []);
+  if (_storesReq) return _storesReq;
+  _storesReq = gasGet('getBibleStoresForUser', { username: S.user.username })
+    .then(sr => {
+      S.stores = (sr || []).map(s => String(s.store || '').trim()).filter(Boolean).sort();
+      return S.stores;
+    })
+    .catch(e => {
+      _storesReq = null;   // let the next dropdown try again
+      toast('Could not load the store list: ' + (e.message || e) + '. Try again in a moment.', 'err');
+      return S.stores || [];
+    });
+  return _storesReq;
+}
+
+// <option>s for a store <select>. The ticket's own store is always there and
+// selected, even before the list arrives or if the Bible doesn't have it —
+// so opening a ticket never shows it with no store.
+function storeOptions(current) {
+  const list = S.stores || [];
+  const cur  = String(current || '').trim();
+  const known = cur && list.includes(cur);
+  return `<option value="">— Select store —</option>`
+    + (cur && !known ? `<option value="${esc(cur)}" selected>${esc(cur)}${list.length ? ' (not in the Bible)' : ''}</option>` : '')
+    + list.map(st => `<option value="${esc(st)}" ${st === cur ? 'selected' : ''}>${esc(st)}</option>`).join('')
+    + (!list.length ? `<option value="" disabled>Loading stores…</option>` : '');
+}
+// Refill an open store <select> once the list arrives, keeping its choice.
+function refreshStoreSelect(id) {
+  if ((S.stores || []).length) return;
+  loadStores().then(() => {
+    const sel = document.getElementById(id);
+    if (sel) { const v = sel.value; sel.innerHTML = storeOptions(v); }
+  });
+}
+
 function startApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
@@ -1393,12 +1437,8 @@ function startApp() {
   // S.month survives only as the default month stamped on a NEW manual record.
   loadData();
 
-  // Fetch stores once at login (non-blocking) — scoped to user's assigned stores via Bible
-  if(!CFG.offline && CFG.apiUrl) {
-    gasGet('getBibleStoresForUser', { username: S.user.username }).then(sr => {
-      S.stores = (sr||[]).map(s => s.store||'').filter(Boolean).sort();
-    }).catch(() => {});
-  }
+  // Store list for dropdowns — non-blocking; see loadStores()
+  loadStores();
 
   // Fetch reconciliation history once at login (non-blocking — phase 1 card sub-label)
   p1LoadHistory();
@@ -2851,10 +2891,7 @@ const refLocked = isEdit && permRole(S.user.role) !== 'EXECUTIVE' && !!String(r.
   return `${p6Banner}
     <div class="frow full"><div class="fg">
       <label>Store Name <span class="req">*</span></label>
-      <select id="f-store" class="ms">
-        <option value="">— Select store —</option>
-        ${(S.stores.length ? S.stores : []).map(s=>`<option value="${s}" ${(r.store||'')=== s?'selected':''}>${s}</option>`).join('')}
-      </select>
+      <select id="f-store" class="ms">${storeOptions(r.store)}</select>
     </div></div>
 
     <div class="frow"><div class="fg">
@@ -3092,6 +3129,7 @@ function openAddModal() {
   S.editingId = null;
   document.getElementById('mo-title').textContent = 'Add CDF Entry';
   document.getElementById('mo-body').innerHTML = buildForm(null);
+  refreshStoreSelect('f-store');
   document.getElementById('mo-footer').innerHTML = `
     <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
     <button class="btn btn-primary" onclick="saveRecord()">Save Entry</button>`;
@@ -3106,6 +3144,7 @@ function openEditModal(uid) {
   S.editingId = uid;
   document.getElementById('mo-title').textContent = 'Edit — ' + r.cdf;
   document.getElementById('mo-body').innerHTML = buildForm(r);
+  refreshStoreSelect('f-store');
   document.getElementById('mo-footer').innerHTML = `
     <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
     <button class="btn btn-primary" onclick="saveRecord()">Save Changes</button>`;
@@ -3302,6 +3341,7 @@ function spDelRow(i){ SP.rows.splice(i,1); if(!SP.rows.length) SP.rows.push(spBl
 function spSet(i, field, v){ SP.rows[i][field] = v; if (field==='store'||field==='acaciaRef') spRenderRows(); else spUpdateSummary(); }
 
 function spRenderRows() {
+  if (!(S.stores || []).length) loadStores().then(list => { if (list.length && document.getElementById('sp-tbody')) spRenderRows(); });
   const storeOpts = (S.stores||[]).map(st=>`<option value="${esc(st)}">${esc(st)}</option>`).join('');
   document.getElementById('sp-tbody').innerHTML = SP.rows.map((r,i)=>`
     <tr style="border-top:1px solid var(--silver)">
