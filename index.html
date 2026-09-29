@@ -6174,7 +6174,12 @@ function ccAnomalies(records, storeSet, priceMap, now = new Date()) {
         if (lines.every(l => qty(l) <= 0)) add(r, 'amber', 'Every line is 0', 'Every line is 0 — nothing to ship');
         if (priceMap && !isReceivedTicket(r)) {
           // Name each product, so the fix in PRODUCT_MASTER is obvious.
-          const noPrice = lines.filter(l => qty(l) > 0 && !(Number(priceMap[l.barcode]) > 0));
+          // Spare parts are allowed to have no price: a spare parts ticket, a
+          // line in the Spare Parts category, or a product named as one
+          // ("SPARE PARTS …", "S.O SPAREPARTS …", "S.O-SPARE PARTS …").
+          const isPart = l => spare || /spare/i.test(String(l.category || ''))
+                                    || /spare\s*-?\s*parts?/i.test(String(l.productName || ''));
+          const noPrice = lines.filter(l => qty(l) > 0 && !(Number(priceMap[l.barcode]) > 0) && !isPart(l));
           if (noPrice.length) {
             const a = { r, sev: 'amber', kind: 'SKUs with no price',
               msg: 'No price in PRODUCT_MASTER: ' + noPrice.map(l => `${String(l.productName || '').trim() || 'Unnamed product'} (${l.barcode || 'no barcode'})`).join('; '),
