@@ -1301,6 +1301,7 @@ function doLogout() {
     localStorage.removeItem('acacia_lastActive');
   } catch(e) {}
   clearInterval(S.pollTimer);
+  clearInterval(S.usersTimer);
   clearInterval(S.idleTimer);
   S.idleTimer = null;
   S.user = null;
@@ -1309,6 +1310,7 @@ function doLogout() {
   S.users = [];
   _usersReq = null;
   S.ownerView = null;
+  S.ownerViewChosen = false;
   S.records = [];
   S.hist = {};
   S._cc = null;
@@ -1409,10 +1411,27 @@ function loadUsers() {
   if (CFG.offline || !CFG.apiUrl || !S.user) return Promise.resolve(S.users || []);
   if (_usersReq) return _usersReq;
   _usersReq = gasGet('getUsers', {})
-    .then(list => { S.users = Array.isArray(list) ? list : []; if (S.phaseFilter === 'p3' || S.phaseFilter === 'p4') renderAll(); return S.users; })
-    .catch(e => { _usersReq = null; toast('Could not load the IA list for the store view: ' + (e.message || e), 'err'); return S.users || []; });
+    .then(list => {
+      S.users = Array.isArray(list) ? list : [];
+      // A default picked before the list arrived is re-decided on fresh data;
+      // a view the person chose themselves is kept.
+      if (!S.ownerViewChosen) S.ownerView = null;
+      if (S.phaseFilter === 'p3' || S.phaseFilter === 'p4') renderAll();
+      return S.users;
+    })
+    .catch(e => {
+      _usersReq = null;
+      // Say so on the first load; a failed background refresh keeps the list it has.
+      if (!(S.users || []).length) toast('Could not load the IA list for the store view: ' + (e.message || e), 'err');
+      return S.users || [];
+    });
   return _usersReq;
 }
+// Store lists get edited in the Users tab while people have the Hub open.
+// Re-read the list every 5 minutes so "My stores" and each IA's stores follow
+// the sheet without a reload.
+const USERS_REFRESH_MS = 5 * 60 * 1000;
+function refreshUsers() { _usersReq = null; return loadUsers(); }
 function ownerStoreSet(raw) {
   const r = String(raw || '').trim();
   if (!r || r === '*') return null;
@@ -1433,12 +1452,14 @@ function getOwnerView() {
     let saved = null;
     try { saved = localStorage.getItem('acacia_ownerView_' + S.user.username); } catch(e) {}
     const mine = S.user.role === 'IS' && ownerStoreSet(ownerUser(S.user.username)?.assignedStores);
+    S.ownerViewChosen = !!saved;
     S.ownerView = saved || (mine ? 'me' : 'all');
   }
   return S.ownerView;
 }
 function setOwnerView(v) {
   S.ownerView = v;
+  S.ownerViewChosen = true;
   try { localStorage.setItem('acacia_ownerView_' + S.user.username, v); } catch(e) {}
   S.expandedId = null;
   renderAll();
@@ -1527,6 +1548,8 @@ function startApp() {
   // Poll every 30s if connected
   if (!CFG.offline && CFG.apiUrl) {
     S.pollTimer = setInterval(loadData, 30000);
+    clearInterval(S.usersTimer);
+    S.usersTimer = setInterval(refreshUsers, USERS_REFRESH_MS);
   }
 
   // Measure toolbar bottom for sub-card sticky position
