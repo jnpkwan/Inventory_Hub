@@ -1226,7 +1226,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-29 · 18:45';
+const HUB_BUILD = '2026-09-29 · 20:15';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -6315,8 +6315,8 @@ function ccExportReport() {
     ['Severity', 'Phase', 'Stage', 'Days', 'Rule', 'Store', 'IA', 'Store Order', 'CDF Ref', 'Last Updated By', 'Last Updated'],
     stuckRows, [11, 10, 28, 8, 40, 26, 20, 34, 17, 19, 19], [0, 1, 3, 10], 0), 'Stuck Tickets');
   XLSX.utils.book_append_sheet(wb, sheet(
-    ['Store', 'Last Delivery', 'Days Since'],
-    covRows, [30, 18, 13], [1, 2], -1), `No Delivery ${CC_DELIVERY_WINDOW}d`);
+    ['Store', 'Last Received Delivery', 'Days Since'],
+    covRows, [30, 26, 13], [1, 2], -1), `No Delivery ${CC_DELIVERY_WINDOW}d`);
   XLSX.writeFile(wb, `acacia-command-center-${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast(`Report downloaded: ${anomRows.length} anomal${anomRows.length !== 1 ? 'ies' : 'y'}, ${stuckRows.length} stuck, ${covRows.length} store${covRows.length !== 1 ? 's' : ''} with no delivery.`);
 }
@@ -6775,7 +6775,7 @@ function ccRender(force) {
 
   const covBody = !cc.stores ? `<div class="cc-empty">Bible stores didn't load — see System.</div>`
     : !coverage.length ? `<div class="cc-empty">Every store has had a delivery in the past ${CC_DELIVERY_WINDOW} days or has an order in progress.</div>`
-    : `<div style="overflow-x:auto"><table class="cc-tbl" style="max-width:640px"><thead><tr><th>Store</th><th>Last delivery</th></tr></thead><tbody>
+    : `<div style="overflow-x:auto"><table class="cc-tbl" style="max-width:640px"><thead><tr><th>Store</th><th>Last received delivery</th></tr></thead><tbody>
         ${coverage.map(c => `<tr>
           <td style="font-weight:700;white-space:nowrap">${dot('red')}${esc(c.store)}</td>
           <td>${c.last ? `${fmtD(c.last)} <span style="color:#aaa">· ${c.days} days ago</span>` : '<span style="color:#999">None on record</span>'}</td>
