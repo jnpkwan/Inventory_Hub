@@ -621,6 +621,8 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .cc-empty{font-size:11.5px;color:#999;padding:8px 0}
 .cc-ctrl{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#666}
 .cc-ctrl input[type=number]{width:56px;padding:3px 6px;border:1px solid var(--silver);border-radius:5px;font-size:11px;text-align:center}
+.owner-view{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--slate)}
+.owner-view select{text-transform:none;letter-spacing:0;font-weight:600}
 .cc-grp{border-bottom:1px solid var(--mist)}
 .cc-grp:last-child{border-bottom:none}
 .cc-grp-hd{display:flex;align-items:baseline;gap:10px;padding:8px 0;cursor:pointer;font-size:11.5px}
@@ -1304,6 +1306,9 @@ function doLogout() {
   S.user = null;
   S.stores = [];
   _storesReq = null;
+  S.users = [];
+  _usersReq = null;
+  S.ownerView = null;
   S.records = [];
   S.hist = {};
   S._cc = null;
@@ -1389,6 +1394,80 @@ function loadStores() {
   return _storesReq;
 }
 
+/* ── Ticket ownership view ──────────────────────────────────────────────────
+   For IAs, assignedStores in the Users tab is OWNERSHIP, not access: every IA
+   can open every store, so they can cover for each other. This view only
+   chooses whose stores are shown — a filter on screen, never a permission.
+     'me'  the signed-in IA's own stores  ·  'all'  every store
+     <username>  that IA's stores (covering for them)
+   IAs start on 'me' when they have a store list; Executives/Managers on
+   'all'. Coordinators don't get it — their list still limits access.
+   Remembered per person, in this browser.
+────────────────────────────────────────────────────────────────────────── */
+let _usersReq = null;
+function loadUsers() {
+  if (CFG.offline || !CFG.apiUrl || !S.user) return Promise.resolve(S.users || []);
+  if (_usersReq) return _usersReq;
+  _usersReq = gasGet('getUsers', {})
+    .then(list => { S.users = Array.isArray(list) ? list : []; if (S.phaseFilter === 'p3' || S.phaseFilter === 'p4') renderAll(); return S.users; })
+    .catch(e => { _usersReq = null; toast('Could not load the IA list for the store view: ' + (e.message || e), 'err'); return S.users || []; });
+  return _usersReq;
+}
+function ownerStoreSet(raw) {
+  const r = String(raw || '').trim();
+  if (!r || r === '*') return null;
+  return new Set(r.split(',').map(x => x.trim().toUpperCase()).filter(Boolean));
+}
+function canPickOwner() { return !!S.user && ['IS', 'EXECUTIVE'].includes(permRole(S.user.role)); }
+// The freshest copy of a user: the Users list if loaded, else the login record.
+function ownerUser(username) {
+  return (S.users || []).find(u => u.username === username) || (S.user && S.user.username === username ? S.user : null);
+}
+function ownerIAs() {
+  return (S.users || []).filter(u => u.role === 'IS' && String(u.active).trim().toLowerCase() === 'true' && ownerStoreSet(u.assignedStores))
+    .sort((a, b) => String(a.name || a.username).localeCompare(String(b.name || b.username)));
+}
+function getOwnerView() {
+  if (!canPickOwner()) return 'all';
+  if (S.ownerView == null) {
+    let saved = null;
+    try { saved = localStorage.getItem('acacia_ownerView_' + S.user.username); } catch(e) {}
+    const mine = S.user.role === 'IS' && ownerStoreSet(ownerUser(S.user.username)?.assignedStores);
+    S.ownerView = saved || (mine ? 'me' : 'all');
+  }
+  return S.ownerView;
+}
+function setOwnerView(v) {
+  S.ownerView = v;
+  try { localStorage.setItem('acacia_ownerView_' + S.user.username, v); } catch(e) {}
+  S.expandedId = null;
+  renderAll();
+}
+// Stores in the current view, or null for every store. A view that no longer
+// resolves (no list yet, IA removed) shows every store rather than nothing.
+function ownerStores() {
+  const v = getOwnerView();
+  if (v === 'all') return null;
+  const u = ownerUser(v === 'me' ? S.user.username : v);
+  return u ? ownerStoreSet(u.assignedStores) : null;
+}
+function applyOwnerView(records) {
+  const set = ownerStores();
+  return set ? records.filter(r => set.has(String(r.store || '').trim().toUpperCase())) : records;
+}
+function ownerToggle() {
+  if (!canPickOwner()) return '';
+  const v = getOwnerView();
+  const me = S.user.role === 'IS' && ownerStoreSet(ownerUser(S.user.username)?.assignedStores);
+  const opt = (val, label) => `<option value="${esc(val)}" ${v === val ? 'selected' : ''}>${esc(label)}</option>`;
+  const others = ownerIAs().filter(u => u.username !== S.user.username);
+  return `<label class="owner-view" onclick="event.stopPropagation()">Showing
+    <select class="fs${v !== 'all' ? ' active' : ''}" onchange="setOwnerView(this.value)">
+      ${me ? opt('me', 'My stores') : ''}${opt('all', 'All stores')}
+      ${others.map(u => opt(u.username, `${u.name || u.username}'s stores`)).join('')}
+    </select></label>`;
+}
+
 // <option>s for a store <select>. The ticket's own store is always there and
 // selected, even before the list arrives or if the Bible doesn't have it —
 // so opening a ticket never shows it with no store.
@@ -1437,8 +1516,9 @@ function startApp() {
   // S.month survives only as the default month stamped on a NEW manual record.
   loadData();
 
-  // Store list for dropdowns — non-blocking; see loadStores()
+  // Store list for dropdowns and the IA list for the store view — non-blocking
   loadStores();
+  loadUsers();
 
   // Fetch reconciliation history once at login (non-blocking — phase 1 card sub-label)
   p1LoadHistory();
@@ -1497,7 +1577,8 @@ async function loadData() {
 
     // Role filter on offline data — same rule as the server:
     // '*' = every store · a list = those stores · blank = none.
-    if (CFG.offline && (S.user.role === 'IS' || S.user.role === 'COORDINATOR')) {
+    // IAs access every store (their list is ownership — see the store view).
+    if (CFG.offline && S.user.role === 'COORDINATOR') {
       const raw = (S.user.assignedStores || '').trim();
       if (raw !== '*') {
         const assigned = raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
@@ -1603,7 +1684,7 @@ function renderAll() {
   const filtered = getFiltered();
   renderSummary(S.records);
   renderTable(filtered);
-  const total = S.records.length;
+  const total = applyOwnerView(S.records).length;
   const pill = document.getElementById('total-pill');
   if (pill) pill.textContent = total + ' CDF' + (total !== 1 ? 's' : '');
   setShownCount(filtered.length, total);
@@ -1623,7 +1704,7 @@ function onSearchInput() {
   S.expandedId = null;
   const filtered = getFiltered();
   renderTable(filtered);
-  const total = S.records.length;
+  const total = applyOwnerView(S.records).length;
   setShownCount(filtered.length, total);
 }
 
@@ -1705,7 +1786,7 @@ function getFiltered() {
   // filter, so it used to throw them all away first: card said 8, table said 0.
   // The card wins while it is selected; the preference resumes on any other card.
   const wantsReceived = S.subFilter === 'p4_recv';
-  return S.records.filter(r => {
+  return applyOwnerView(S.records).filter(r => {
     if (S.hideReceived && !wantsReceived && isReceivedTicket(r)) return false;
     if (fRoute && routeLabel(r)!==fRoute) return false;
     if (fType  && r.type !==fType)  return false;
@@ -1764,7 +1845,7 @@ function needsAttention(r, days = S.attnDays || ATTN_DEFAULT_DAYS, now = new Dat
 
 /* ── Phase pipeline summary (top of page) ── */
 function renderSummary(rows) {
-  const all = S.records;
+  const all = applyOwnerView(S.records);   // the store view (My stores / an IA's / all)
 
   // ── Needs-attention IDs (reused across renders) ───────────────────────────
   const needsAttn = all.filter(r => needsAttention(r));
@@ -1844,7 +1925,7 @@ function renderSummary(rows) {
         +'</div>'
       : '';
     subHTML = '<div class="sub-summary">'
-      +'<div class="sub-label">Phase 3 — Approvals breakdown</div>'
+      +'<div class="sub-label" style="display:flex;align-items:center;gap:10px">Phase 3 — Approvals breakdown'+ownerToggle()+'</div>'
       +uploadCard
       +mkSub('p3_await', '🔍','Awaiting IA Review',     smAwait,   '#F9A825')  // amber — action needed
       +mkSub('p3_pdf',   '📄','PDF Pending',            pdfPend,   '#F9A825')  // amber — action needed
@@ -1885,7 +1966,7 @@ function renderSummary(rows) {
         +'</div>'
       : '';
     subHTML = '<div class="sub-summary">'
-      +'<div class="sub-label">Phase 4 — Fulfillment &amp; Dispatch breakdown</div>'
+      +'<div class="sub-label" style="display:flex;align-items:center;gap:10px">Phase 4 — Fulfillment &amp; Dispatch breakdown'+ownerToggle()+'</div>'
       +spCard
       // One card per status, driven off STATUS_META rather than a hand-picked
       // list, so a status can never exist without a card and the status cards
@@ -3553,7 +3634,7 @@ const P4_EXPORT_BUCKETS = ['WHS Prepare Order','Awaiting Actual Count','Pending 
                            'In Transit','On Hold','Received'];
 
 function p4OpenExportModal() {
-  const all = (S.records||[]).filter(r => String(r.storeStatus||'')==='Approved');
+  const all = applyOwnerView(S.records||[]).filter(r => String(r.storeStatus||'')==='Approved');
   const tally = {}; P4_EXPORT_BUCKETS.forEach(b => tally[b]=0);
   let attn = 0;
   all.forEach(r => {
@@ -3610,7 +3691,7 @@ function p4ExportSelection() {
   const boxes = [...document.querySelectorAll('#p4-export-modal .p4x')];
   const picked = new Set(boxes.filter(b=>b.checked && b.value!=='__attn').map(b=>b.value));
   const attnOnly = boxes.some(b=>b.value==='__attn' && b.checked);
-  return (S.records||[]).filter(r => {
+  return applyOwnerView(S.records||[]).filter(r => {
     const b = p4Bucket(r);
     if (!b || !picked.has(b)) return false;
     if (attnOnly && !(S._attnIds && S._attnIds.has(r.id||r.cdf))) return false;
@@ -6366,7 +6447,8 @@ function ccSystemChecks(cc) {
       list.forEach(u => { const k = u.username.toLowerCase(); if (seen[k]) dups.add(u.username); seen[k] = 1; });
       if (dups.size) add('red', 'Duplicate usernames', [...dups].join(', '));
       const active = list.filter(u => u.active && u.hasId);
-      const blind = active.filter(u => (u.role === 'IS' || u.role === 'COORDINATOR') && !u.assignedStores);
+      // Only Coordinators: an IA with a blank list still sees every store.
+      const blind = active.filter(u => u.role === 'COORDINATOR' && !u.assignedStores);
       if (blind.length) add('red', 'Users who see no tickets', blind.map(u => u.username).join(', ') + ' — assignedStores is blank');
       if (!noId.length && !dups.size && !blind.length) add('ok', 'Users', `${active.length} active`);
     }
@@ -6457,6 +6539,7 @@ function ccOpenTicket(uid) {
   if (!r) { toast('That ticket is no longer in the Hub.', 'err'); return; }
   S.phaseFilter = (r.storeStatus || '') === 'Approved' ? 'p4' : 'p3';
   S.subFilter = ''; S.fRoute = ''; S.fType = '';
+  if (!applyOwnerView([r]).length) S.ownerView = 'all';   // don't land on a hidden ticket
   S.searchTerm = r.cdf || '';
   S.expandedId = uid;
   renderAll();
@@ -6787,6 +6870,7 @@ function p1AssignedSet()  {
   // listed in the UI and zero records behind it.
   if (!S.user) return null;
   if (permRole(S.user.role) === 'EXECUTIVE') return null;
+  if (S.user.role === 'IS') return null;   // IAs access every store; their list is ownership only
   const raw = (S.user.assignedStores || '').trim();
   if (raw === '*') return null;
   return new Set(raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
