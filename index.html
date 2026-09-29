@@ -631,6 +631,10 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .kpi-t{background:var(--mist);border-radius:10px;padding:10px 12px}
 .kpi-n{font-family:'Montserrat',sans-serif;font-weight:800;font-size:20px;color:var(--ink);line-height:1.1}
 .kpi-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--slate);margin-top:3px}
+.kd{font-size:11px;font-weight:700;margin-left:6px;vertical-align:3px;white-space:nowrap}
+.kd-g{color:var(--green-dd)} .kd-b{color:var(--red-d)} .kd-n{color:#999}
+.kpi-own{font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-pale);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.kpi-wait{font-size:10px;font-weight:600;color:var(--slate);background:var(--mist);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .kpi-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--slate);padding:10px 0 6px}
 .cc-grp{border-bottom:1px solid var(--mist)}
 .cc-grp:last-child{border-bottom:none}
@@ -1237,7 +1241,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-29 · 21:00';
+const HUB_BUILD = '2026-09-29 · 23:45';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -4621,6 +4625,11 @@ async function generatePDF(uid) {
 
     await p3GeneratePDF(r, lines, storeInfo);
 
+    // A re-download (the Executive's Regenerate) changes nothing on the ticket:
+    // who generated the PDF and when stay the original IA's. Overwriting them
+    // took the IA's credit and made the step look slow in Team KPIs.
+    if (r.pdfStatus === 'Generated') { toast('✅ PDF downloaded again.'); return; }
+
     // Mark as Generated
     const patch = {
       pdfStatus:      'Generated',
@@ -6329,22 +6338,39 @@ function ccExportReport() {
     ['Store', 'Last Received Delivery', 'Days Since'],
     covRows, [30, 26, 13], [1, 2], -1), `No Delivery ${CC_DELIVERY_WINDOW}d`);
   // Team KPIs — Executives only, like the section. Times are numbers of days
-  // (sortable); a blank means no timed steps, never zero.
+  // (sortable); a blank means nothing to time, never zero.
   if (kpiIsViewer()) {
     const kd = [7, 30, 90].includes(ccPrefs().kpiDays) ? ccPrefs().kpiDays : 30;
-    const K = kpiCompute(records, kd);
+    const K = kpiCompute(records, kd), P = kpiCompute(records, kd, K.now - kd * KPI_DAY);
     const days = ms => ms == null ? '' : Math.round(ms / 8640000) / 10;
     const pct  = v => v == null ? '' : Math.round(v * 100);
     const nameOf = u => { const x = users.find(v => v.username === u); return x && x.name ? x.name : u; };
+    const row = cells => ({ sev: 'amber', store: '', cells });
     XLSX.utils.book_append_sheet(wb, sheet(
-      ['Step', 'Done', 'Median (days)', 'Slowest 10% over (days)', `Within ${KPI_ON_TIME_DAYS}d (%)`],
-      K.steps.map(x => ({ sev: 'amber', store: '', cells: [x.label, x.done, days(x.median), days(x.p90), pct(x.onTime)] })),
-      [24, 9, 15, 24, 16], [1, 2, 3, 4], -1), `KPI Steps ${kd}d`);
+      ['Step', 'Type', 'Done', 'Median (days)', `Median, previous ${kd}d (days)`, 'Slowest 10% over (days)', `Within ${KPI_ON_TIME_DAYS}d (%)`],
+      K.steps.map((x, i) => row([x.label, x.own ? 'Own work' : `Waiting on ${x.waitOn}`, x.done, days(x.median), days(P.steps[i].median), days(x.p90), pct(x.onTime)])),
+      [22, 26, 8, 14, 26, 22, 14], [2, 3, 4, 5, 6], -1), `KPI Steps ${kd}d`);
+    const own = ccStoreIAs(users);
+    const byIAx = ccByIA(users, stuck, anomalies);
+    const peopleBy = Object.fromEntries(K.people.map(p => [p.who, p]));
     XLSX.utils.book_append_sheet(wb, sheet(
-      ['Person', 'Username', 'Steps', 'Per day', `Within ${KPI_ON_TIME_DAYS}d (%)`, 'What they did'],
-      K.people.map(x => ({ sev: 'amber', store: '', cells: [nameOf(x.who), x.who, x.done, Math.round(x.perDay * 10) / 10, pct(x.onTime),
-        x.mix.map(m => `${m.n} ${m.label}`).join(' · ')] })),
-      [24, 16, 9, 10, 16, 60], [2, 3, 4], -1), `KPI People ${kd}d`);
+      ['IA', 'Username', 'Stores', 'Open tickets', 'Current issues', 'Own steps', 'Median review (days)', 'Median send to WHS (days)', `Own work within ${KPI_ON_TIME_DAYS}d (%)`],
+      own.ias.map(u => {
+        const lst = own.listed.find(x => x.u === u), p = peopleBy[u.username];
+        const open = lst ? records.filter(r => lst.stores.has(storeKey(r.store)) && !isReceivedTicket(r)).length : '';
+        const issues = byIAx.rows.find(x => x.u.username === u.username)?.items.length ?? '';
+        return row([nameOf(u.username), u.username, lst ? lst.stores.size : 'All (*)', open, issues, p ? p.ownDone : 0,
+                    p ? days(p.reviewMedian) : '', p ? days(p.whsMedian) : '', p ? pct(p.ownOnTime) : '']);
+      }), [22, 16, 9, 12, 13, 10, 18, 22, 18], [2, 3, 4, 5, 6, 7, 8], -1), `KPI IA Scorecard ${kd}d`);
+    XLSX.utils.book_append_sheet(wb, sheet(
+      ['Person', 'Username', 'Steps', 'Per day', 'What they did'],
+      K.people.filter(p => !own.ias.some(u => u.username === p.who))
+        .map(x => row([nameOf(x.who), x.who, x.done, Math.round(x.perDay * 10) / 10, x.mix.map(m => `${m.n} ${m.label}`).join(' · ')])),
+      [22, 16, 9, 10, 60], [2, 3], -1), `KPI Others ${kd}d`);
+    XLSX.utils.book_append_sheet(wb, sheet(
+      ['Week to', 'Orders created', 'Deliveries received', 'Backlog change'],
+      K.flow.weeks.map(w => row([new Date(w.end).toISOString().slice(0, 10), w.created, w.received, w.created - w.received])),
+      [14, 16, 20, 16], [1, 2, 3], -1), `KPI Flow ${kd}d`);
   }
   XLSX.writeFile(wb, `acacia-command-center-${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast(`Report downloaded: ${anomRows.length} anomal${anomRows.length !== 1 ? 'ies' : 'y'}, ${stuckRows.length} stuck, ${covRows.length} store${covRows.length !== 1 ? 's' : ''} with no delivery.`);
@@ -6613,15 +6639,19 @@ function ccByIA(users, stuck, anomalies) {
      · steps the ticket isn't actually past (e.g. an IA "Request Changes"
        writes the same stamp as an approval).
 ────────────────────────────────────────────────────────────────────────── */
+// own:true — the person clicking controls the time (their own work).
+// own:false — the time is mostly waiting on someone outside the team; it's
+// shown for the process, but never counted for or against a person.
 const KPI_STEPS = [
-  { key: 'ia',    label: 'IA review',          end: 'smgrApprovedAt', by: 'smgrApprovedBy', start: r => r.createdAt,                  done: r => r.smgrStatus === 'Approved' },
-  { key: 'pdf',   label: 'PDF generated',      end: 'pdfGeneratedAt', by: 'pdfGeneratedBy', start: r => r.smgrApprovedAt,             done: r => r.pdfStatus === 'Generated' },
-  { key: 'merch', label: 'Merchandiser step',  end: 'merchAt',        by: 'merchBy',        start: r => r.pdfGeneratedAt,             done: r => r.merchStatus === 'Reviewed' },
-  { key: 'store', label: 'Store Manager step', end: 'storeUpdatedAt', by: 'storeUpdatedBy', start: r => r.merchAt || r.pdfGeneratedAt, done: r => r.storeStatus === 'Approved' },
-  { key: 'whs',   label: 'Sent to warehouse',  end: 'sentToWhsAt',    by: 'sentToWhsBy',    start: r => r.storeUpdatedAt,             done: r => !!r.fulfillStatus },
-  { key: 'act',   label: 'Actuals confirmed',  end: 'fulfillAt',      by: 'fulfillBy',      start: r => r.sentToWhsAt,                done: r => ['Actuals Logged', 'Partial'].includes(r.fulfillStatus) },
+  { key: 'ia',    label: 'IA review',          own: true,                          end: 'smgrApprovedAt', by: 'smgrApprovedBy', start: r => r.createdAt,                    done: r => r.smgrStatus === 'Approved' },
+  { key: 'pdf',   label: 'PDF generated',      own: true,                          end: 'pdfGeneratedAt', by: 'pdfGeneratedBy', start: r => r.smgrApprovedAt,               done: r => r.pdfStatus === 'Generated' },
+  { key: 'merch', label: 'Merchandiser step',  own: false, waitOn: 'Merchandiser', end: 'merchAt',        by: 'merchBy',        start: r => r.pdfGeneratedAt,               done: r => r.merchStatus === 'Reviewed' },
+  { key: 'store', label: 'Store Manager step', own: false, waitOn: 'Store Manager', end: 'storeUpdatedAt', by: 'storeUpdatedBy', start: r => r.merchAt || r.pdfGeneratedAt, done: r => r.storeStatus === 'Approved' },
+  { key: 'whs',   label: 'Sent to warehouse',  own: true,                          end: 'sentToWhsAt',    by: 'sentToWhsBy',    start: r => r.storeUpdatedAt,               done: r => !!r.fulfillStatus },
+  { key: 'act',   label: 'Actuals confirmed',  own: false, waitOn: 'warehouse',    end: 'fulfillAt',      by: 'fulfillBy',      start: r => r.sentToWhsAt,                  done: r => ['Actuals Logged', 'Partial'].includes(r.fulfillStatus) },
 ];
 const KPI_ON_TIME_DAYS = 7;   // the same limit Stuck Tickets uses
+const KPI_DAY = 86400000;
 
 function kpiTime(v) { const t = new Date(v).getTime(); return isNaN(t) ? null : t; }
 function kpiMedian(xs) {
@@ -6630,15 +6660,24 @@ function kpiMedian(xs) {
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 }
 function kpiPct(xs, p) { if (!xs.length) return null; const a = xs.slice().sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(p * a.length))]; }
+function kpiOnTime(durs) { return durs.length ? durs.filter(d => d <= KPI_ON_TIME_DAYS * KPI_DAY).length / durs.length : null; }
 function kpiDur(ms) {
   if (ms == null) return '—';
   const h = ms / 3600000;
   return h < 24 ? `${Math.max(1, Math.round(h))}h` : `${(h / 24).toFixed(1)}d`;
 }
+// A migrated ticket carries delivery history older than the ticket itself.
+// Its creation date is the migration, not a new order — so it isn't inflow.
+function kpiMigrated(r) {
+  const c = kpiTime(r.createdAt); if (c == null) return false;
+  const created = new Date(c); const cDay = new Date(created.getFullYear(), created.getMonth(), created.getDate()).getTime();
+  return [r.dWhs, r.dSdc, r.dDirect, r.dCdc, r.dSdc2, r.dCdc2, r.dRecv].some(d => { const x = ccDate(d); return x && x.getTime() < cDay; });
+}
 
-// Every credited step completed in the window, plus deliveries received in it.
+// Everything in the window [now − days, now]. Pass an earlier `now` for the
+// previous period (the comparison arrows).
 function kpiCompute(records, days, now = Date.now()) {
-  const from = now - days * 86400000, DAY = 86400000;
+  const from = now - days * KPI_DAY;
   const events = [];
   records.forEach(r => {
     const created = kpiTime(r.createdAt);
@@ -6649,34 +6688,59 @@ function kpiCompute(records, days, now = Date.now()) {
       if (created != null && Math.abs(end - created) < 60000) return;   // auto-stamped at creation
       const start = kpiTime(st.start(r));
       const dur = start != null && end >= start ? end - start : null;
-      events.push({ r, step: st.key, who, end, dur });
+      events.push({ r, step: st.key, own: st.own, who, end, dur });
     });
   });
+  const durs = ev => ev.map(e => e.dur).filter(d => d != null);
   const steps = KPI_STEPS.map(st => {
-    const ev = events.filter(e => e.step === st.key), durs = ev.map(e => e.dur).filter(d => d != null);
-    return { key: st.key, label: st.label, done: ev.length, median: kpiMedian(durs), p90: kpiPct(durs, 0.9),
-             onTime: durs.length ? durs.filter(d => d <= KPI_ON_TIME_DAYS * DAY).length / durs.length : null };
+    const ev = events.filter(e => e.step === st.key), d = durs(ev);
+    return { key: st.key, label: st.label, own: st.own, waitOn: st.waitOn || '', done: ev.length,
+             median: kpiMedian(d), p90: kpiPct(d, 0.9), onTime: kpiOnTime(d) };
   });
   const byWho = {};
   events.forEach(e => { (byWho[e.who] = byWho[e.who] || []).push(e); });
   const people = Object.entries(byWho).map(([who, ev]) => {
-    const durs = ev.map(e => e.dur).filter(d => d != null);
-    const mix = KPI_STEPS.map(st => ({ label: st.label, n: ev.filter(e => e.step === st.key).length })).filter(x => x.n);
-    return { who, done: ev.length, perDay: ev.length / days, mix,
-             onTime: durs.length ? durs.filter(d => d <= KPI_ON_TIME_DAYS * DAY).length / durs.length : null };
+    const own = ev.filter(e => e.own);
+    const med = key => kpiMedian(durs(ev.filter(e => e.step === key)));
+    return { who, done: ev.length, ownDone: own.length, perDay: ev.length / days,
+             ownOnTime: kpiOnTime(durs(own)), reviewMedian: med('ia'), whsMedian: med('whs'),
+             mix: KPI_STEPS.map(st => ({ label: st.label, n: ev.filter(e => e.step === st.key).length })).filter(x => x.n) };
   }).sort((a, b) => b.done - a.done || a.who.localeCompare(b.who));
-  // Created → received, for tickets received in the window. A received date
-  // before the ticket existed in the Hub (migrated history) is skipped.
+  // Created → received, for deliveries received in the window (whole-day
+  // received dates are taken at midday). Migrated history is skipped.
   const e2e = records.filter(r => isReceivedTicket(r)).map(r => {
     const rec = ccDate(r.dRecv), created = kpiTime(r.createdAt);
     if (!rec || created == null) return null;
-    const t = rec.getTime() + DAY / 2;   // received dates are whole days
-    return t >= from && t <= now + DAY && t >= created ? t - created : null;
+    const t = rec.getTime() + KPI_DAY / 2;
+    return t >= from && t <= now + KPI_DAY && t >= created ? t - created : null;
   }).filter(x => x != null);
-  const allDurs = events.map(e => e.dur).filter(d => d != null);
-  return { days, events: events.length, steps, people,
+  // Inflow vs outflow, in 7-day buckets counting back from `now`.
+  const weeks = [];
+  for (let i = 0; i < Math.ceil(days / 7); i++) {
+    const hi = now - i * 7 * KPI_DAY, lo = Math.max(from, hi - 7 * KPI_DAY);
+    weeks.push({ end: hi, created: 0, received: 0, lo, hi });
+  }
+  let created = 0, received = 0;
+  records.forEach(r => {
+    const c = kpiTime(r.createdAt);
+    if (c != null && c >= from && c <= now && !kpiMigrated(r)) {
+      created++; const w = weeks.find(w => c > w.lo && c <= w.hi) || weeks[weeks.length - 1]; w.created++;
+    }
+    const rd = isReceivedTicket(r) ? ccDate(r.dRecv) : null;
+    const t = rd ? rd.getTime() + KPI_DAY / 2 : null;
+    if (t != null && t >= from && t <= now + KPI_DAY) {
+      received++; const w = weeks.find(w => t > w.lo && t <= w.hi) || weeks[0]; w.received++;
+    }
+  });
+  return { days, now, events: events.length, steps, people,
            received: e2e.length, e2eMedian: kpiMedian(e2e),
-           onTime: allDurs.length ? allDurs.filter(d => d <= KPI_ON_TIME_DAYS * DAY).length / allDurs.length : null };
+           ownOnTime: kpiOnTime(durs(events.filter(e => e.own))),
+           flow: { created, received, net: created - received, weeks: weeks.reverse() },
+           _events: events };
+}
+// Per-person step durations for one step key (used by the IA scorecard).
+function kpiPersonMedian(K, who, key) {
+  return kpiMedian(K._events.filter(e => e.who === who && e.step === key && e.dur != null).map(e => e.dur));
 }
 function kpiIsViewer() { return normRole(S.user?.role) === 'EXECUTIVE'; }   // Managers excluded for now
 function ccSetKpiDays(d) { ccPrefs().kpiDays = d; ccSavePrefs(); ccRender(true); }
@@ -7000,31 +7064,77 @@ function ccRender(force) {
   if (kpiIsViewer()) {
     const kd = [7, 30, 90].includes(prefs.kpiDays) ? prefs.kpiDays : 30;
     const K = kpiCompute(records, kd);
-    const nameOf = u => { const x = (users || []).find(v => v.username === u); return x && x.name ? `${x.name} (${u})` : u; };
+    const P = kpiCompute(records, kd, K.now - kd * KPI_DAY);   // the period before, for ↑/↓
+    const userOf = u => (users || []).find(v => v.username === u);
+    const nameOf = u => { const x = userOf(u); return x && x.name ? `${x.name} (${u})` : u; };
     const pct = v => v == null ? '—' : Math.round(v * 100) + '%';
-    const tile = (n, l) => `<div class="kpi-t"><div class="kpi-n">${n}</div><div class="kpi-l">${l}</div></div>`;
+    // ↑/↓ against the previous period. `better` says which way is good.
+    const delta = (cur, prev, better, fmt) => {
+      if (cur == null || prev == null || cur === prev) return '';
+      const up = cur > prev, good = better === 'none' ? null : (better === 'up') === up;
+      const cls = good == null ? 'kd-n' : good ? 'kd-g' : 'kd-b';
+      return `<span class="kd ${cls}" title="Previous ${kd} days: ${fmt(prev)}">${up ? '▲' : '▼'} ${fmt(Math.abs(cur - prev))}</span>`;
+    };
+    const num = v => String(Math.round(v * 10) / 10);
+    const pts = v => Math.round(v * 100) + ' pts';
+    const tile = (n, l, d) => `<div class="kpi-t"><div class="kpi-n">${n}${d || ''}</div><div class="kpi-l">${l}</div></div>`;
+    const net = K.flow.net;
     const kpiBody = `
-      <div class="kpi-win">Last ${[7, 30, 90].map(d => `<button class="${d === kd ? 'on' : ''}" onclick="ccSetKpiDays(${d})">${d} days</button>`).join('')}</div>
+      <div class="kpi-win">Last ${[7, 30, 90].map(d => `<button class="${d === kd ? 'on' : ''}" onclick="ccSetKpiDays(${d})">${d} days</button>`).join('')}
+        <span style="text-transform:none;letter-spacing:0;font-weight:600;color:#999;margin-left:6px">▲▼ compare with the ${kd} days before</span></div>
       <div class="kpi-tiles">
-        ${tile(K.events, 'Steps completed')}
-        ${tile((K.events / kd).toFixed(1), 'Steps per day')}
-        ${tile(K.received, 'Deliveries received')}
-        ${tile(kpiDur(K.e2eMedian), 'Median created → received')}
-        ${tile(pct(K.onTime), `Steps done within ${KPI_ON_TIME_DAYS} days`)}
+        ${tile(K.events, 'Steps completed', delta(K.events, P.events, 'up', num))}
+        ${tile(K.received, 'Deliveries received', delta(K.received, P.received, 'up', num))}
+        ${tile(kpiDur(K.e2eMedian), 'Median created → received', delta(K.e2eMedian, P.e2eMedian, 'down', kpiDur))}
+        ${tile(pct(K.ownOnTime), `Own work within ${KPI_ON_TIME_DAYS} days`, delta(K.ownOnTime, P.ownOnTime, 'up', pts))}
+        ${tile((net > 0 ? '+' : '') + net, `Backlog change · ${K.flow.created} in, ${K.flow.received} out`, delta(net, P.flow.net, 'down', num))}
       </div>
-      ${!K.events ? `<div class="cc-empty">No steps completed through the Hub in the last ${kd} days yet.</div>` : `
+      ${!K.events && !K.flow.created && !K.flow.received ? `<div class="cc-empty">Nothing recorded through the Hub in the last ${kd} days yet.</div>` : `
       <div class="kpi-h">By step</div>
-      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Step</th><th>Done</th><th>Median time</th><th>Slowest 10% over</th><th>Within ${KPI_ON_TIME_DAYS}d</th></tr></thead><tbody>
-        ${K.steps.map(x => `<tr><td style="font-weight:700">${esc(x.label)}</td><td>${x.done}</td><td>${kpiDur(x.median)}</td><td>${kpiDur(x.p90)}</td><td>${pct(x.onTime)}</td></tr>`).join('')}
-      </tbody></table></div>
-      <div class="kpi-h">By person</div>
-      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Person</th><th>Steps</th><th>Per day</th><th>Within ${KPI_ON_TIME_DAYS}d</th><th>What they did</th></tr></thead><tbody>
-        ${K.people.map(x => `<tr><td style="font-weight:700;white-space:nowrap">${esc(nameOf(x.who))}</td><td>${x.done}</td><td>${x.perDay.toFixed(1)}</td><td>${pct(x.onTime)}</td>
-          <td style="color:#666">${esc(x.mix.map(m => `${m.n} ${m.label}`).join(' · '))}</td></tr>`).join('')}
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Step</th><th>Type</th><th>Done</th><th>Median time</th><th>vs before</th><th>Slowest 10% over</th><th>Within ${KPI_ON_TIME_DAYS}d</th></tr></thead><tbody>
+        ${K.steps.map((x, i) => `<tr><td style="font-weight:700">${esc(x.label)}</td>
+          <td>${x.own ? '<span class="kpi-own">Own work</span>' : `<span class="kpi-wait">Waiting on ${esc(x.waitOn)}</span>`}</td>
+          <td>${x.done}</td><td>${kpiDur(x.median)}</td><td>${delta(x.median, P.steps[i].median, 'down', kpiDur) || '<span style="color:#ccc">—</span>'}</td>
+          <td>${kpiDur(x.p90)}</td><td>${pct(x.onTime)}</td></tr>`).join('')}
       </tbody></table></div>`}
-      <div class="cc-empty" style="padding-top:8px">Credited to whoever did the step; timed from the step before it. Steps auto-stamped when a ticket is created aren't counted. Early weeks are thin — trust the counts first, the times after about a month.</div>`;
+      <div class="kpi-h">Orders in vs deliveries out</div>
+      <div style="overflow-x:auto"><table class="cc-tbl" style="max-width:640px"><thead><tr><th>Week to</th><th>Orders created</th><th>Deliveries received</th><th>Backlog change</th></tr></thead><tbody>
+        ${K.flow.weeks.map(w => { const n = w.created - w.received; return `<tr><td>${fmtD(new Date(w.end).toISOString().slice(0, 10))}</td><td>${w.created}</td><td>${w.received}</td>
+          <td style="font-weight:700;color:${n > 0 ? 'var(--red-d)' : n < 0 ? 'var(--green-dd)' : '#999'}">${n > 0 ? '+' : ''}${n}</td></tr>`; }).join('')}
+      </tbody></table></div>
+      ${(() => {
+        // IA scorecard: their stores (Users tab) + their own work.
+        const own = ccStoreIAs(users || []);
+        const peopleBy = Object.fromEntries(K.people.map(p => [p.who, p]));
+        const iaRows = own.ias.map(u => {
+          const lst = own.listed.find(x => x.u === u);
+          const stores = lst ? lst.stores : null;
+          const open = stores ? records.filter(r => stores.has(storeKey(r.store)) && !isReceivedTicket(r)).length : null;
+          const issues = byIA ? (byIA.rows.find(x => x.u.username === u.username)?.items.length ?? null) : null;
+          const p = peopleBy[u.username];
+          return { u, stores: stores ? stores.size : null, open, issues, p };
+        }).sort((a, b) => ((b.p && b.p.ownDone) || 0) - ((a.p && a.p.ownDone) || 0));
+        const others = K.people.filter(p => !own.ias.some(u => u.username === p.who));
+        const dash = '<span style="color:#ccc">—</span>';
+        return `
+      <div class="kpi-h">IA scorecard</div>
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>IA</th><th>Stores</th><th>Open tickets</th><th>Current issues</th><th>Own steps</th><th>Median review</th><th>Median send to WHS</th><th>Own work within ${KPI_ON_TIME_DAYS}d</th></tr></thead><tbody>
+        ${iaRows.map(x => `<tr><td style="font-weight:700;white-space:nowrap">${esc(nameOf(x.u.username))}</td>
+          <td>${x.stores ?? '<span style="color:#999">All (*)</span>'}</td><td>${x.open ?? dash}</td><td>${x.issues ?? dash}</td>
+          <td>${x.p ? x.p.ownDone : 0}</td><td>${x.p ? kpiDur(x.p.reviewMedian) : '—'}</td><td>${x.p ? kpiDur(x.p.whsMedian) : '—'}</td><td>${x.p ? pct(x.p.ownOnTime) : '—'}</td></tr>`).join('')
+          || `<tr><td colspan="8" class="cc-empty">No active IAs in the Users tab.</td></tr>`}
+      </tbody></table></div>
+      ${others.length ? `
+      <div class="kpi-h">Coordinators and others</div>
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Person</th><th>Steps</th><th>Per day</th><th>What they did</th></tr></thead><tbody>
+        ${others.map(x => `<tr><td style="font-weight:700;white-space:nowrap">${esc(nameOf(x.who))}</td><td>${x.done}</td><td>${x.perDay.toFixed(1)}</td>
+          <td style="color:#666">${esc(x.mix.map(m => `${m.n} ${m.label}`).join(' · '))}</td></tr>`).join('')}
+      </tbody></table></div>` : ''}`;
+      })()}
+      <div class="cc-empty" style="padding-top:8px">Credited to whoever did the step; timed from the step before it. <b>Own work</b> is time the team controls — only that counts toward a person. <b>Waiting</b> steps show the process, not the person. Steps auto-stamped when a ticket is created, and migrated tickets, aren't counted. Early weeks are thin — trust the counts first, the times after about a month.</div>`;
     kpiPanel = panel('cc-kpi', '7', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
   }
+
 
   const errBody = cc.healthError ? `<div class="cc-empty">Couldn't read the log — see System.</div>`
     : !cc.errors.length ? `<div class="cc-empty">No failed actions in the last 30 days.</div>`
