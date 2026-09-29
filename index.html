@@ -2437,7 +2437,9 @@ function buildDetail(r, span = 13) {
               onclick="event.stopPropagation();approveMerchNoChanges('${uid}')">✓ Merchandiser Approved — no changes</button>
             <span style="font-size:10.5px;color:#aaa;margin-left:8px">No new PDF needed · unlocks Store Manager approval</span>
           </div>`;
-    const pdfBtn = canRunMerch && !locked4 && !noChangeDone ? `
+    // The Updated PDF is only for an order with saved Merchandiser changes;
+    // an unchanged one is finished with the no-changes button instead.
+    const pdfBtn = canRunMerch && !locked4 && savedChanged ? `
       <div class="wf-actions">
         <button class="btn btn-blue" id="p3-merch-pdf-${uid}" style="font-weight:700;letter-spacing:.3px;${mDirty?'opacity:.45;cursor:not-allowed':''}" ${mDirty?'disabled':''}
           onclick="event.stopPropagation();generateMerchPDF('${uid}')">📄 ${merchDone ? 'Re-download Updated PDF' : 'Download Updated PDF'}</button>${paperSelect()}
