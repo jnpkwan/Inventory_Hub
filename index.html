@@ -659,6 +659,14 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 /* Warehouse: 4 across — volume on the first row, speed and backlog on the second */
 .kb-wh .kpi-tiles{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width: 980px){ .kb-wh .kpi-tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.ssc.ssc-acacia{border-color:var(--blue);border-style:dashed;cursor:pointer;background:var(--blue-pale)}
+.ssc.ssc-acacia:hover{border-style:solid}
+.ac-intro{font-size:13px;color:#555;line-height:1.55;margin:2px 0 12px;max-width:900px}
+.ac-hint{font-size:12px;color:#888;margin-left:10px}
+.ac-sum{display:flex;flex-direction:column;gap:5px;font-size:13px;color:#444;background:var(--mist);border-radius:10px;padding:10px 14px;margin-bottom:10px}
+.ac-btns{display:flex;gap:8px;margin-top:4px}
+.ac-why{font-size:12.5px;color:#666;padding:4px 0 6px;font-style:italic}
+#cc-acacia .cc-li{font-size:13px}
 .kpi-block{border:1px solid var(--silver);border-radius:14px;padding:0 16px 14px;margin:16px 0;background:#fff;overflow:hidden}
 .kpi-bh{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:0 -16px 12px;padding:12px 16px;border-bottom:1px solid var(--silver)}
 .kpi-bt{font-family:'Montserrat',sans-serif;font-size:16px;font-weight:800;letter-spacing:.2px}
@@ -1274,7 +1282,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-30 · 18:00';
+const HUB_BUILD = '2026-10-01 · 01:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -2145,6 +2153,13 @@ function renderSummary(rows) {
       })()
       // Only rendered when non-zero: a record whose status is not one of the six
       // is a data error, and it needs to be reachable so someone can fix it.
+      // Check against Acacia — beside Received, Executives only (not Managers).
+      +(normRole(S.user?.role) === 'EXECUTIVE'
+        ? '<div class="ssc ssc-acacia" onclick="acaciaPickFromP4()" title="Upload the Acacia Concession Delivery List export and compare it with the Hub">'
+            +'<div class="ssc-n" style="color:var(--blue)">🔍</div>'
+            +'<div class="ssc-l" style="color:var(--blue);font-weight:700">Check against Acacia</div>'
+          +'</div>'
+        : '')
       +(oddStatus ? mkSub('p4_odd', '❓','Unrecognised Status', oddStatus,    '#C0392B') : '')
       +'</div>'
       // ── Phase 4 filter controls row ──────────────────────────────────────────
@@ -6333,6 +6348,149 @@ function ccPrefs() {
 // for anomalies, stuck tickets and stores with no delivery, sorted by store so
 // each person can filter to theirs. Follows the Phase 4 export's conventions:
 // numbers as numbers, dates as YYYY-MM-DD text, AutoFilter, blue header.
+/* ══════════════════ CHECK AGAINST ACACIA ══════════════════
+   The Acacia system is the record of each CDF's real status. The replenishment
+   engine trusts the Hub's "in transit" — so a CDF the store has already
+   received in Acacia but that the Hub still shows in transit holds back stock
+   the store needs. This compares an Acacia "Concession Delivery List" export
+   with the Hub, by CDF Ref, and lists every difference. REPORT ONLY: nothing
+   on any ticket is changed. Executives and Managers (the Command Center).
+
+   Reading the export: the header row is found by its "CDF No" cell (the file
+   starts with title lines), columns are looked up by header NAME, and rows
+   that aren't a CDF number (the TOTAL / Summary footer) are skipped. The
+   footer's "Total Records" is used to confirm every CDF was read.
+═══════════════════════════════════════════════════════════════ */
+const ACACIA_STAGE = { checking: 1, dispatched: 2, received: 3 };   // cancelled is handled on its own
+const acaciaRefKey = v => String(v == null ? '' : v).toUpperCase().replace(/\s+/g, '');
+const acaciaIsRef  = v => /^CDF\d+-\d+$/.test(acaciaRefKey(v));
+
+function acaciaParse(wb, fileName) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const grid = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  const norm = v => String(v == null ? '' : v).trim().toLowerCase();
+  const hi = grid.findIndex(row => (row || []).some(c => norm(c) === 'cdf no'));
+  if (hi < 0) throw new Error('Could not find the "CDF No" header — is this the Acacia Concession Delivery List export?');
+  const head = grid[hi].map(norm);
+  const col = name => head.indexOf(name);
+  const C = { ref: col('cdf no'), status: col('status'), store: col('customer name'), date: col('date'), value: col('declared value') };
+  const missing = [['CDF No', C.ref], ['Status', C.status]].filter(([, i]) => i < 0).map(([n]) => n);
+  if (missing.length) throw new Error('The export is missing the column(s): ' + missing.join(', '));
+  let exportDate = '', footerTotal = null;
+  grid.slice(0, hi).forEach(row => { const t = String((row || [])[0] || ''); const m = t.match(/Export Date:\s*(.+)/i); if (m) exportDate = m[1].trim(); });
+  const rows = [];
+  grid.slice(hi + 1).forEach(row => {
+    row = row || [];
+    const first = norm(row[0]);
+    if (first.startsWith('total records')) { const n = Number(row[1]); if (isFinite(n)) footerTotal = n; }
+    if (!acaciaIsRef(row[C.ref])) return;
+    const d = C.date >= 0 ? row[C.date] : null;
+    const date = d instanceof Date ? d : (typeof d === 'number' ? new Date(Math.round((d - 25569) * 86400000)) : (d ? new Date(d) : null));
+    rows.push({ ref: acaciaRefKey(row[C.ref]), status: String(row[C.status] == null ? '' : row[C.status]).trim(),
+                store: C.store >= 0 ? String(row[C.store] || '').trim() : '', date: date && !isNaN(date) ? date : null });
+  });
+  if (!rows.length) throw new Error('No CDF numbers found under the "CDF No" header.');
+  return { fileName, exportDate, footerTotal, rows, loadedAt: new Date().toISOString() };
+}
+
+// The Hub's stage in Acacia's terms, using the same rule as the Phase 4 cards.
+function acaciaHubStage(r) {
+  if (isReceivedTicket(r)) return { rank: 3, label: 'Received' };
+  const b = p4Bucket(r);
+  if (b === 'In Transit') return { rank: 2, label: 'In Transit' };
+  // Left the warehouse toward a hub, even if the card still says Pending Dispatch.
+  if (r.dSdc || r.dCdc || r.dDirect) return { rank: 2, label: (b || 'Phase 4') + ' (left the warehouse)' };
+  if (b === 'On Hold') return { rank: 1, label: 'On Hold' };
+  if (b) return { rank: 1, label: b };
+  return { rank: 0, label: 'Phase 3 (not yet at the warehouse)' };
+}
+
+// Every difference, grouped by how much it matters.
+function acaciaCompare(A, records) {
+  const byRef = {};
+  records.forEach(r => { const k = acaciaRefKey(r.acaciaRef); if (k) (byRef[k] = byRef[k] || []).push(r); });
+  const seen = new Set();
+  const G = { received: [], cancelled: [], store: [], dispatched: [], ahead: [], noTicket: [], notInExport: [], unknown: [] };
+  let matched = 0;
+  A.rows.forEach(a => {
+    seen.add(a.ref);
+    const st = a.status.toLowerCase();
+    const isCancel = /cancel|void/.test(st);
+    const aRank = ACACIA_STAGE[st];
+    const tickets = byRef[a.ref] || [];
+    if (!isCancel && !aRank) { G.unknown.push({ a, r: tickets[0] || null, detail: `Status "${a.status || '(blank)'}" isn't one the check knows` }); return; }
+    if (!tickets.length) { if (!isCancel) G.noTicket.push({ a, r: null, detail: `Acacia: ${a.status} · ${a.store || 'no store'}${a.date ? ' · ' + fmtD(a.date.toISOString().slice(0, 10)) : ''} — no Hub ticket has this CDF Ref` }); return; }
+    tickets.forEach(r => {
+      const h = acaciaHubStage(r);
+      const storeOff = a.store && r.store && storeKey(a.store) !== storeKey(r.store);
+      let hit = false;
+      if (storeOff) { G.store.push({ a, r, detail: `Acacia: ${a.store} · Hub: ${r.store} — the CDF Ref may be on the wrong ticket` }); hit = true; }
+      if (isCancel) { G.cancelled.push({ a, r, detail: `Cancelled in Acacia · Hub: ${h.label} — delete this ticket` }); return; }
+      if (aRank === 3 && h.rank < 3) { G.received.push({ a, r, detail: `Received in Acacia · Hub: ${h.label}` }); hit = true; }
+      else if (aRank === 2 && h.rank < 2) { G.dispatched.push({ a, r, detail: `Dispatched in Acacia · Hub: ${h.label}` }); hit = true; }
+      else if (h.rank > aRank) { G.ahead.push({ a, r, detail: `Hub: ${h.label} · Acacia: ${a.status}` }); hit = true; }
+      if (!hit) matched++;
+    });
+  });
+  // Open Hub tickets whose CDF Ref isn't in this export at all.
+  Object.entries(byRef).forEach(([k, rs]) => {
+    if (seen.has(k)) return;
+    rs.filter(r => !isReceivedTicket(r)).forEach(r => G.notInExport.push({ a: null, r, detail: `Hub: ${acaciaHubStage(r).label} · CDF Ref ${r.acaciaRef} not in this export` }));
+  });
+  return { G, matched };
+}
+const ACACIA_GROUPS = [
+  { key: 'received',    sev: 'red',   label: 'Received in Acacia — not received in the Hub', why: 'These still count as "in transit", so replenishment holds back stock the store already has.' },
+  { key: 'cancelled',   sev: 'red',   label: 'Cancelled in Acacia — delete from the Hub',     why: 'Open the ticket and delete it.' },
+  { key: 'store',       sev: 'red',   label: 'Different store',                                why: 'The CDF Ref points to a ticket for another store — likely the wrong CDF Ref was entered.' },
+  { key: 'dispatched',  sev: 'amber', label: 'Dispatched in Acacia — still at the warehouse in the Hub', why: 'Add the dispatch dates in the Hub.' },
+  { key: 'ahead',       sev: 'amber', label: 'The Hub is ahead of Acacia',                     why: 'Either Acacia hasn\'t been updated yet, or the Hub was updated by mistake.' },
+  { key: 'noTicket',    sev: 'amber', label: 'In Acacia — no ticket in the Hub',               why: 'No Hub ticket carries this CDF Ref. It may be missing from a ticket, or typed differently.' },
+  { key: 'notInExport', sev: 'amber', label: 'Open in the Hub — not in this Acacia export',    why: 'The export may not reach back far enough, or the CDF Ref on the ticket is wrong.' },
+  { key: 'unknown',     sev: 'amber', label: 'Status the check doesn\'t recognise',            why: 'Tell the Hub owner so the check can learn it.' },
+];
+function acaciaPick() { const f = document.getElementById('acacia-file'); if (f) { f.value = ''; f.click(); } }
+// From the Phase 4 card: a picker that lives outside the redrawn page, then
+// the Command Center opens at section 2 with the results.
+function acaciaPickFromP4() {
+  if (normRole(S.user?.role) !== 'EXECUTIVE') return;
+  let f = document.getElementById('acacia-file-p4');
+  if (!f) {
+    f = document.createElement('input');
+    f.type = 'file'; f.id = 'acacia-file-p4'; f.accept = '.xlsx,.xls,.csv'; f.style.display = 'none';
+    f.addEventListener('change', () => acaciaUpload(f, true));
+    document.body.appendChild(f);
+  }
+  f.value = ''; f.click();
+}
+function acaciaShowResults() {
+  openCommandCenter();
+  let tries = 0;
+  const go = () => {
+    const el = document.getElementById('cc-acacia');
+    if (el && document.querySelector('#cc-acacia .ac-sum')) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else if (++tries < 40) setTimeout(go, 150);
+  };
+  setTimeout(go, 100);
+}
+async function acaciaUpload(input, openCC) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    S._acacia = acaciaParse(wb, file.name);
+    const A = S._acacia;
+    const short = A.footerTotal != null && A.footerTotal !== A.rows.length;
+    toast(short ? `⚠️ Read ${A.rows.length} CDFs, but the export says ${A.footerTotal}. Check the file.` : `✅ Read ${A.rows.length} CDFs from ${file.name}.`, short ? 'err' : undefined);
+  } catch (e) {
+    toast('❌ Could not read that file: ' + (e.message || e), 'err');
+    if (openCC) return;   // stay on Phase 4; nothing to show
+  }
+  if (openCC) acaciaShowResults(); else ccRender(true);
+}
+function acaciaClear() { S._acacia = null; ccRender(true); }
+
 function ccExportReport() {
   const cc = S._cc;
   if (!cc || !cc.loadedAt || cc.loading) { toast('Wait for the checks to finish, then download.', 'err'); return; }
@@ -6396,6 +6554,19 @@ function ccExportReport() {
   XLSX.utils.book_append_sheet(wb, sheet(
     ['Store', 'Last Received Delivery', 'Days Since'],
     covRows, [30, 26, 13], [1, 2], -1), `No Delivery ${CC_DELIVERY_WINDOW}d`);
+  // Check against Acacia — only when a check has been run this session.
+  if (S._acacia) {
+    const { G } = acaciaCompare(S._acacia, records);
+    const acRows = [];
+    ACACIA_GROUPS.forEach(g => G[g.key].forEach(x => acRows.push({ sev: g.sev === 'red' ? 'red' : 'amber', store: '', cells: [
+      g.sev === 'red' ? 'Red' : 'Amber', g.label, x.a ? x.a.ref : (x.r.acaciaRef || ''), x.r ? x.r.store || '' : '', x.a ? x.a.store : '',
+      x.a ? x.a.status : '', x.r ? acaciaHubStage(x.r).label : 'no ticket', x.r ? x.r.cdf || '' : '',
+      x.a && x.a.date ? x.a.date.toISOString().slice(0, 10) : '' ]})));
+    XLSX.utils.book_append_sheet(wb, sheet(
+      ['Priority', 'What doesn\'t match', 'CDF Ref', 'Store (Hub)', 'Store (Acacia)', 'Acacia status', 'Hub stage', 'Store Order', 'Acacia CDF date'],
+      acRows, [10, 50, 16, 24, 24, 14, 34, 32, 16], [0, 5, 8], 0), 'Acacia Check');
+  }
+
   // Team KPIs — Executives only, like the section. Times are numbers of days
   // (sortable); a blank means nothing to time, never zero.
   if (kpiIsViewer()) {
@@ -7240,6 +7411,35 @@ function ccRender(force) {
       + (byIA.star.length ? `<div class="cc-empty" style="padding-top:8px">Not shown: ${esc(byIA.star.map(u => u.username).join(', '))} — their assignedStores is "*", so their stores can't be told apart from anyone else's. Give each their store list in the Users tab.</div>` : ''));
   const iaFlagged = byIA ? byIA.rows.filter(x => x.items.length).length : 0;
 
+  // Check against Acacia — report only.
+  let acR = 0, acA = 0;
+  const acaciaBody = (() => {
+    const pick = `<input type="file" id="acacia-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="acaciaUpload(this)">`;
+    const A = S._acacia;
+    if (!A) return pick + `<div class="ac-intro">Compares every CDF in an Acacia <b>Concession Delivery List</b> export with the Hub, by CDF Ref, and lists what doesn't match — most importantly CDFs the store has already <b>received</b> in Acacia that the Hub still shows in transit, which throw off replenishment. Nothing in the Hub is changed.</div>
+      <button class="btn btn-primary" style="width:auto;display:inline-flex" onclick="acaciaPick()">📂 Upload the Acacia export</button>
+      <span class="ac-hint">In Acacia: Concession Delivery List → export to Excel, then choose the file here.</span>`;
+    const { G, matched } = acaciaCompare(A, records);
+    const short = A.footerTotal != null && A.footerTotal !== A.rows.length;
+    const first = x => x.r
+      ? `<a href="#" onclick="ccOpenTicket('${esc(x.r.id || x.r.cdf)}');return false">${esc(x.a ? x.a.ref : x.r.acaciaRef)}</a>`
+      : esc(x.a.ref);
+    const groups = ACACIA_GROUPS.filter(g => G[g.key].length).map(g => {
+      const items = G[g.key];
+      if (g.sev === 'red') acR += items.length; else acA += items.length;
+      return groupRow('ac:' + g.key, g.sev, g.label, `${items.length} CDF${items.length !== 1 ? 's' : ''}`,
+        `<div class="ac-why">${esc(g.why)}</div>` + items.map(x => li(first(x), esc((x.r && x.r.store) || (x.a && x.a.store) || ''),
+          esc(x.detail + (x.r ? ' · ' + x.r.cdf : '')))).join(''));
+    }).join('');
+    return pick + `<div class="ac-sum">
+        <div><b>${esc(A.fileName)}</b>${A.exportDate ? ` · exported ${esc(A.exportDate)}` : ''} · checked ${esc(histStamp(A.loadedAt))}</div>
+        <div>${A.rows.length} CDFs read ${short ? `<span class="kv kv-bad">export says ${A.footerTotal} — some rows weren't read</span>` : A.footerTotal != null ? '<span class="kv kv-good">all rows read</span>' : ''}
+          · <b>${matched}</b> match the Hub · <b>${acR + acA}</b> to look at</div>
+        <div class="ac-btns"><button class="btn btn-outline btn-sm" onclick="acaciaPick()">📂 Upload a newer export</button><button class="btn btn-outline btn-sm" onclick="acaciaClear()">Clear</button></div>
+      </div>
+      ${groups || '<div class="cc-empty">Everything in this export matches the Hub.</div>'}`;
+  })();
+
   // Who's been using the Hub — last seen / last login / last change saved.
   const presence = cc.health && cc.health.presence && !cc.health.presence.error ? cc.health.presence : null;
   const ago = iso => {
@@ -7399,7 +7599,7 @@ function ccRender(force) {
       })()}
       </div>
       <div class="cc-empty" style="padding-top:8px"><b>Typical</b> means half were faster and half slower. <b>9 in 10 done within</b>: nine out of ten finished inside that time; the slowest one in ten took longer. Each task counts for the person who did it, timed from the step before. <b>Our team</b> steps are time we control — only those count toward a person; <b>Waiting on</b> steps show the process, not the person. Not counted: Executives' own actions, steps filled in automatically when an order is created, and orders brought over from the old system. Warehouse &amp; delivery is counted in whole days, by team and route — the warehouse doesn't use the Hub, so there's no per-person view, and units are what was ordered (the Hub doesn't record what was actually shipped). The first weeks have little data — trust the counts first, the times after about a month.</div>`;
-    kpiPanel = panel('cc-kpi', '8', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
+    kpiPanel = panel('cc-kpi', '9', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
   }
 
 
@@ -7418,12 +7618,13 @@ function ccRender(force) {
 
   el.innerHTML = head + kpis
     + panel('cc-sys',  '1', 'System', badge(sysR, sysA, 'All passing'), sysBody)
-    + panel('cc-cov',  '2', `No Delivery or Order in ${CC_DELIVERY_WINDOW} Days`, coverage.length ? `<span class="wf-status-badge wfs-partial">${coverage.length} store${coverage.length !== 1 ? 's' : ''}</span>` : `<span class="wf-status-badge wfs-approved">All covered</span>`, covBody)
-    + panel('cc-ia',   '3', 'Issues by IA', !byIA || byIA.noIAs ? '' : iaFlagged ? `<span class="wf-status-badge wfs-changes">${plural(iaFlagged, 'IA')} with issues</span>` : `<span class="wf-status-badge wfs-approved">All clear</span>`, iaBody)
-    + panel('cc-stuck','4', 'Stuck Tickets', badge(stR, stA, 'None'), stuckBody)
-    + panel('cc-anom', '5', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
-    + panel('cc-err',  '6', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody)
-    + panel('cc-seen', '7', "Who's Been Using the Hub", !users || !presence ? '' : seenRed ? `<span class="wf-status-badge wfs-changes">${seenRed} not seen in 7+ days</span>` : `<span class="wf-status-badge wfs-approved">Everyone active</span>`, seenBody)
+    + panel('cc-acacia', '2', 'Check Against Acacia', !S._acacia ? '<span class="wf-status-badge wfs-sent">Report only</span>' : badge(acR, acA, 'All match'), acaciaBody)
+    + panel('cc-cov',  '3', `No Delivery or Order in ${CC_DELIVERY_WINDOW} Days`, coverage.length ? `<span class="wf-status-badge wfs-partial">${coverage.length} store${coverage.length !== 1 ? 's' : ''}</span>` : `<span class="wf-status-badge wfs-approved">All covered</span>`, covBody)
+    + panel('cc-ia',   '4', 'Issues by IA', !byIA || byIA.noIAs ? '' : iaFlagged ? `<span class="wf-status-badge wfs-changes">${plural(iaFlagged, 'IA')} with issues</span>` : `<span class="wf-status-badge wfs-approved">All clear</span>`, iaBody)
+    + panel('cc-stuck','5', 'Stuck Tickets', badge(stR, stA, 'None'), stuckBody)
+    + panel('cc-anom', '6', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
+    + panel('cc-err',  '7', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody)
+    + panel('cc-seen', '8', "Who's Been Using the Hub", !users || !presence ? '' : seenRed ? `<span class="wf-status-badge wfs-changes">${seenRed} not seen in 7+ days</span>` : `<span class="wf-status-badge wfs-approved">Everyone active</span>`, seenBody)
     + kpiPanel;
 }
 
