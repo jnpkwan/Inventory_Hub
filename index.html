@@ -642,7 +642,9 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .kv-bad{background:#FBE3E1;color:#A3261B}
 .kpi-legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px}
 .kpi-keytxt{font-size:12.5px;font-weight:600;color:#666;text-transform:none;letter-spacing:0;margin-left:4px}
-#cc-kpi .cc-tbl td{font-size:13.5px;padding-top:8px;padding-bottom:8px}
+#cc-kpi .cc-tbl td,#cc-seen .cc-tbl td{font-size:13.5px;padding-top:8px;padding-bottom:8px}
+#cc-seen .cc-tbl th{font-size:11.5px}
+#cc-seen .cc-empty{font-size:12.5px}
 #cc-kpi .cc-tbl th{font-size:11.5px;white-space:normal;vertical-align:bottom;line-height:1.35}
 #cc-kpi .kpi-h{font-size:12px}
 #cc-kpi .kpi-win{font-size:12px}
@@ -1262,7 +1264,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-30 · 01:00';
+const HUB_BUILD = '2026-09-30 · 01:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -7123,6 +7125,39 @@ function ccRender(force) {
       + (byIA.star.length ? `<div class="cc-empty" style="padding-top:8px">Not shown: ${esc(byIA.star.map(u => u.username).join(', '))} — their assignedStores is "*", so their stores can't be told apart from anyone else's. Give each their store list in the Users tab.</div>` : ''));
   const iaFlagged = byIA ? byIA.rows.filter(x => x.items.length).length : 0;
 
+  // Who's been using the Hub — last seen / last login / last change saved.
+  const presence = cc.health && cc.health.presence && !cc.health.presence.error ? cc.health.presence : null;
+  const ago = iso => {
+    const t = new Date(iso).getTime(); if (!iso || isNaN(t)) return '';
+    const m = Math.max(0, (Date.now() - t) / 60000);
+    if (m < 2) return 'just now';
+    if (m < 60) return `${Math.round(m)} min ago`;
+    if (m < 60 * 24) return `${Math.round(m / 60)} h ago`;
+    const d = Math.floor(m / 1440);
+    return d === 1 ? 'yesterday' : `${d} days ago`;
+  };
+  const when = iso => iso ? `${ago(iso)} <span style="color:#999">· ${esc(histStamp(iso))}</span>` : '<span style="color:#bbb">—</span>';
+  let seenRed = 0;
+  const seenBody = !users ? `<div class="cc-empty">Users didn't load — see System.</div>`
+    : !presence ? `<div class="cc-empty">Activity didn't load — see System.</div>`
+    : (() => {
+        const rows = users.filter(u => u.active && u.hasId).map(u => {
+          const p = presence[String(u.username).toLowerCase()] || {};
+          const last = [p.lastSeen, p.lastLogin, p.lastChange].filter(Boolean).sort().pop() || '';
+          const days = last ? (Date.now() - new Date(last).getTime()) / 86400000 : null;
+          const rate = days == null ? 'bad' : days <= 2 ? 'good' : days <= 7 ? 'warn' : 'bad';
+          if (rate === 'bad') seenRed++;
+          return { u, p, last, rate };
+        }).sort((a, b) => (a.last || '').localeCompare(b.last || ''));
+        const label = { good: 'Active', warn: 'Quiet', bad: 'Not seen' };
+        return `<div class="cc-empty" style="padding:0 0 8px">Oldest activity first. <b>Last seen</b> is any time their Hub was open and connected — the best sign they're using it. <b>Last change saved</b> is the last time they edited or created something. Green: within 2 days · amber: within 7 · red: longer, or never.</div>
+          <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>Last seen in the Hub</th><th>Last login</th><th>Last change saved</th></tr></thead><tbody>
+          ${rows.map(x => `<tr><td style="font-weight:700;white-space:nowrap">${esc(x.u.name || x.u.username)} <span style="color:#999;font-weight:500">(${esc(x.u.username)})</span></td>
+            <td>${esc(x.u.role)}</td><td><span class="kv kv-${x.rate}">${label[x.rate]}</span></td>
+            <td>${x.p.lastSeen ? when(x.p.lastSeen) : '<span style="color:#bbb">not yet recorded</span>'}</td><td>${when(x.p.lastLogin)}</td><td>${when(x.p.lastChange)}</td></tr>`).join('')}
+          </tbody></table></div>`;
+      })();
+
   // Team KPIs — Executives only (not Managers, for now).
   let kpiPanel = '';
   if (kpiIsViewer()) {
@@ -7213,7 +7248,7 @@ function ccRender(force) {
       </tbody></table></div>` : ''}`;
       })()}
       <div class="cc-empty" style="padding-top:8px"><b>Typical</b> means half were faster and half slower. <b>9 in 10 done within</b>: nine out of ten finished inside that time; the slowest one in ten took longer. Each task counts for the person who did it, timed from the step before. <b>Our team</b> steps are time we control — only those count toward a person; <b>Waiting on</b> steps show the process, not the person. Not counted: Executives' own actions, steps filled in automatically when an order is created, and orders brought over from the old system. The first weeks have little data — trust the counts first, the times after about a month.</div>`;
-    kpiPanel = panel('cc-kpi', '7', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
+    kpiPanel = panel('cc-kpi', '8', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
   }
 
 
@@ -7237,6 +7272,7 @@ function ccRender(force) {
     + panel('cc-stuck','4', 'Stuck Tickets', badge(stR, stA, 'None'), stuckBody)
     + panel('cc-anom', '5', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
     + panel('cc-err',  '6', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody)
+    + panel('cc-seen', '7', "Who's Been Using the Hub", !users || !presence ? '' : seenRed ? `<span class="wf-status-badge wfs-changes">${seenRed} not seen in 7+ days</span>` : `<span class="wf-status-badge wfs-approved">Everyone active</span>`, seenBody)
     + kpiPanel;
 }
 
