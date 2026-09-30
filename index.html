@@ -1264,7 +1264,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-30 · 01:30';
+const HUB_BUILD = '2026-09-30 · 17:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -2281,7 +2281,7 @@ function renderTable(rows) {
 
     if(isP34) {
       return `
-        <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="toggleExpand('${esc(uid)}')" data-id="${esc(uid)}">
+        <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="rowClick('${esc(uid)}', event)" data-id="${esc(uid)}">
           <td class="td-cdf">${esc(r.cdf)}</td>
           <td class="td-store">${esc(r.store)}</td>
           <td class="td-dim">${r.type}</td>
@@ -2297,7 +2297,7 @@ function renderTable(rows) {
     }
 
     return `
-      <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="toggleExpand('${esc(uid)}')" data-id="${esc(uid)}">
+      <tr class="${od?'overdue-row':''} ${isEx?'exp-row':''}" onclick="rowClick('${esc(uid)}', event)" data-id="${esc(uid)}">
         <td class="td-cdf">${leadCell(r)}</td>
         <td class="td-store">${esc(r.store)}</td>
         <td class="td-dim">${esc(routeLabel(r))}</td>
@@ -2334,6 +2334,28 @@ function renderTable(rows) {
 function toggleExpand(uid) {
   S.expandedId = S.expandedId===uid ? null : uid;
   renderTable();
+}
+
+// A click on a ticket row opens it — unless the person is selecting text to
+// copy (a Store Order, a CDF Ref). Releasing a drag-select fires a click, and
+// a double-click's first click used to open the row and redraw the table,
+// so neither could copy anything. A short wait tells a single click from a
+// double-click; any highlighted text means "don't open".
+let _rowClickTimer = null;
+const ROW_CLICK_WAIT_MS = 220;
+function selectingText() {
+  const sel = window.getSelection && window.getSelection();
+  return !!(sel && String(sel).trim());
+}
+function rowClick(uid, ev) {
+  if (selectingText()) return;                                   // drag-selected text
+  if (ev && ev.detail > 1) { clearTimeout(_rowClickTimer); _rowClickTimer = null; return; }   // double/triple click
+  clearTimeout(_rowClickTimer);
+  _rowClickTimer = setTimeout(() => {
+    _rowClickTimer = null;
+    if (selectingText()) return;                                 // the double-click selected a word
+    toggleExpand(uid);
+  }, ROW_CLICK_WAIT_MS);
 }
 
 /* ══════════════════ PHASE PILL COUNTS (month-level) ══════════════════ */
