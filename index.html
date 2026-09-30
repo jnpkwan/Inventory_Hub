@@ -656,6 +656,16 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .kpi-aim{font-size:12.5px;font-weight:600;margin-top:6px;color:#666}
 .kpi-aim-up::first-letter,.kpi-aim-down::first-letter{font-weight:800;color:var(--blue)}
 .kpi-dir{display:inline-block;font-size:15px;font-weight:800;color:var(--blue);margin-left:3px;text-transform:none;vertical-align:-1px}
+/* Warehouse: 4 across — volume on the first row, speed and backlog on the second */
+.kb-wh .kpi-tiles{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width: 980px){ .kb-wh .kpi-tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.kpi-block{border:1px solid var(--silver);border-radius:14px;padding:0 16px 14px;margin:16px 0;background:#fff;overflow:hidden}
+.kpi-bh{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:0 -16px 12px;padding:12px 16px;border-bottom:1px solid var(--silver)}
+.kpi-bt{font-family:'Montserrat',sans-serif;font-size:16px;font-weight:800;letter-spacing:.2px}
+.kpi-bd{font-size:12.5px;font-weight:600;color:#666}
+.kb-all .kpi-bh{background:var(--blue-pale);border-left:6px solid var(--blue)} .kb-all .kpi-bt{color:var(--blue)}
+.kb-ia .kpi-bh{background:#F4ECFA;border-left:6px solid var(--purple)} .kb-ia .kpi-bt{color:var(--purple)}
+.kb-wh .kpi-bh{background:var(--teal-pale);border-left:6px solid var(--teal)} .kb-wh .kpi-bt{color:var(--teal-d)}
 .kpi-own{font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-pale);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .kpi-wait{font-size:10px;font-weight:600;color:var(--slate);background:var(--mist);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .kpi-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--slate);padding:10px 0 6px}
@@ -1264,7 +1274,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-09-30 · 17:30';
+const HUB_BUILD = '2026-09-30 · 18:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -6396,12 +6406,17 @@ function ccExportReport() {
     const pct  = v => v == null ? '' : Math.round(v * 100);
     const nameOf = u => { const x = users.find(v => v.username === u); return x && x.name ? x.name : u; };
     const row = cells => ({ sev: 'amber', store: '', cells });
+    // Sheets follow the page: Overall, then IA order generation, then Warehouse.
+    XLSX.utils.book_append_sheet(wb, sheet(
+      ['Week ending', 'New orders', 'Deliveries received — higher is better', 'Change in open orders — lower is better (below 0 = fewer open)'],
+      K.flow.weeks.map(w => row([new Date(w.end).toISOString().slice(0, 10), w.created, w.received, { v: w.created - w.received, rate: kpiRateNet(w.created - w.received) }])),
+      [14, 14, 36, 56], [1, 2, 3], -1), `Overall · New vs Delivered ${kd}d`);
     XLSX.utils.book_append_sheet(wb, sheet(
       ['Step', 'Whose time is it?', 'Times done', 'Typical time (days) — lower is better', `Typical time, previous ${kd} days (days)`, '9 in 10 done within (days) — lower is better', `Done within ${KPI_ON_TIME_DAYS} days (%) — higher is better`],
-      K.steps.map((x, i) => row([x.label, x.own ? 'Our team' : `Waiting on ${x.waitOn}`, x.done,
-        { v: days(x.median), rate: kpiRateDays(x.median, KPI_TARGETS.stepDays) }, days(P.steps[i].median),
+      K.steps.filter(x => x.key !== 'act').map(x => row([x.label, x.own ? 'Our team' : `Waiting on ${x.waitOn}`, x.done,
+        { v: days(x.median), rate: kpiRateDays(x.median, KPI_TARGETS.stepDays) }, days((P.steps.find(y => y.key === x.key) || {}).median),
         { v: days(x.p90), rate: kpiRateDays(x.p90, KPI_TARGETS.tailDays) }, { v: pct(x.onTime), rate: kpiRateHigh(x.onTime, KPI_TARGETS.onTime) }])),
-      [26, 26, 12, 36, 36, 42, 40], [2, 3, 4, 5, 6], -1), `KPI Step Times ${kd}d`);
+      [26, 26, 12, 36, 36, 42, 40], [2, 3, 4, 5, 6], -1), `IA · Step Times ${kd}d`);
     const own = ccStoreIAs(users);
     const byIAx = ccByIA(users, stuck, anomalies);
     const peopleBy = Object.fromEntries(K.people.map(p => [p.who, p]));
@@ -6416,16 +6431,12 @@ function ccExportReport() {
                     { v: p ? days(p.reviewMedian) : '', rate: p ? kpiRateDays(p.reviewMedian, KPI_TARGETS.stepDays) : null },
                     { v: p ? days(p.whsMedian) : '', rate: p ? kpiRateDays(p.whsMedian, KPI_TARGETS.stepDays) : null },
                     { v: p ? pct(p.ownOnTime) : '', rate: p ? kpiRateHigh(p.ownOnTime, KPI_TARGETS.onTime) : null }]);
-      }), [22, 16, 16, 34, 40, 28, 42, 52, 44], [2, 3, 4, 5, 6, 7, 8], -1), `KPI Each IA ${kd}d`);
+      }), [22, 16, 16, 34, 40, 28, 42, 52, 44], [2, 3, 4, 5, 6, 7, 8], -1), `IA · Each IA ${kd}d`);
     XLSX.utils.book_append_sheet(wb, sheet(
       ['Person', 'Username', 'Tasks done — higher is better', 'Tasks per day — higher is better', 'What they did'],
       K.people.filter(p => !own.ias.some(u => u.username === p.who))
         .map(x => row([nameOf(x.who), x.who, x.done, Math.round(x.perDay * 10) / 10, x.mix.map(m => `${m.n} × ${m.label}`).join(' · ')])),
-      [22, 16, 28, 30, 70], [2, 3], -1), `KPI Coordinators ${kd}d`);
-    XLSX.utils.book_append_sheet(wb, sheet(
-      ['Week ending', 'New orders', 'Deliveries received — higher is better', 'Change in open orders — lower is better (below 0 = fewer open)'],
-      K.flow.weeks.map(w => row([new Date(w.end).toISOString().slice(0, 10), w.created, w.received, { v: w.created - w.received, rate: kpiRateNet(w.created - w.received) }])),
-      [14, 14, 36, 56], [1, 2, 3], -1), `KPI Orders vs Deliveries ${kd}d`);
+      [22, 16, 28, 30, 70], [2, 3], -1), `IA · Coordinators ${kd}d`);
     // Warehouse & delivery — whole days; units are as ordered.
     const W = kpiWarehouse(records, kd), PW = kpiWarehouse(records, kd, K.now - kd * KPI_DAY);
     const wd = ms => ms == null ? '' : Math.round(ms / 8640000) / 10;
@@ -6433,6 +6444,7 @@ function ccExportReport() {
       ['What is measured', `Last ${kd} days`, `Previous ${kd} days`, 'Better when'],
       [ row(['Orders released by the warehouse', W.released, PW.released, 'higher']),
         row(['Units in released orders (as ordered — shipped units are not recorded)', W.units, PW.units, 'higher']),
+        row(['Warehouse counts confirmed (recorded in the Hub by IAs)', (K.steps.find(x => x.key === 'act') || {}).done || 0, (P.steps.find(x => x.key === 'act') || {}).done || 0, 'higher']),
         row(['Boxes shipped', W.boxes, PW.boxes, 'higher']),
         row(['Typical warehouse turnaround, days (sent to warehouse → left warehouse)', { v: wd(W.turnaround), rate: kpiRateDays(W.turnaround, KPI_TARGETS.stepDays) }, wd(PW.turnaround), 'lower']),
         row(['9 in 10 released within, days', wd(W.turnaroundP90), wd(PW.turnaroundP90), 'lower']),
@@ -6441,13 +6453,13 @@ function ccExportReport() {
         row(['Deliveries received', W.delivered, PW.delivered, 'higher']),
         row(['Typical time from warehouse to store, days', { v: wd(W.total), rate: kpiRateDays(W.total, KPI_TARGETS.tailDays) }, wd(PW.total), 'lower']),
         row(['9 in 10 received within, days', { v: wd(W.totalP90), rate: kpiRateDays(W.totalP90, KPI_TARGETS.tailDays) }, wd(PW.totalP90), 'lower']),
-      ], [62, 16, 18, 14], [1, 2, 3], -1), `KPI Warehouse ${kd}d`);
+      ], [62, 16, 18, 14], [1, 2, 3], -1), `Warehouse · Summary ${kd}d`);
     XLSX.utils.book_append_sheet(wb, sheet(
       ['Route', 'Deliveries received', 'Warehouse → hub (days) — lower is better', 'Waiting at the hub (days) — lower is better', 'Last trip to the store (days) — lower is better', 'Typical warehouse → received (days) — lower is better', '9 in 10 received within (days) — lower is better'],
       W.routes.map(x => { const noHub = x.route === 'Direct' || x.route === 'LBC';
         return row([x.route, x.n, noHub ? 'no hub' : wd(x.toHub), noHub ? 'no hub' : wd(x.atHub), wd(x.lastLeg),
           { v: wd(x.total), rate: kpiRateDays(x.total, KPI_TARGETS.tailDays) }, { v: wd(x.p90), rate: kpiRateDays(x.p90, KPI_TARGETS.tailDays) }]); }),
-      [14, 20, 38, 40, 42, 48, 44], [1, 2, 3, 4, 5, 6], -1), `KPI Delivery Routes ${kd}d`);
+      [14, 20, 38, 40, 42, 48, 44], [1, 2, 3, 4, 5, 6], -1), `Warehouse · Routes ${kd}d`);
     // What the colours mean — the same targets the Command Center uses.
     const t = KPI_TARGETS, P100 = v => Math.round(v * 100) + '%';
     XLSX.utils.book_append_sheet(wb, sheet(['What is measured', 'Green — on target', 'Amber — watch', 'Red — act now'], [
@@ -7297,51 +7309,33 @@ function ccRender(force) {
         <span class="kv kv-good">On target</span><span class="kv kv-warn">Watch</span><span class="kv kv-bad">Act now</span>
         <span class="kpi-keytxt">Typical time: green up to ${KPI_TARGETS.stepDays[0]} days, amber up to ${KPI_TARGETS.stepDays[1]}. "9 in 10 done within" and order-to-delivery: green up to ${KPI_TARGETS.tailDays[0]} days, amber up to ${KPI_TARGETS.tailDays[1]}. Done within ${KPI_ON_TIME_DAYS} days: green ${Math.round(KPI_TARGETS.onTime[0]*100)}%+, amber ${Math.round(KPI_TARGETS.onTime[1]*100)}%+. Orders with problems (share of an IA's open orders): green up to ${Math.round(KPI_TARGETS.issueShare[0]*100)}%, amber up to ${Math.round(KPI_TARGETS.issueShare[1]*100)}%. Open orders: green when not growing. Warehouse turnaround and oldest wait use the step-time colours; warehouse → store uses the order-to-delivery colours.</span>
       </div>
+      <div class="kpi-block kb-all">
+        <div class="kpi-bh"><span class="kpi-bt">Whole pipeline — order to delivery</span><span class="kpi-bd">Both teams together: from an order being created to the store receiving it.</span></div>
       <div class="kpi-tiles">
-        ${tile(K.events, 'Tasks completed', delta(K.events, P.events, 'up', num), 'up')}
-        ${tile(K.received, 'Deliveries received by stores', delta(K.received, P.received, 'up', num), 'up')}
+        ${tile(K.flow.received, 'Deliveries received by stores', delta(K.flow.received, P.flow.received, 'up', num), 'up')}
         ${tile(kpiDur(K.e2eMedian), 'Typical time from order to delivery', delta(K.e2eMedian, P.e2eMedian, 'down', kpiDur), 'down', '', kpiRateDays(K.e2eMedian, KPI_TARGETS.tailDays))}
-        ${tile(pct(K.ownOnTime), `Our tasks done within ${KPI_ON_TIME_DAYS} days`, delta(K.ownOnTime, P.ownOnTime, 'up', pts), 'up', '', kpiRateHigh(K.ownOnTime, KPI_TARGETS.onTime))}
         ${tile((net > 0 ? '+' : '') + net, `Change in open orders · ${K.flow.created} new, ${K.flow.received} delivered`, delta(net, P.flow.net, 'down', num), 'down', 'below 0 means fewer open orders', kpiRateNet(net))}
       </div>
-      ${!K.events && !K.flow.created && !K.flow.received ? `<div class="cc-empty">Nothing recorded through the Hub in the last ${kd} days yet.</div>` : `
-      <div class="kpi-h">How long each step takes</div>
-      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Step</th><th>Whose time is it?</th><th>Times done</th>${th('Typical time', 'down')}<th>Change from last period</th>${th('9 in 10 done within', 'down')}${th(`Done within ${KPI_ON_TIME_DAYS} days`, 'up')}</tr></thead><tbody>
-        ${K.steps.map((x, i) => `<tr><td style="font-weight:700">${esc(x.label)}</td>
-          <td>${x.own ? '<span class="kpi-own">Our team</span>' : `<span class="kpi-wait">Waiting on ${esc(x.waitOn)}</span>`}</td>
-          <td>${x.done}</td><td>${val(kpiDur(x.median), kpiRateDays(x.median, KPI_TARGETS.stepDays))}</td><td>${delta(x.median, P.steps[i].median, 'down', kpiDur) || '<span style="color:#ccc">—</span>'}</td>
-          <td>${val(kpiDur(x.p90), kpiRateDays(x.p90, KPI_TARGETS.tailDays))}</td><td>${val(pct(x.onTime), kpiRateHigh(x.onTime, KPI_TARGETS.onTime))}</td></tr>`).join('')}
-      </tbody></table></div>`}
       <div class="kpi-h">New orders vs deliveries, week by week</div>
       <div style="overflow-x:auto"><table class="cc-tbl" style="max-width:640px"><thead><tr><th>Week ending</th><th>New orders</th>${th('Deliveries received', 'up')}${th('Change in open orders', 'down')}</tr></thead><tbody>
         ${K.flow.weeks.map(w => { const n = w.created - w.received; return `<tr><td>${fmtD(new Date(w.end).toISOString().slice(0, 10))}</td><td>${w.created}</td><td>${w.received}</td>
           <td>${val((n > 0 ? '+' : '') + n, kpiRateNet(n))}</td></tr>`; }).join('')}
       </tbody></table></div>
-      ${(() => {
-        // Warehouse & delivery — team and route measures, whole days.
-        const W = kpiWarehouse(records, kd), PW = kpiWarehouse(records, kd, K.now - kd * KPI_DAY);
-        const dval = (ms, tgt) => val(kpiDays(ms), kpiRateDays(ms, tgt));
-        const wTile = (n, l, d, aim, note, rate) => tile(n, l, d, aim, note, rate);
-        const waitRate = W.waiting === 0 ? 'good' : kpiRateDays(W.oldestWait, KPI_TARGETS.stepDays);
-        return `
-      <div class="kpi-h" style="padding-top:18px">Warehouse &amp; delivery</div>
-      <div class="kpi-tiles">
-        ${wTile(W.released, 'Orders released by the warehouse', delta(W.released, PW.released, 'up', num), 'up')}
-        ${wTile(W.units.toLocaleString(), 'Units in released orders', delta(W.units, PW.units, 'up', num), 'up', 'as ordered — shipped units aren\'t recorded')}
-        ${wTile(W.boxes.toLocaleString(), 'Boxes shipped', delta(W.boxes, PW.boxes, 'up', num), 'up')}
-        ${wTile(kpiDays(W.turnaround), 'Typical warehouse turnaround', delta(W.turnaround, PW.turnaround, 'down', kpiDays), 'down', 'sent to warehouse → left warehouse', kpiRateDays(W.turnaround, KPI_TARGETS.stepDays))}
-        ${wTile(W.waiting, 'Orders waiting at the warehouse now', '', 'down', W.waiting ? `oldest waiting ${kpiDays(W.oldestWait)}` : 'none waiting', waitRate)}
-        ${wTile(kpiDays(W.total), 'Typical time from warehouse to store', delta(W.total, PW.total, 'down', kpiDays), 'down', 'left warehouse → received', kpiRateDays(W.total, KPI_TARGETS.tailDays))}
       </div>
-      <div class="kpi-h">Delivery time by route</div>
-      ${!W.routes.length ? `<div class="cc-empty">No deliveries received in the last ${kd} days.</div>` : `
-      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Route</th><th>Deliveries received</th>${th('Warehouse → hub', 'down')}${th('Waiting at the hub', 'down')}${th('Last trip to the store', 'down')}${th('Typical warehouse → received', 'down')}${th('9 in 10 received within', 'down')}</tr></thead><tbody>
-        ${W.routes.map(x => `<tr><td style="font-weight:700">${esc(x.route)}</td><td>${x.n}</td>
-          <td>${x.route === 'Direct' || x.route === 'LBC' ? '<span style="color:#bbb">no hub</span>' : kpiDays(x.toHub)}</td>
-          <td>${x.route === 'Direct' || x.route === 'LBC' ? '<span style="color:#bbb">no hub</span>' : kpiDays(x.atHub)}</td>
-          <td>${kpiDays(x.lastLeg)}</td><td>${dval(x.total, KPI_TARGETS.tailDays)}</td><td>${dval(x.p90, KPI_TARGETS.tailDays)}</td></tr>`).join('')}
-      </tbody></table></div>`}`;
-      })()}
+      <div class="kpi-block kb-ia">
+        <div class="kpi-bh"><span class="kpi-bt">IA order generation</span><span class="kpi-bd">From the IA’s review to handing the order to the warehouse — tasks done in the Hub by IAs and Coordinators.</span></div>
+      <div class="kpi-tiles">
+        ${tile(K.events, 'Tasks completed', delta(K.events, P.events, 'up', num), 'up')}
+        ${tile(pct(K.ownOnTime), `Our tasks done within ${KPI_ON_TIME_DAYS} days`, delta(K.ownOnTime, P.ownOnTime, 'up', pts), 'up', '', kpiRateHigh(K.ownOnTime, KPI_TARGETS.onTime))}
+      </div>
+      ${!K.events && !K.flow.created && !K.flow.received ? `<div class="cc-empty">Nothing recorded through the Hub in the last ${kd} days yet.</div>` : `
+      <div class="kpi-h">How long each IA step takes</div>
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Step</th><th>Whose time is it?</th><th>Times done</th>${th('Typical time', 'down')}<th>Change from last period</th>${th('9 in 10 done within', 'down')}${th(`Done within ${KPI_ON_TIME_DAYS} days`, 'up')}</tr></thead><tbody>
+        ${K.steps.filter(x => x.key !== 'act').map(x => `<tr><td style="font-weight:700">${esc(x.label)}</td>
+          <td>${x.own ? '<span class="kpi-own">Our team</span>' : `<span class="kpi-wait">Waiting on ${esc(x.waitOn)}</span>`}</td>
+          <td>${x.done}</td><td>${val(kpiDur(x.median), kpiRateDays(x.median, KPI_TARGETS.stepDays))}</td><td>${delta(x.median, (P.steps.find(y => y.key === x.key) || {}).median, 'down', kpiDur) || '<span style="color:#ccc">—</span>'}</td>
+          <td>${val(kpiDur(x.p90), kpiRateDays(x.p90, KPI_TARGETS.tailDays))}</td><td>${val(pct(x.onTime), kpiRateHigh(x.onTime, KPI_TARGETS.onTime))}</td></tr>`).join('')}
+      </tbody></table></div>`}
       ${(() => {
         // IA scorecard: their stores (Users tab) + their own work.
         const own = ccStoreIAs(users || []);
@@ -7375,6 +7369,35 @@ function ccRender(force) {
           <td style="color:#666">${esc(x.mix.map(m => `${m.n} × ${m.label}`).join(' · '))}</td></tr>`).join('')}
       </tbody></table></div>` : ''}`;
       })()}
+      </div>
+      <div class="kpi-block kb-wh">
+        <div class="kpi-bh"><span class="kpi-bt">Warehouse fulfillment</span><span class="kpi-bd">From the order reaching the warehouse to the store receiving it — team and route measures, in whole days.</span></div>
+      ${(() => {
+        // Warehouse & delivery — team and route measures, whole days.
+        const W = kpiWarehouse(records, kd), PW = kpiWarehouse(records, kd, K.now - kd * KPI_DAY);
+        const dval = (ms, tgt) => val(kpiDays(ms), kpiRateDays(ms, tgt));
+        const wTile = (n, l, d, aim, note, rate) => tile(n, l, d, aim, note, rate);
+        const waitRate = W.waiting === 0 ? 'good' : kpiRateDays(W.oldestWait, KPI_TARGETS.stepDays);
+        return `
+      <div class="kpi-tiles">
+        ${wTile(W.released, 'Orders released by the warehouse', delta(W.released, PW.released, 'up', num), 'up')}
+        ${wTile(W.units.toLocaleString(), 'Units in released orders', delta(W.units, PW.units, 'up', num), 'up', 'as ordered — shipped units aren\'t recorded')}
+        ${wTile(W.boxes.toLocaleString(), 'Boxes shipped', delta(W.boxes, PW.boxes, 'up', num), 'up')}
+        ${wTile((K.steps.find(x => x.key === 'act') || {}).done || 0, 'Warehouse counts confirmed', delta((K.steps.find(x => x.key === 'act') || {}).done, (P.steps.find(x => x.key === 'act') || {}).done, 'up', num), 'up', 'recorded in the Hub by IAs')}
+        ${wTile(kpiDays(W.turnaround), 'Typical warehouse turnaround', delta(W.turnaround, PW.turnaround, 'down', kpiDays), 'down', 'sent to warehouse → left warehouse', kpiRateDays(W.turnaround, KPI_TARGETS.stepDays))}
+        ${wTile(W.waiting, 'Orders waiting at the warehouse now', '', 'down', W.waiting ? `oldest waiting ${kpiDays(W.oldestWait)}` : 'none waiting', waitRate)}
+        ${wTile(kpiDays(W.total), 'Typical time from warehouse to store', delta(W.total, PW.total, 'down', kpiDays), 'down', 'left warehouse → received', kpiRateDays(W.total, KPI_TARGETS.tailDays))}
+      </div>
+      <div class="kpi-h">Delivery time by route</div>
+      ${!W.routes.length ? `<div class="cc-empty">No deliveries received in the last ${kd} days.</div>` : `
+      <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Route</th><th>Deliveries received</th>${th('Warehouse → hub', 'down')}${th('Waiting at the hub', 'down')}${th('Last trip to the store', 'down')}${th('Typical warehouse → received', 'down')}${th('9 in 10 received within', 'down')}</tr></thead><tbody>
+        ${W.routes.map(x => `<tr><td style="font-weight:700">${esc(x.route)}</td><td>${x.n}</td>
+          <td>${x.route === 'Direct' || x.route === 'LBC' ? '<span style="color:#bbb">no hub</span>' : kpiDays(x.toHub)}</td>
+          <td>${x.route === 'Direct' || x.route === 'LBC' ? '<span style="color:#bbb">no hub</span>' : kpiDays(x.atHub)}</td>
+          <td>${kpiDays(x.lastLeg)}</td><td>${dval(x.total, KPI_TARGETS.tailDays)}</td><td>${dval(x.p90, KPI_TARGETS.tailDays)}</td></tr>`).join('')}
+      </tbody></table></div>`}`;
+      })()}
+      </div>
       <div class="cc-empty" style="padding-top:8px"><b>Typical</b> means half were faster and half slower. <b>9 in 10 done within</b>: nine out of ten finished inside that time; the slowest one in ten took longer. Each task counts for the person who did it, timed from the step before. <b>Our team</b> steps are time we control — only those count toward a person; <b>Waiting on</b> steps show the process, not the person. Not counted: Executives' own actions, steps filled in automatically when an order is created, and orders brought over from the old system. Warehouse &amp; delivery is counted in whole days, by team and route — the warehouse doesn't use the Hub, so there's no per-person view, and units are what was ordered (the Hub doesn't record what was actually shipped). The first weeks have little data — trust the counts first, the times after about a month.</div>`;
     kpiPanel = panel('cc-kpi', '8', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
   }
