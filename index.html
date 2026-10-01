@@ -1285,7 +1285,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-01 · 15:30';
+const HUB_BUILD = '2026-10-02 · 00:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1381,6 +1381,8 @@ function doLogout() {
     localStorage.removeItem('acacia_lastActive');
   } catch(e) {}
   clearInterval(S.pollTimer);
+  clearTimeout(S._retryTimer);
+  S._syncFails = 0; S._lastSyncAt = null;
   clearInterval(S.usersTimer);
   clearInterval(S.idleTimer);
   S.idleTimer = null;
@@ -1696,6 +1698,7 @@ function startApp() {
   // Poll every 30s if connected
   if (!CFG.offline && CFG.apiUrl) {
     S.pollTimer = setInterval(loadData, 30000);
+    watchConnection();
     clearInterval(S.usersTimer);
     S.usersTimer = setInterval(refreshUsers, USERS_REFRESH_MS);
     watchUsersOnFocus();
@@ -1719,8 +1722,14 @@ function startApp() {
 }
 
 /* ══════════════════ DATA ══════════════════ */
+// A refresh that fails keeps the tickets already on screen. It used to swap
+// them for the (empty) demo list, so one slow reply from Apps Script — or a
+// laptop waking up — blanked the whole Hub until the next 30-second poll.
+const SYNC_RETRY_MS = [5000, 15000, 30000];
 async function loadData() {
-  setConn('syncing', 'Syncing…');
+  if (S._loading) return;            // the poll and a retry never overlap
+  S._loading = true;
+  if (!S._syncFails) setConn('syncing', 'Syncing…');
   try {
     let records;
     if (CFG.offline || !CFG.apiUrl) {
@@ -1733,6 +1742,10 @@ async function loadData() {
         username: S.user.username,
         // no month — the Hub shows every ticket regardless of age
       });
+      if (S._syncFails >= 2) toast('✅ Back online — tickets are up to date.');
+      S._syncFails = 0;
+      S._lastSyncAt = new Date();
+      clearTimeout(S._retryTimer);
       setConn('online', 'Live');
       // Normalize date fields from Sheets (may arrive as full timestamp strings)
       const DATE_FIELDS = ['dWhs','dSdc','dDirect','dCdc','dSdc2','dCdc2','dRecv'];
@@ -1802,11 +1815,20 @@ async function loadData() {
     document.getElementById('last-sync').textContent = 'Updated ' + fmtTime(new Date());
     renderAll();
   } catch(e) {
-    setConn('offline', 'Offline');
-    toast('Could not sync: ' + e.message, 'warn');
-    // Fall back to offline data
-    S.records = OFFLINE_DATA.slice();
-    renderAll();
+    // Keep the last tickets loaded — never blank the Hub. One miss shows amber
+    // "Reconnecting…"; from the second it's red "Offline" with the time of the
+    // data on screen, and one message per outage (not one every 30 seconds).
+    S._syncFails = (S._syncFails || 0) + 1;
+    const since = S._lastSyncAt ? fmtTime(S._lastSyncAt) : null;
+    if (S._syncFails === 1) setConn('syncing', 'Reconnecting…');
+    else setConn('offline', since ? `Offline — showing data from ${since}` : 'Offline');
+    const dot = document.getElementById('conn-dot');
+    if (dot) dot.title = `Last refresh failed: ${e.message || e}${since ? ` · tickets shown are from ${since}` : ''} · retrying`;
+    if (S._syncFails === 2) toast(since ? `Lost connection — showing tickets from ${since}. Retrying…` : 'Could not load tickets — retrying…', 'warn');
+    clearTimeout(S._retryTimer);
+    S._retryTimer = setTimeout(loadData, SYNC_RETRY_MS[Math.min(S._syncFails, SYNC_RETRY_MS.length) - 1]);
+  } finally {
+    S._loading = false;
   }
 }
 
@@ -7862,6 +7884,19 @@ function toast(msg,type='ok') {
   el.innerHTML=`<span>${{ok:'✅',err:'❌',warn:'⚠️'}[type]||''}</span> ${msg}`;
   document.getElementById('toasts').appendChild(el);
   setTimeout(()=>el.remove(),3500);
+}
+
+// Refresh straight away when the Hub comes back into view (incl. a laptop
+// waking up) if the data is over 30 seconds old, and when the internet returns.
+let _connWatched = false;
+function watchConnection() {
+  if (_connWatched) return;
+  _connWatched = true;
+  const stale = () => !S._lastSyncAt || (Date.now() - S._lastSyncAt) > 30000;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && S.user && !CFG.offline && CFG.apiUrl && stale()) loadData();
+  });
+  window.addEventListener('online', () => { if (S.user && !CFG.offline && CFG.apiUrl) loadData(); });
 }
 
 function setConn(state, label) {
