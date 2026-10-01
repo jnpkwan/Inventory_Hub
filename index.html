@@ -1338,7 +1338,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-02 · 02:30';
+const HUB_BUILD = '2026-10-02 · 03:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1969,15 +1969,31 @@ function todoIsOpen() {
 }
 function todoSetOpen(open) { try { localStorage.setItem(todoPrefKey(), open ? 'open' : 'closed'); } catch(e) {} renderTodo(); }
 function todoToggleGroup(g) { S._todoShut = S._todoShut || {}; S._todoShut[g] = !S._todoShut[g]; renderTodo(); }
-// Open a ticket from the list: the right phase, the row expanded and in view.
-// The search is cleared only if it would hide the ticket.
+// The breakdown card a ticket sits under — found by asking each card's own
+// filter (getFiltered), so it can never disagree with what the cards show.
+// '' when no card holds it (e.g. an IA "Request Changes").
+function todoCardFor(r) {
+  const keys = (r.storeStatus || '') === 'Approved'
+    ? ['p4_whs', 'p4_act', ...P4_STATUS_ORDER.map(k => P4_STATUS_SF[k]), 'p4_odd']
+    : ['p3_await', 'p3_pdf', 'p3_coord', 'p3_stchg'];
+  const keep = { sf: S.subFilter, q: S.searchTerm, ro: S.fRoute, ty: S.fType };
+  S.searchTerm = ''; S.fRoute = ''; S.fType = '';
+  let hit = '';
+  for (const k of keys) { S.subFilter = k; if (getFiltered().includes(r)) { hit = k; break; } }
+  S.subFilter = keep.sf; S.searchTerm = keep.q; S.fRoute = keep.ro; S.fType = keep.ty;
+  return hit;
+}
+// Open a ticket from the list: its phase, ITS card selected (so the list shows
+// where it sits), the row expanded and in view. A search or route/type filter
+// is cleared only if it would hide the ticket.
 function todoOpen(uid) {
   const r = S.records.find(x => (x.id || x.cdf) === uid);
   if (!r) return;
   const phase = (r.storeStatus || '') === 'Approved' ? 'p4' : 'p3';
   if (S.phaseFilter !== phase) setPhaseFilter(phase);
-  S.subFilter = '';
-  if (!getFiltered().some(x => x === r)) S.searchTerm = '';
+  S.subFilter = todoCardFor(r);
+  if (!getFiltered().includes(r)) S.searchTerm = '';
+  if (!getFiltered().includes(r)) { S.fRoute = ''; S.fType = ''; }
   S.expandedId = uid;
   if (todoIsPhone()) { try { localStorage.setItem(todoPrefKey(), 'closed'); } catch(e) {} }   // land on the ticket
   renderAll();
