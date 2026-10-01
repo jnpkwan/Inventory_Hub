@@ -1283,7 +1283,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-01 · 14:30';
+const HUB_BUILD = '2026-10-01 · 15:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1292,7 +1292,11 @@ function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r;
 //   Role:   'IS', 'is', 'IS ' → 'IS'
 //   Stores: separated by commas, semicolons or line breaks (Alt+Enter)
 //   Store:  capitals, extra spaces, full stops/commas/apostrophes and dash style don't matter
-function normRole(role) { return String(role == null ? '' : role).trim().toUpperCase(); }
+// "IA" and "IS" are the same role. The Users tab may say either; inside the
+// Hub it's always 'IS' (every permission check uses that), and people always
+// SEE "IA" — see roleLabel().
+function normRole(role) { const r = String(role == null ? '' : role).trim().toUpperCase(); return r === 'IA' ? 'IS' : r; }
+function roleLabel(role) { const r = normRole(role); return r === 'IS' ? 'IA' : r; }
 function storeKey(name) {
   return String(name == null ? '' : name).toUpperCase()
     .replace(/[.,'\u2019]/g, ' ')                 // "STA. ANA" = "STA ANA"
@@ -1669,7 +1673,7 @@ function startApp() {
   av.textContent = (u.name||u.username)[0].toUpperCase();
   av.style.background = ROLE_COLORS[u.role] || '#555';
   document.getElementById('user-nm').textContent = u.name || u.username;
-  document.getElementById('user-role-badge').textContent = u.role;
+  document.getElementById('user-role-badge').textContent = roleLabel(u.role);
   const ccBtn = document.getElementById('cc-btn');
   if (ccBtn) ccBtn.style.display = permRole(u.role) === 'EXECUTIVE' ? '' : 'none';
 
@@ -2504,7 +2508,7 @@ function buildDetail(r, span = 13) {
         ? `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="color:var(--teal);font-weight:600">📄 Generated ${r.pdfGeneratedAt?fmtD(r.pdfGeneratedAt.slice(0,10)):''}${pdfRegen}</div></div>`
         : (role==='IS'||role==='EXECUTIVE')
           ? `<div class="wf-meta" style="margin-top:2px"><div class="wf-ml">PDF</div><div class="wf-mv"><button class="btn btn-blue btn-sm" style="padding:3px 9px;font-size:10px" onclick="event.stopPropagation();generatePDF('${uid}')">📄 Generate PDF</button>${paperSelect()}</div></div>`
-          : `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="font-size:10px;color:var(--amber);font-weight:600">⏳ Pending IS</div></div>`)
+          : `<div class="wf-meta"><div class="wf-ml">PDF</div><div class="wf-mv" style="font-size:10px;color:var(--amber);font-weight:600">⏳ Pending IA</div></div>`)
     : '';
   const pdfGenBtn = ''; // kept for compat — logic moved to pdfInline
 
@@ -7580,7 +7584,7 @@ function ccRender(force) {
         return `<div class="cc-empty" style="padding:0 0 8px">Oldest activity first. <b>Last seen</b> is any time their Hub was open and connected — the best sign they're using it. <b>Last change saved</b> is the last time they edited or created something. Green: within 2 days · amber: within 7 · red: longer, or never.</div>
           <div style="overflow-x:auto"><table class="cc-tbl"><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>Last seen in the Hub</th><th>Last login</th><th>Last change saved</th></tr></thead><tbody>
           ${rows.map(x => `<tr><td style="font-weight:700;white-space:nowrap">${esc(x.u.name || x.u.username)} <span style="color:#999;font-weight:500">(${esc(x.u.username)})</span></td>
-            <td>${esc(x.u.role)}</td><td><span class="kv kv-${x.rate}">${label[x.rate]}</span></td>
+            <td>${esc(roleLabel(x.u.role))}</td><td><span class="kv kv-${x.rate}">${label[x.rate]}</span></td>
             <td>${x.p.lastSeen ? when(x.p.lastSeen) : '<span style="color:#bbb">not yet recorded</span>'}</td><td>${when(x.p.lastLogin)}</td><td>${when(x.p.lastChange)}</td></tr>`).join('')}
           </tbody></table></div>`;
       })();
