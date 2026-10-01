@@ -1283,7 +1283,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-01 · 14:00';
+const HUB_BUILD = '2026-10-01 · 14:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -7735,13 +7735,13 @@ function ccRender(force) {
 
   el.innerHTML = head + kpis
     + panel('cc-sys',  '1', 'System', badge(sysR, sysA, 'All passing'), sysBody)
-    + panel('cc-acacia', '2', 'Check Against Acacia', !S._acacia ? '<span class="wf-status-badge wfs-sent">Report only</span>' : badge(acR, acA, 'All match'), acaciaBody)
-    + panel('cc-cov',  '3', `No Delivery or Order in ${CC_DELIVERY_WINDOW} Days`, coverage.length ? `<span class="wf-status-badge wfs-partial">${coverage.length} store${coverage.length !== 1 ? 's' : ''}</span>` : `<span class="wf-status-badge wfs-approved">All covered</span>`, covBody)
-    + panel('cc-ia',   '4', 'Issues by IA', !byIA || byIA.noIAs ? '' : iaFlagged ? `<span class="wf-status-badge wfs-changes">${plural(iaFlagged, 'IA')} with issues</span>` : `<span class="wf-status-badge wfs-approved">All clear</span>`, iaBody)
+    + panel('cc-err',  '2', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody)
+    + panel('cc-acacia', '3', 'Check Against Acacia', !S._acacia ? '<span class="wf-status-badge wfs-sent">Report only</span>' : badge(acR, acA, 'All match'), acaciaBody)
+    + panel('cc-cov',  '4', `No Delivery or Order in ${CC_DELIVERY_WINDOW} Days`, coverage.length ? `<span class="wf-status-badge wfs-partial">${coverage.length} store${coverage.length !== 1 ? 's' : ''}</span>` : `<span class="wf-status-badge wfs-approved">All covered</span>`, covBody)
     + panel('cc-vis',  '5', 'Who Sees Each Ticket', !users || !vis || !vis.iaLists ? '' : badge(visR, visA, 'Everyone covered'), visBody)
-    + panel('cc-stuck','6', 'Stuck Tickets', badge(stR, stA, 'None'), stuckBody)
-    + panel('cc-anom', '7', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
-    + panel('cc-err',  '8', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody)
+    + panel('cc-ia',   '6', 'Issues by IA', !byIA || byIA.noIAs ? '' : iaFlagged ? `<span class="wf-status-badge wfs-changes">${plural(iaFlagged, 'IA')} with issues</span>` : `<span class="wf-status-badge wfs-approved">All clear</span>`, iaBody)
+    + panel('cc-stuck','7', 'Stuck Tickets', badge(stR, stA, 'None'), stuckBody)
+    + panel('cc-anom', '8', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
     + panel('cc-seen', '9', "Who's Been Using the Hub", !users || !presence ? '' : seenRed ? `<span class="wf-status-badge wfs-changes">${seenRed} not seen in 7+ days</span>` : `<span class="wf-status-badge wfs-approved">Everyone active</span>`, seenBody)
     + kpiPanel;
 }
