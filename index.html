@@ -689,8 +689,15 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .td-so{display:block;font-size:11.5px;color:#999;margin-top:2px;font-family:'DM Mono',monospace}
 .td-empty{padding:30px 10px;text-align:center;font-size:14px;color:#666}
 .td-foot{padding:8px 14px;border-top:1px solid var(--silver);font-size:11.5px;color:#888;background:var(--mist)}
-/* Wide screens: make room so the list never covers the tickets */
-@media (min-width: 1200px){ body.todo-on main{padding-right:360px} }
+/* Wide screens: the tickets fill the space up to the list — no dead strip on
+   the left or between them and the list. Content keeps its usual 1440px cap;
+   any extra width on very large screens goes to the left. */
+/* With the list open, cards may go a little narrower so a row of eight fits */
+body.todo-on .sub-summary{grid-template-columns:repeat(auto-fill,minmax(116px,1fr))}
+@media (min-width: 1200px){
+  body.todo-on main{max-width:none;margin-right:0;padding-right:360px;
+    margin-left:max(0px, calc(100vw - 1440px - 360px - 28px))}
+}
 .ac-intro{font-size:13px;color:#555;line-height:1.55;margin:2px 0 12px;max-width:900px}
 .ac-hint{font-size:12px;color:#888;margin-left:10px}
 .ac-sum{display:flex;flex-direction:column;gap:5px;font-size:13px;color:#444;background:var(--mist);border-radius:10px;padding:10px 14px;margin-bottom:10px}
@@ -1314,7 +1321,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-02 · 01:30';
+const HUB_BUILD = '2026-10-02 · 02:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1910,7 +1917,9 @@ function todoBuild(records) {
     fix[x.sev].push({ r: x.r, text: x.inStage ? `${x.days} days in ${x.stage}` : `No dispatch movement for ${x.days} days`, days: x.days });
     flagged.add(x.r);
   });
-  ccAnomalies(records, storeSet, S._prices || null).forEach(a => {
+  // Only check prices against a real price list — an empty one would flag every SKU.
+  const prices = S._prices && typeof S._prices === 'object' && !Array.isArray(S._prices) && Object.keys(S._prices).length ? S._prices : null;
+  ccAnomalies(records, storeSet, prices).forEach(a => {
     fix[a.sev].push({ r: a.r, text: a.kind, days: days(a.r) });
     flagged.add(a.r);
   });
