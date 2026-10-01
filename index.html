@@ -662,6 +662,35 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .ssc.ssc-acacia{border-color:var(--blue);border-style:dashed;cursor:pointer;background:var(--blue-pale)}
 .ssc.ssc-acacia:hover{border-style:solid}
 .err-dismiss{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0 8px;font-size:12px;color:#777}
+/* ── IA to-do panel ── */
+#todo-panel{position:fixed;right:14px;z-index:150;font-family:inherit}
+#todo-panel.todo-open{width:320px;bottom:14px;display:flex;flex-direction:column;background:#fff;border:1px solid var(--silver);border-radius:14px;box-shadow:0 12px 32px rgba(27,77,160,.14);overflow:hidden}
+#todo-panel.todo-tab button{writing-mode:vertical-rl;transform:rotate(180deg);border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:10px;padding:14px 8px;font-family:'Montserrat',sans-serif;font-weight:800;font-size:13px;letter-spacing:.4px;cursor:pointer;box-shadow:0 8px 20px rgba(27,77,160,.25)}
+#todo-panel.todo-tab b{display:inline-block;margin-top:6px;background:#fff;color:var(--blue);border-radius:999px;padding:4px 2px}
+.td-head{display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px 10px;border-bottom:1px solid var(--silver);background:var(--blue-pale)}
+.td-title{font-family:'Montserrat',sans-serif;font-weight:800;font-size:17px;color:var(--blue)}
+.td-title b{display:inline-block;min-width:24px;text-align:center;margin-left:6px;background:var(--blue);color:#fff;border-radius:999px;padding:1px 8px;font-size:13px;vertical-align:2px}
+.td-sub{font-size:12px;font-weight:600;color:#666;margin-top:2px}
+.td-fold{border:none;background:#fff;border-radius:8px;width:30px;height:30px;font-size:16px;font-weight:800;color:var(--blue);cursor:pointer}
+.td-body{overflow-y:auto;flex:1;padding:6px 10px 10px}
+.td-grp{margin-top:8px}
+.td-gh{display:flex;align-items:center;gap:8px;width:100%;border:none;background:none;padding:6px 4px;cursor:pointer;font-family:'Montserrat',sans-serif;font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}
+.td-gh b{border-radius:999px;padding:1px 9px;font-size:12px}
+.td-gh i{margin-left:auto;font-style:normal;color:#999}
+.td-red .td-gh{color:#A3261B} .td-red .td-gh b{background:#FBE3E1}
+.td-amber .td-gh{color:#8A5A00} .td-amber .td-gh b{background:#FDF1D8}
+.td-next .td-gh{color:var(--blue)} .td-next .td-gh b{background:var(--blue-pale)}
+.td-it{display:block;width:100%;text-align:left;border:1px solid var(--mist);border-left-width:4px;background:#fff;border-radius:10px;padding:8px 10px;margin:5px 0;cursor:pointer;font-family:inherit}
+.td-it:hover{background:var(--mist)}
+.td-red .td-it{border-left-color:#C0392B} .td-amber .td-it{border-left-color:#C98A00} .td-next .td-it{border-left-color:var(--blue)}
+.td-st{display:block;font-weight:800;font-size:13.5px;color:var(--ink)}
+.td-tx{display:block;font-size:13px;color:#444;margin-top:1px;line-height:1.35}
+.td-nx{display:block;font-size:12.5px;font-weight:700;color:var(--blue);margin-top:3px}
+.td-so{display:block;font-size:11.5px;color:#999;margin-top:2px;font-family:'DM Mono',monospace}
+.td-empty{padding:30px 10px;text-align:center;font-size:14px;color:#666}
+.td-foot{padding:8px 14px;border-top:1px solid var(--silver);font-size:11.5px;color:#888;background:var(--mist)}
+/* Wide screens: make room so the list never covers the tickets */
+@media (min-width: 1200px){ body.todo-on main{padding-right:360px} }
 .ac-intro{font-size:13px;color:#555;line-height:1.55;margin:2px 0 12px;max-width:900px}
 .ac-hint{font-size:12px;color:#888;margin-left:10px}
 .ac-sum{display:flex;flex-direction:column;gap:5px;font-size:13px;color:#444;background:var(--mist);border-radius:10px;padding:10px 14px;margin-bottom:10px}
@@ -1285,7 +1314,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-02 · 00:30';
+const HUB_BUILD = '2026-10-02 · 01:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1396,6 +1425,9 @@ function doLogout() {
   S.ownerView = null;
   S.ownerViewChosen = false;
   S._search = { p3: '', p4: '' };
+  S._prices = null;
+  document.getElementById('todo-panel')?.remove();
+  document.body.classList.remove('todo-on');
   S.records = [];
   S.hist = {};
   S._cc = null;
@@ -1690,6 +1722,13 @@ function startApp() {
   loadStores();
   if (!(S.users || []).length) S.users = usersFromCache();   // ready instantly; replaced when the fresh list arrives
   loadUsers();
+  // Product prices for the IA to-do list's "SKUs with no price" check. If they
+  // don't load, that one check is skipped — never a false flag.
+  if (todoIsViewer() && !CFG.offline && CFG.apiUrl) {
+    gasGet('getBibleProductPrices', { username: S.user.username })
+      .then(p => { S._prices = p; renderTodo(); })
+      .catch(e => console.warn('To-do list: prices did not load —', e.message || e));
+  }
 
   // Fetch reconciliation history once at login (non-blocking — phase 1 card sub-label)
   p1LoadHistory();
@@ -1833,7 +1872,123 @@ async function loadData() {
 }
 
 /* ══════════════════ RENDER ══════════════════ */
+/* ══════════════════ IA TO-DO PANEL ══════════════════
+   A standing list on the right of Phase 3 and Phase 4, for IAs only, for the
+   stores in the Showing dropdown (their own, or a colleague's when covering).
+     🔴 Fix now   — what the Command Center flags red for these stores
+     🟠 Fix soon  — amber flags
+     🔵 Next steps — the IA's own next actions (review, PDF, Merchandiser,
+                     store changes, send to warehouse, confirm actuals)
+   Built from the same checks as the Command Center (ccStuck, ccAnomalies), on
+   every redraw. Nothing is ticked off by hand: an item leaves the list when
+   the ticket is actually fixed. A ticket already under "Fix" isn't repeated
+   under "Next steps".
+═════════════════════════════════════════════════════ */
+function todoIsViewer() { return !!S.user && normRole(S.user.role) === 'IS'; }
+function todoNextStep(r) {
+  if (isReceivedTicket(r)) return null;
+  const sm = r.smgrStatus || '', st = r.storeStatus || '';
+  if (st !== 'Approved') {   // Phase 3
+    if (sm === '') return { label: 'Review the order', rank: 1 };
+    if (sm === 'Changes Requested') return { label: 'Update the order (changes requested)', rank: 2 };
+    if (sm === 'Approved' && (r.pdfStatus || '') !== 'Generated') return { label: 'Generate the PDF', rank: 3 };
+    if ((r.merchStatus || '') !== 'Reviewed' && st === '') return { label: 'Merchandiser review — enter changes or approve', rank: 4 };
+    if (st === 'Changes Requested') return { label: 'Store asked for changes — update and begin fulfillment', rank: 5 };
+    return null;               // waiting on the Store Manager (a Coordinator step)
+  }
+  const b = p4Bucket(r);       // Phase 4
+  if (b === 'WHS Prepare Order') return { label: 'Send to the warehouse', rank: 6 };
+  if (b === 'Awaiting Actual Count') return { label: 'Confirm actuals once the warehouse has counted', rank: 7 };
+  return null;                 // dispatch and delivery are tracked by Stuck Tickets
+}
+function todoBuild(records) {
+  const storeSet = (S.stores || []).length ? new Set(S.stores) : null;
+  const fix = { red: [], amber: [] };
+  const flagged = new Set();
+  const days = r => { const s = ccStage(r); return ccDaysSince(s.since) ?? 0; };
+  ccStuck(records).forEach(x => {
+    fix[x.sev].push({ r: x.r, text: x.inStage ? `${x.days} days in ${x.stage}` : `No dispatch movement for ${x.days} days`, days: x.days });
+    flagged.add(x.r);
+  });
+  ccAnomalies(records, storeSet, S._prices || null).forEach(a => {
+    fix[a.sev].push({ r: a.r, text: a.kind, days: days(a.r) });
+    flagged.add(a.r);
+  });
+  // One line per ticket per colour: merge a ticket's issues into one item.
+  const merge = list => {
+    const by = new Map();
+    list.forEach(x => { const m = by.get(x.r); if (m) { if (!m.texts.includes(x.text)) m.texts.push(x.text); m.days = Math.max(m.days, x.days); } else by.set(x.r, { r: x.r, texts: [x.text], days: x.days }); });
+    return [...by.values()].sort((a, b) => b.days - a.days);
+  };
+  // A flagged ticket keeps its next step on the same line, so a minor flag
+  // never hides what the IA has to do with it next.
+  const withStep = x => { const st = todoNextStep(x.r); if (st) x.next = st.label; return x; };
+  const red = merge(fix.red).map(withStep);
+  const amber = merge(fix.amber).filter(x => !red.some(y => y.r === x.r)).map(withStep);
+  const next = records.filter(r => !flagged.has(r)).map(r => ({ r, step: todoNextStep(r) })).filter(x => x.step)
+    .map(x => ({ r: x.r, texts: [x.step.label], rank: x.step.rank, days: days(x.r) }))
+    .sort((a, b) => a.rank - b.rank || b.days - a.days);
+  return { red, amber, next };
+}
+function todoPrefKey() { return 'acacia_todo_' + (S.user ? S.user.username : ''); }
+function todoIsOpen() { try { return localStorage.getItem(todoPrefKey()) !== 'closed'; } catch(e) { return true; } }
+function todoSetOpen(open) { try { localStorage.setItem(todoPrefKey(), open ? 'open' : 'closed'); } catch(e) {} renderTodo(); }
+function todoToggleGroup(g) { S._todoShut = S._todoShut || {}; S._todoShut[g] = !S._todoShut[g]; renderTodo(); }
+// Open a ticket from the list: the right phase, the row expanded and in view.
+// The search is cleared only if it would hide the ticket.
+function todoOpen(uid) {
+  const r = S.records.find(x => (x.id || x.cdf) === uid);
+  if (!r) return;
+  const phase = (r.storeStatus || '') === 'Approved' ? 'p4' : 'p3';
+  if (S.phaseFilter !== phase) setPhaseFilter(phase);
+  S.subFilter = '';
+  if (!getFiltered().some(x => x === r)) S.searchTerm = '';
+  S.expandedId = uid;
+  renderAll();
+  setTimeout(() => { const row = document.querySelector(`tr[data-id="${CSS.escape(uid)}"]`); if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+}
+function renderTodo() {
+  let el = document.getElementById('todo-panel');
+  const show = todoIsViewer() && (S.phaseFilter === 'p3' || S.phaseFilter === 'p4');
+  document.body.classList.toggle('todo-on', show && todoIsOpen());
+  if (!show) { if (el) el.style.display = 'none'; return; }
+  if (!el) { el = document.createElement('aside'); el.id = 'todo-panel'; document.body.appendChild(el); }
+  el.style.display = '';
+  const hdr = document.querySelector('header');
+  el.style.top = ((hdr ? hdr.offsetHeight : 64) + 12) + 'px';
+  const T = todoBuild(applyOwnerView(S.records));
+  const total = T.red.length + T.amber.length + T.next.length;
+  const v = getOwnerView();
+  const whose = v === 'me' ? 'My stores' : v === 'all' ? 'All stores' : `${(ownerUser(v) || {}).name || v}'s stores`;
+  if (!todoIsOpen()) {
+    el.className = 'todo-tab';
+    el.innerHTML = `<button onclick="todoSetOpen(true)" title="Show your to-do list">📋 To do <b>${total}</b></button>`;
+    return;
+  }
+  el.className = 'todo-open';
+  const shut = S._todoShut || {};
+  const group = (key, cls, title, items) => !items.length ? '' : `
+    <div class="td-grp ${cls}">
+      <button class="td-gh" onclick="todoToggleGroup('${key}')"><span>${title}</span><b>${items.length}</b><i>${shut[key] ? '▸' : '▾'}</i></button>
+      ${shut[key] ? '' : items.map(x => `<button class="td-it" onclick="todoOpen('${esc(x.r.id || x.r.cdf)}')">
+          <span class="td-st">${esc(x.r.store || '')}</span>
+          <span class="td-tx">${esc(x.texts.join(' · '))}</span>
+          ${x.next ? `<span class="td-nx">Next: ${esc(x.next)}</span>` : ''}
+          <span class="td-so">${esc(x.r.cdf || '')}${x.days ? ` · ${x.days}d` : ''}</span>
+        </button>`).join('')}
+    </div>`;
+  el.innerHTML = `
+    <div class="td-head"><div><div class="td-title">To do <b>${total}</b></div><div class="td-sub">${esc(whose)}</div></div>
+      <button class="td-fold" onclick="todoSetOpen(false)" title="Fold the list away">⟩</button></div>
+    <div class="td-body">
+      ${total ? group('red', 'td-red', 'Fix now', T.red) + group('amber', 'td-amber', 'Fix soon', T.amber) + group('next', 'td-next', 'Next steps', T.next)
+              : '<div class="td-empty">Nothing to do for these stores. 🎉</div>'}
+    </div>
+    <div class="td-foot">Items leave the list when the ticket is fixed. Click one to open it.</div>`;
+}
+
 function renderAll() {
+  try { renderTodo(); } catch (e) { console.error('To-do panel:', e); }
   // ── Workspace toggle for Phase 1 and Phase 2 ───────────────────────────────
   const ws1 = document.getElementById('p1-workspace');
   const ws2 = document.getElementById('p2-workspace');
