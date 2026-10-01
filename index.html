@@ -1282,7 +1282,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-01 · 02:00';
+const HUB_BUILD = '2026-10-01 · 13:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1386,6 +1386,7 @@ function doLogout() {
   clearTimeout(_usersRetry);
   S.ownerView = null;
   S.ownerViewChosen = false;
+  S._search = { p3: '', p4: '' };
   S.records = [];
   S.hist = {};
   S._cc = null;
@@ -1888,7 +1889,9 @@ function selectFilter(id, key, allLabel, values) {
 /** Clears one filter by name, or every filter when called with 'all'. */
 function clearFilter(which) {
   if (which === 'all') {
-    S.fRoute = ''; S.fType = ''; S.searchTerm = ''; S.subFilter = '';
+    // Route/Type belong to Phase 4 — clearing in Phase 3 leaves them alone.
+    if (S.phaseFilter === 'p4') { S.fRoute = ''; S.fType = ''; }
+    S.searchTerm = ''; S.subFilter = '';
   }
   else if (which === 'route')    S.fRoute = '';
   else if (which === 'type')     S.fType = '';
@@ -1912,8 +1915,8 @@ function activeFilterBar() {
                     p3_coord:'Awaiting Coordinator', p3_stchg:'Changes Requested' };
     add('sub', byKey || names[S.subFilter] || 'Card filter');
   }
-  if (S.fRoute)      add('route',  'Route: ' + S.fRoute);
-  if (S.fType)       add('type',   'Type: ' + S.fType);
+  if (S.phaseFilter === 'p4' && S.fRoute) add('route', 'Route: ' + S.fRoute);
+  if (S.phaseFilter === 'p4' && S.fType)  add('type',  'Type: ' + S.fType);
   if (S.searchTerm)  add('search', `Search: "${S.searchTerm}"`);
   if (!chips.length) return '';
   return '<div class="fbar"><span class="fbar-l">Filtered by</span>' + chips.join('')
@@ -1933,8 +1936,10 @@ function setShownCount(shown, total) {
 
 function getFiltered() {
   const search = String(S.searchTerm ?? (document.getElementById('search')?.value || '')).toLowerCase();
-  const fRoute = S.fRoute || '';
-  const fType  = S.fType  || '';
+  // Route and Type are Phase 4 filters — their dropdowns only exist there, so
+  // they must never thin out Phase 3 unseen.
+  const fRoute = S.phaseFilter === 'p4' ? (S.fRoute || '') : '';
+  const fType  = S.phaseFilter === 'p4' ? (S.fType  || '') : '';
   // Received tickets are filtered by the breakdown cards (the Received card),
   // not by a separate toggle — there's no Hide Received any more.
   return applyOwnerView(S.records).filter(r => {
@@ -2081,7 +2086,13 @@ function renderSummary(rows) {
       +mkSub('p3_pdf',   '📄','PDF Pending',            pdfPend,   '#F9A825')  // amber — action needed
       +mkSub('p3_coord', '📤','Awaiting Coordinator',   coordAwait,'#F9A825')  // amber — action needed
       +mkSub('p3_stchg', '🏪','Store Changes Requested',storeChg,  '#C0392B')  // red — blocked
-      +'</div>';
+      +'</div>'
+      // Phase 3 search — every filter applied to the list is shown here, so
+      // nothing filters Phase 3 out of sight. Each phase keeps its own search.
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 2px 0">'
+        +'<div class="sw" style="min-width:180px;max-width:260px"><input type="text" id="search" placeholder="Store, Store Order or CDF Ref…" value="'+esc(S.searchTerm||'')+'" oninput="S.searchTerm=this.value; onSearchInput()"></div>'
+      +'</div>'
+      + activeFilterBar();
   } else if(pf==='p4') {
 
     const cnt={}; Object.keys(STATUS_META).forEach(k=>cnt[k]=0);
@@ -6196,6 +6207,18 @@ async function deleteRecord(uid) {
 // setMonth removed with the month filter. New records default to the current
 // month via S.month; the month is still editable per record in the edit modal.
 
+
+// Each phase keeps its own search. Every place that reads or sets
+// S.searchTerm (the box, the list filter, the Filtered-by chip, the Command
+// Center's "open ticket" link) now gets the CURRENT phase's term — so a Phase 4
+// search can never filter Phase 3 out of sight, and each phase's search is
+// still there when you come back to it.
+S._search = { p3: '', p4: '' };
+Object.defineProperty(S, 'searchTerm', {
+  configurable: true, enumerable: true,
+  get() { return S._search[S.phaseFilter] || ''; },
+  set(v) { if (S.phaseFilter in S._search) S._search[S.phaseFilter] = String(v == null ? '' : v); },
+});
 
 function setPhaseFilter(id) {
   if(S.phaseFilter===id) return; // already active — do nothing, keep sub-cards visible
