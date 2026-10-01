@@ -1282,7 +1282,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-01 · 01:30';
+const HUB_BUILD = '2026-10-01 · 02:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1290,10 +1290,11 @@ function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r;
 // ── How the Users tab is read — mirrors _normRole/_storeKey/_storeList in Code.gs
 //   Role:   'IS', 'is', 'IS ' → 'IS'
 //   Stores: separated by commas, semicolons or line breaks (Alt+Enter)
-//   Store:  capitals, extra spaces and dash style don't matter
+//   Store:  capitals, extra spaces, full stops/commas/apostrophes and dash style don't matter
 function normRole(role) { return String(role == null ? '' : role).trim().toUpperCase(); }
 function storeKey(name) {
   return String(name == null ? '' : name).toUpperCase()
+    .replace(/[.,'\u2019]/g, ' ')                 // "STA. ANA" = "STA ANA"
     .replace(/[\u2010-\u2015\u2212]/g, '-')
     .replace(/\s*-\s*/g, ' - ')
     .replace(/\s+/g, ' ')
@@ -6554,6 +6555,16 @@ function ccExportReport() {
   XLSX.utils.book_append_sheet(wb, sheet(
     ['Store', 'Last Received Delivery', 'Days Since'],
     covRows, [30, 26, 13], [1, 2], -1), `No Delivery ${CC_DELIVERY_WINDOW}d`);
+  // Who sees each ticket.
+  const visX = ccVisibility(records, users, cc.stores);
+  if (visX.iaLists) {
+    const vr = [];
+    visX.noIA.forEach(x => vr.push({ sev: 'red', store: '', cells: ['Red', 'Open ticket no IA sees under My stores', x.r.cdf || '', x.r.store || '', x.hint] }));
+    visX.noCoord.forEach(x => vr.push({ sev: 'red', store: '', cells: ['Red', 'Open ticket no Coordinator can see', x.r.cdf || '', x.r.store || '', x.hint] }));
+    visX.unowned.forEach(st => vr.push({ sev: 'amber', store: '', cells: ['Amber', "Bible store on no IA's list", '', st, ''] }));
+    XLSX.utils.book_append_sheet(wb, sheet(['Priority', 'What', 'Store Order', 'Store', 'Hint'], vr, [10, 42, 34, 28, 60], [0], 0), 'Who Sees Each Ticket');
+  }
+
   // Check against Acacia — only when a check has been run this session.
   if (S._acacia) {
     const { G } = acaciaCompare(S._acacia, records);
@@ -6846,6 +6857,47 @@ const CC_ANOMALY_ORDER = ['Duplicate CDF Ref', 'Duplicate Store Order', 'No CDF 
   'Received before a delivery leg', 'No store', 'In Transit with no truck', 'Status disagrees with dates',
   'Received with no date', 'Every line is 0', 'Store not in the Bible', 'SKUs with no price',
   'Merchandiser step without Merch Qty'];
+
+/* ── Who sees each ticket ─────────────────────────────────────────────────
+   An IA's "My stores" and a Coordinator's access both come from their store
+   list in the Users tab. A ticket whose store name doesn't match any list is
+   still in the Hub, but only under "All stores" — nobody owns it. This finds
+   those, with a hint at the near-miss spelling, and Bible stores no IA owns.
+────────────────────────────────────────────────────────────────────────── */
+function storeCompact(name) { return storeKey(name).replace(/[^A-Z0-9]/g, ''); }
+function storeLikeness(a, b) {   // 0–1, letter pairs in common
+  const pairs = x => { const o = []; for (let i = 0; i < x.length - 1; i++) o.push(x.slice(i, i + 2)); return o; };
+  const A = pairs(storeCompact(a)), B = pairs(storeCompact(b));
+  if (!A.length || !B.length) return 0;
+  const bag = {}; B.forEach(p => { bag[p] = (bag[p] || 0) + 1; });
+  let hit = 0; A.forEach(p => { if (bag[p]) { hit++; bag[p]--; } });
+  return 2 * hit / (A.length + B.length);
+}
+function ccVisibility(records, users, bibleStores) {
+  const { listed, byStore } = ccStoreIAs(users || []);
+  const coords = (users || []).filter(u => u.active && u.hasId && normRole(u.role) === 'COORDINATOR')
+    .map(u => ({ u, all: String(u.assignedStores || '').trim() === '*', stores: new Set(storeList(u.assignedStores)) }));
+  const coordAll = coords.some(c => c.all);
+  const coordKeys = new Set(coords.flatMap(c => [...c.stores]));
+  // Every name on an IA's / a Coordinator's list (as written), for the hint.
+  // Each group only looks at the lists that matter to it.
+  const known = { IS: [], COORDINATOR: [] };
+  (users || []).filter(u => u.active && known[normRole(u.role)]).forEach(u => String(u.assignedStores || '').split(/[,;\r\n]+/)
+    .map(x => x.trim()).filter(x => x && x !== '*').forEach(x => known[normRole(u.role)].push({ name: x, who: u.username })));
+  const hint = (store, role) => {
+    const pool = known[role], who = role === 'IS' ? 'IA' : 'Coordinator';
+    const same = pool.find(k => storeCompact(k.name) === storeCompact(store));
+    if (same) return `spelled differently from "${same.name}" on ${same.who}'s list`;
+    const best = pool.map(k => ({ k, sim: storeLikeness(k.name, store) })).sort((a, b) => b.sim - a.sim)[0];
+    if (best && best.sim >= 0.75) return `did you mean "${best.k.name}" (${best.k.who}'s list)?`;
+    return `not on any ${who}'s list`;
+  };
+  const open = records.filter(r => !isReceivedTicket(r) && String(r.store || '').trim());
+  const noIA = listed.length ? open.filter(r => !byStore[storeKey(r.store)]).map(r => ({ r, hint: hint(r.store, 'IS') })) : [];
+  const noCoord = coords.length && !coordAll ? open.filter(r => !coordKeys.has(storeKey(r.store))).map(r => ({ r, hint: hint(r.store, 'COORDINATOR') })) : [];
+  const unowned = listed.length && bibleStores ? bibleStores.map(b => b.store).filter(st => st && !byStore[storeKey(st)]).sort() : [];
+  return { iaLists: listed.length, coords: coords.length, coordAll, noIA, noCoord, unowned };
+}
 
 function ccByIA(users, stuck, anomalies) {
   const { ias, star, listed, byStore } = ccStoreIAs(users);
@@ -7411,6 +7463,27 @@ function ccRender(force) {
       + (byIA.star.length ? `<div class="cc-empty" style="padding-top:8px">Not shown: ${esc(byIA.star.map(u => u.username).join(', '))} — their assignedStores is "*", so their stores can't be told apart from anyone else's. Give each their store list in the Users tab.</div>` : ''));
   const iaFlagged = byIA ? byIA.rows.filter(x => x.items.length).length : 0;
 
+  // Who sees each ticket.
+  const vis = users ? ccVisibility(records, users, cc.stores) : null;
+  let visR = 0, visA = 0;
+  const visBody = !users ? `<div class="cc-empty">Users didn't load — see System.</div>`
+    : !vis.iaLists ? `<div class="cc-empty">No IA has a store list yet, so every ticket only appears under "All stores". Fill in each IA's assignedStores in the Users tab.</div>`
+    : (() => {
+        const grp = (key, sev, label, why, items) => {
+          if (!items.length) return '';
+          if (sev === 'red') visR += items.length; else visA += items.length;
+          return groupRow('vis:' + key, sev, label, `${items.length} ${items === vis.unowned ? 'store' : 'ticket'}${items.length !== 1 ? 's' : ''}`,
+            `<div class="ac-why">${esc(why)}</div>` + items.map(x => typeof x === 'string'
+              ? li(esc(x), '', 'not on any IA\'s list')
+              : li(tLink(x.r), esc(x.r.store || ''), esc(x.hint))).join(''));
+        };
+        const html =
+            grp('noIA', 'red', 'Open tickets no IA sees under "My stores"', 'They only show under "All stores". Fix the store name on the ticket, or add the store to an IA\'s list in the Users tab.', vis.noIA)
+          + grp('noCoord', 'red', 'Open tickets no Coordinator can see', 'A Coordinator\'s list controls what they can open, so nobody can log the Store Manager step for these.', vis.noCoord)
+          + grp('unowned', 'amber', 'Stores in the Bible on no IA\'s list', 'Any ticket for these stores would only appear under "All stores".', vis.unowned);
+        return html || `<div class="cc-empty">Every open ticket is on an IA's list${vis.coords && !vis.coordAll ? ' and a Coordinator\'s' : ''}, and every Bible store has an IA.</div>`;
+      })();
+
   // Check against Acacia — report only.
   let acR = 0, acA = 0;
   const acaciaBody = (() => {
@@ -7599,7 +7672,7 @@ function ccRender(force) {
       })()}
       </div>
       <div class="cc-empty" style="padding-top:8px"><b>Typical</b> means half were faster and half slower. <b>9 in 10 done within</b>: nine out of ten finished inside that time; the slowest one in ten took longer. Each task counts for the person who did it, timed from the step before. <b>Our team</b> steps are time we control — only those count toward a person; <b>Waiting on</b> steps show the process, not the person. Not counted: Executives' own actions, steps filled in automatically when an order is created, and orders brought over from the old system. Warehouse &amp; delivery is counted in whole days, by team and route — the warehouse doesn't use the Hub, so there's no per-person view, and units are what was ordered (the Hub doesn't record what was actually shipped). The first weeks have little data — trust the counts first, the times after about a month.</div>`;
-    kpiPanel = panel('cc-kpi', '9', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
+    kpiPanel = panel('cc-kpi', '10', 'Team KPIs', `<span class="wf-status-badge wfs-sent">Executives only</span>`, kpiBody);
   }
 
 
@@ -7621,10 +7694,11 @@ function ccRender(force) {
     + panel('cc-acacia', '2', 'Check Against Acacia', !S._acacia ? '<span class="wf-status-badge wfs-sent">Report only</span>' : badge(acR, acA, 'All match'), acaciaBody)
     + panel('cc-cov',  '3', `No Delivery or Order in ${CC_DELIVERY_WINDOW} Days`, coverage.length ? `<span class="wf-status-badge wfs-partial">${coverage.length} store${coverage.length !== 1 ? 's' : ''}</span>` : `<span class="wf-status-badge wfs-approved">All covered</span>`, covBody)
     + panel('cc-ia',   '4', 'Issues by IA', !byIA || byIA.noIAs ? '' : iaFlagged ? `<span class="wf-status-badge wfs-changes">${plural(iaFlagged, 'IA')} with issues</span>` : `<span class="wf-status-badge wfs-approved">All clear</span>`, iaBody)
-    + panel('cc-stuck','5', 'Stuck Tickets', badge(stR, stA, 'None'), stuckBody)
-    + panel('cc-anom', '6', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
-    + panel('cc-err',  '7', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody)
-    + panel('cc-seen', '8', "Who's Been Using the Hub", !users || !presence ? '' : seenRed ? `<span class="wf-status-badge wfs-changes">${seenRed} not seen in 7+ days</span>` : `<span class="wf-status-badge wfs-approved">Everyone active</span>`, seenBody)
+    + panel('cc-vis',  '5', 'Who Sees Each Ticket', !users || !vis || !vis.iaLists ? '' : badge(visR, visA, 'Everyone covered'), visBody)
+    + panel('cc-stuck','6', 'Stuck Tickets', badge(stR, stA, 'None'), stuckBody)
+    + panel('cc-anom', '7', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
+    + panel('cc-err',  '8', 'Failed Actions', cc.errors.length ? `<span class="wf-status-badge wfs-changes">${cc.errors.length} in 30 days</span>` : `<span class="wf-status-badge wfs-approved">None</span>`, errBody)
+    + panel('cc-seen', '9', "Who's Been Using the Hub", !users || !presence ? '' : seenRed ? `<span class="wf-status-badge wfs-changes">${seenRed} not seen in 7+ days</span>` : `<span class="wf-status-badge wfs-approved">Everyone active</span>`, seenBody)
     + kpiPanel;
 }
 
