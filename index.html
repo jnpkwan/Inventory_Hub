@@ -666,6 +666,8 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .ac-hint{font-size:12px;color:#888;margin-left:10px}
 .ac-sum{display:flex;flex-direction:column;gap:5px;font-size:13px;color:#444;background:var(--mist);border-radius:10px;padding:10px 14px;margin-bottom:10px}
 .ac-btns{display:flex;gap:8px;margin-top:4px}
+.ac-ia{display:block;font-weight:600;font-size:12px;color:var(--blue);margin-top:2px}
+.ac-ia-none{color:var(--amber-d)}
 .ac-why{font-size:12.5px;color:#666;padding:4px 0 6px;font-style:italic}
 #cc-acacia .cc-li{font-size:13px}
 .kpi-block{border:1px solid var(--silver);border-radius:14px;padding:0 16px 14px;margin:16px 0;background:#fff;overflow:hidden}
@@ -1283,7 +1285,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-01 · 15:00';
+const HUB_BUILD = '2026-10-01 · 15:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -6478,6 +6480,12 @@ const ACACIA_GROUPS = [
   { key: 'notInExport', sev: 'amber', label: 'Open in the Hub — not in this Acacia export',    why: 'The export may not reach back far enough, or the CDF Ref on the ticket is wrong.' },
   { key: 'unknown',     sev: 'amber', label: 'Status the check doesn\'t recognise',            why: 'Tell the Hub owner so the check can learn it.' },
 ];
+// Who owns a store: the IA(s) whose Users-tab list includes it.
+function acaciaIAsFor(store, users) {
+  if (!store || !users || !users.length) return null;   // users didn't load: say nothing rather than "no IA"
+  const { byStore } = ccStoreIAs(users || []);
+  return (byStore[storeKey(store)] || []).map(u => u.name || u.username);
+}
 function acaciaPick() { const f = document.getElementById('acacia-file'); if (f) { f.value = ''; f.click(); } }
 // From the Phase 4 card: a picker that lives outside the redrawn page, then
 // the Command Center opens at section 2 with the results.
@@ -6599,11 +6607,12 @@ function ccExportReport() {
     const acRows = [];
     ACACIA_GROUPS.forEach(g => G[g.key].forEach(x => acRows.push({ sev: g.sev === 'red' ? 'red' : 'amber', store: '', cells: [
       g.sev === 'red' ? 'Red' : 'Amber', g.label, x.a ? x.a.ref : (x.r.acaciaRef || ''), x.r ? x.r.store || '' : '', x.a ? x.a.store : '',
+      (ias => ias == null ? '' : (ias.join(', ') || 'no IA assigned'))(acaciaIAsFor((x.r && x.r.store) || (x.a && x.a.store) || '', users)),
       x.a ? x.a.status : '', x.r ? acaciaHubStage(x.r).label : 'no ticket', x.r ? x.r.cdf || '' : '',
       x.a && x.a.date ? x.a.date.toISOString().slice(0, 10) : '' ]})));
     XLSX.utils.book_append_sheet(wb, sheet(
-      ['Priority', 'What doesn\'t match', 'CDF Ref', 'Store (Hub)', 'Store (Acacia)', 'Acacia status', 'Hub stage', 'Store Order', 'Acacia CDF date'],
-      acRows, [10, 50, 16, 24, 24, 14, 34, 32, 16], [0, 5, 8], 0), 'Acacia Check');
+      ['Priority', 'What doesn\'t match', 'CDF Ref', 'Store (Hub)', 'Store (Acacia)', 'IA', 'Acacia status', 'Hub stage', 'Store Order', 'Acacia CDF date'],
+      acRows, [10, 50, 16, 24, 24, 24, 14, 34, 32, 16], [0, 6, 9], 0), 'Acacia Check');
   }
 
   // Team KPIs — Executives only, like the section. Times are numbers of days
@@ -7544,8 +7553,12 @@ function ccRender(force) {
       const items = G[g.key];
       if (g.sev === 'red') acR += items.length; else acA += items.length;
       return groupRow('ac:' + g.key, g.sev, g.label, `${items.length} CDF${items.length !== 1 ? 's' : ''}`,
-        `<div class="ac-why">${esc(g.why)}</div>` + items.map(x => li(first(x), esc((x.r && x.r.store) || (x.a && x.a.store) || ''),
-          esc(x.detail + (x.r ? ' · ' + x.r.cdf : '')))).join(''));
+        `<div class="ac-why">${esc(g.why)}</div>` + items.map(x => {
+          const store = (x.r && x.r.store) || (x.a && x.a.store) || '';
+          const ias = acaciaIAsFor(store, users);
+          const who = !ias ? '' : ias.length ? `<span class="ac-ia">IA: ${esc(ias.join(', '))}</span>` : '<span class="ac-ia ac-ia-none">no IA assigned</span>';
+          return li(first(x), esc(store) + who, esc(x.detail + (x.r ? ' · ' + x.r.cdf : '')));
+        }).join(''));
     }).join('');
     return pick + `<div class="ac-sum">
         <div><b>${esc(A.fileName)}</b>${A.exportDate ? ` · exported ${esc(A.exportDate)}` : ''} · checked ${esc(histStamp(A.loadedAt))}</div>
