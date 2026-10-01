@@ -689,6 +689,7 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .td-next .td-gh{color:var(--blue)} .td-next .td-gh b{background:var(--blue-pale)}
 .td-it{display:block;width:100%;text-align:left;border:1px solid var(--mist);border-left-width:4px;background:#fff;border-radius:10px;padding:8px 10px;margin:5px 0;cursor:pointer;font-family:inherit}
 .td-it:hover{background:var(--mist)}
+.td-it.td-cur{background:var(--blue-pale);box-shadow:0 0 0 2px var(--blue) inset}
 .td-red .td-it{border-left-color:#C0392B} .td-amber .td-it{border-left-color:#C98A00} .td-next .td-it{border-left-color:var(--blue)}
 .td-st{display:block;font-weight:800;font-size:13.5px;color:var(--ink)}
 .td-tx{display:block;font-size:13px;color:#444;margin-top:1px;line-height:1.35}
@@ -1338,7 +1339,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-02 · 03:00';
+const HUB_BUILD = '2026-10-02 · 03:15';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1450,6 +1451,7 @@ function doLogout() {
   S.ownerViewChosen = false;
   S._search = { p3: '', p4: '' };
   S._prices = null;
+  S._todoScroll = 0;
   document.getElementById('todo-panel')?.remove();
   document.body.classList.remove('todo-on');
   S.records = [];
@@ -2019,12 +2021,15 @@ function renderTodo() {
     el.innerHTML = `<button onclick="todoSetOpen(true)" title="Show your to-do list">📋 To do <b>${total}</b></button>`;
     return;
   }
+  // Redrawing replaces the list — keep the reader's place in it.
+  const prevBody = el.querySelector('.td-body');
+  if (prevBody) S._todoScroll = prevBody.scrollTop;
   el.className = 'todo-open';
   const shut = S._todoShut || {};
   const group = (key, cls, title, items) => !items.length ? '' : `
     <div class="td-grp ${cls}">
       <button class="td-gh" onclick="todoToggleGroup('${key}')"><span>${title}</span><b>${items.length}</b><i>${shut[key] ? '▸' : '▾'}</i></button>
-      ${shut[key] ? '' : items.map(x => `<button class="td-it" onclick="todoOpen('${esc(x.r.id || x.r.cdf)}')">
+      ${shut[key] ? '' : items.map(x => `<button class="td-it${(x.r.id || x.r.cdf) === S.expandedId ? ' td-cur' : ''}" onclick="todoOpen('${esc(x.r.id || x.r.cdf)}')">
           <span class="td-st">${esc(x.r.store || '')}</span>
           <span class="td-tx">${esc(x.texts.join(' · '))}</span>
           ${x.next ? `<span class="td-nx">Next: ${esc(x.next)}</span>` : ''}
@@ -2039,6 +2044,8 @@ function renderTodo() {
               : '<div class="td-empty">Nothing to do for these stores. 🎉</div>'}
     </div>
     <div class="td-foot">Items leave the list when the ticket is fixed. Click one to open it.</div>`;
+  const body = el.querySelector('.td-body');
+  if (body && S._todoScroll) body.scrollTop = S._todoScroll;
 }
 
 function renderAll() {
