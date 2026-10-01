@@ -661,6 +661,7 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 @media (max-width: 980px){ .kb-wh .kpi-tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }
 .ssc.ssc-acacia{border-color:var(--blue);border-style:dashed;cursor:pointer;background:var(--blue-pale)}
 .ssc.ssc-acacia:hover{border-style:solid}
+.err-dismiss{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0 8px;font-size:12px;color:#777}
 .ac-intro{font-size:13px;color:#555;line-height:1.55;margin:2px 0 12px;max-width:900px}
 .ac-hint{font-size:12px;color:#888;margin-left:10px}
 .ac-sum{display:flex;flex-direction:column;gap:5px;font-size:13px;color:#444;background:var(--mist);border-radius:10px;padding:10px 14px;margin-bottom:10px}
@@ -1282,7 +1283,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-01 · 13:30';
+const HUB_BUILD = '2026-10-01 · 14:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -7280,6 +7281,21 @@ function openCommandCenter() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// Dismiss a group of reviewed failed actions (Executives and Managers).
+async function ccDismissErrors(slot) {
+  const ids = (S._errIds || [])[slot] || [];
+  if (!ids.length) return;
+  if (!confirm(`Dismiss ${ids.length} failed action${ids.length !== 1 ? 's' : ''}?\n\nThey disappear from the Command Center for everyone. The rows stay in the ActivityLog sheet.`)) return;
+  try {
+    await gasPost('dismissErrors', { username: S.user.username, ids });
+    toast(`✅ Dismissed ${ids.length}.`);
+  } catch (e) {
+    toast('❌ Could not dismiss: ' + (e.message || e), 'err');
+    return;
+  }
+  ccLoad();
+}
+
 async function ccLoad() {
   S._cc = { loading: true, errors: [] };
   ccRender(true);
@@ -7699,13 +7715,18 @@ function ccRender(force) {
   }
 
 
+  S._errIds = [];
   const errBody = cc.healthError ? `<div class="cc-empty">Couldn't read the log — see System.</div>`
     : !cc.errors.length ? `<div class="cc-empty">No failed actions in the last 30 days.</div>`
     : ccGroup(cc.errors.map(e => ({ ...e, sev: (Date.now() - new Date(e.timestamp)) < 86400000 ? 'red' : 'amber' })), e => ccErrorKind(e.detail)).map(g => {
         const users = [...new Set(g.items.map(e => e.username || '?'))];
+        const ids = g.items.map(e => e.id).filter(Boolean);
+        const slot = (S._errIds = S._errIds || []).push(ids) - 1;   // a number in the click handler — error text can hold quotes
+        const dismiss = ids.length ? `<div class="err-dismiss"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ccDismissErrors(${slot})">✓ Dismiss ${ids.length === 1 ? 'this' : 'these ' + ids.length}</button>
+            <span>Hides ${ids.length === 1 ? 'it' : 'them'} here for everyone. The rows stay in the ActivityLog sheet.</span></div>` : '';
         return groupRow('err:' + g.key, g.sev, g.label,
           `${plural(g.items.length, 'time')} · ${users.slice(0, 3).join(', ')}${users.length > 3 ? '…' : ''} · last ${histStamp(g.items[0].timestamp)}`,
-          g.items.map(e => {
+          dismiss + g.items.map(e => {
             const r = e.recordId ? S.records.find(x => x.id === e.recordId) : null;
             return li(esc(histStamp(e.timestamp)), esc(e.username || '?'),
               (r ? tLink(r) + ' · ' : '') + esc(e.detail || ''));
@@ -7734,6 +7755,7 @@ async function gasPost(action, payload) {
   // The Apps Script doPost handler reads e.postData.contents.
   const url = new URL(CFG.apiUrl);
   url.searchParams.set('action', action);
+  url.searchParams.set('_build', HUB_BUILD);   // lets a failure log say "from the Hub, build …"
   const resp = await fetch(url.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -7747,6 +7769,7 @@ async function gasPost(action, payload) {
 async function gasGet(action, params={}) {
   const url = new URL(CFG.apiUrl);
   url.searchParams.set('action',action);
+  url.searchParams.set('_build', HUB_BUILD);   // lets a failure log say "from the Hub, build …"
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));
   const resp = await fetch(url.toString());
   const data = await resp.json();
