@@ -1339,7 +1339,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-02 · 03:15';
+const HUB_BUILD = '2026-10-05 · 22:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -6679,14 +6679,16 @@ function acaciaCompare(A, records) {
   const byRef = {};
   records.forEach(r => { const k = acaciaRefKey(r.acaciaRef); if (k) (byRef[k] = byRef[k] || []).push(r); });
   const seen = new Set();
-  const G = { received: [], cancelled: [], store: [], dispatched: [], ahead: [], noTicket: [], notInExport: [], unknown: [] };
+  const G = { received: [], cancelled: [], store: [], dispatched: [], ahead: [], noTicket: [], notInExport: [], unknown: [], older: [] };
   let matched = 0;
+  let hubStart = null;   // the earliest Acacia CDF date that has a Hub ticket = where the Hub's history begins
   A.rows.forEach(a => {
     seen.add(a.ref);
     const st = a.status.toLowerCase();
     const isCancel = /cancel|void/.test(st);
     const aRank = ACACIA_STAGE[st];
     const tickets = byRef[a.ref] || [];
+    if (tickets.length && a.date && (!hubStart || a.date < hubStart)) hubStart = a.date;
     if (!isCancel && !aRank) { G.unknown.push({ a, r: tickets[0] || null, detail: `Status "${a.status || '(blank)'}" isn't one the check knows` }); return; }
     if (!tickets.length) { if (!isCancel) G.noTicket.push({ a, r: null, detail: `Acacia: ${a.status} · ${a.store || 'no store'}${a.date ? ' · ' + fmtD(a.date.toISOString().slice(0, 10)) : ''} — no Hub ticket has this CDF Ref` }); return; }
     tickets.forEach(r => {
@@ -6701,12 +6703,18 @@ function acaciaCompare(A, records) {
       if (!hit) matched++;
     });
   });
+  // Acacia-only CDFs dated before the Hub's history began were never meant to
+  // have a ticket: listed for reference, not counted as problems.
+  if (hubStart) {
+    G.older = G.noTicket.filter(x => x.a.date && x.a.date < hubStart);
+    G.noTicket = G.noTicket.filter(x => !(x.a.date && x.a.date < hubStart));
+  }
   // Open Hub tickets whose CDF Ref isn't in this export at all.
   Object.entries(byRef).forEach(([k, rs]) => {
     if (seen.has(k)) return;
     rs.filter(r => !isReceivedTicket(r)).forEach(r => G.notInExport.push({ a: null, r, detail: `Hub: ${acaciaHubStage(r).label} · CDF Ref ${r.acaciaRef} not in this export` }));
   });
-  return { G, matched };
+  return { G, matched, hubStart };
 }
 const ACACIA_GROUPS = [
   { key: 'received',    sev: 'red',   label: 'Received in Acacia — not received in the Hub', why: 'These still count as "in transit", so replenishment holds back stock the store already has.' },
@@ -6717,6 +6725,7 @@ const ACACIA_GROUPS = [
   { key: 'noTicket',    sev: 'amber', label: 'In Acacia — no ticket in the Hub',               why: 'No Hub ticket carries this CDF Ref. It may be missing from a ticket, or typed differently.' },
   { key: 'notInExport', sev: 'amber', label: 'Open in the Hub — not in this Acacia export',    why: 'The export may not reach back far enough, or the CDF Ref on the ticket is wrong.' },
   { key: 'unknown',     sev: 'amber', label: 'Status the check doesn\'t recognise',            why: 'Tell the Hub owner so the check can learn it.' },
+  { key: 'older',       sev: 'grey',  label: 'In Acacia, older than the Hub — no action needed', why: 'Dated before the earliest CDF the Hub tracks, so they never had a Hub ticket. For reference only.' },
 ];
 // Who owns a store: the IA(s) whose Users-tab list includes it.
 function acaciaIAsFor(store, users) {
@@ -6765,6 +6774,83 @@ async function acaciaUpload(input, openCC) {
   if (openCC) acaciaShowResults(); else ccRender(true);
 }
 function acaciaClear() { S._acacia = null; ccRender(true); }
+
+// ⬇ Download for the IAs — one workbook to send out: a Summary, ONE SHEET PER
+// IA (only their stores' problems, most urgent first, with what to do), a
+// "No IA assigned" sheet, and every difference in "All differences".
+// Acacia-only CDFs older than the Hub are in "All differences" only.
+function acaciaDownload() {
+  const A = S._acacia;
+  if (!A) return;
+  const records = S.records || [];
+  const cc = S._cc;
+  const users = cc && cc.health && cc.health.users && !cc.health.users.error ? cc.health.users.list : (S.users || []);
+  const { G, matched, hubStart } = acaciaCompare(A, records);
+  const ymd = d => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '';
+  const pri = { red: 0, amber: 1, grey: 2 };
+  const rows = [];
+  ACACIA_GROUPS.forEach((g, gi) => G[g.key].forEach(x => {
+    const store = (x.r && x.r.store) || (x.a && x.a.store) || '';
+    rows.push({ g, gi, sev: g.sev, store, ias: acaciaIAsFor(store, users),
+      ref: x.a ? x.a.ref : (x.r.acaciaRef || ''), acStore: x.a ? x.a.store : '', acStatus: x.a ? x.a.status : '',
+      hub: x.r ? acaciaHubStage(x.r).label : 'no ticket', order: x.r ? x.r.cdf || '' : '', date: x.a ? ymd(x.a.date) : '' });
+  }));
+  rows.sort((a, b) => pri[a.sev] - pri[b.sev] || a.gi - b.gi || a.store.localeCompare(b.store) || a.ref.localeCompare(b.ref));
+
+  const head = ['Priority', "What doesn't match", 'What to do', 'CDF Ref', 'Store', 'IA', 'Acacia status', 'Hub stage', 'Store Order', 'Acacia CDF date'];
+  const widths = [10, 46, 58, 15, 26, 26, 14, 34, 34, 15];
+  const fill = { red: 'FDECEA', amber: 'FEF6E4', grey: 'F0F0F0' };
+  const toSheet = list => {
+    const ws = XLSX.utils.aoa_to_sheet([head, ...list.map(r => [
+      r.sev === 'red' ? 'Red' : r.sev === 'amber' ? 'Amber' : 'Info', r.g.label, r.g.why, r.ref, r.store,
+      r.ias == null ? '' : (r.ias.join(', ') || 'no IA assigned'), r.acStatus, r.hub, r.order, r.date ])]);
+    ws['!cols'] = widths.map(w => ({ wch: w }));
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: list.length, c: head.length - 1 } }) };
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    head.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: 0, c }); if (ws[ref]) ws[ref].s = p1CellStyle('1B4DA0', true, 'FFFFFF', 11, 'center'); });
+    list.forEach((r, i) => head.forEach((_, c) => {
+      const ref = XLSX.utils.encode_cell({ r: i + 1, c });
+      if (ws[ref]) ws[ref].s = p1CellStyle(c === 0 ? fill[r.sev] : (i % 2 ? 'F5F5F5' : 'FFFFFF'), c === 0, '2C2C2C', 11, c === 0 ? 'center' : 'left');
+    }));
+    return ws;
+  };
+  const forIAs = rows.filter(r => r.sev !== 'grey');
+  const ias = (users || []).filter(u => u.active && normRole(u.role) === 'IS' && String(u.assignedStores || '').trim() && String(u.assignedStores).trim() !== '*');
+  const perIA = ias.map(u => ({ name: u.name || u.username, list: forIAs.filter(r => r.ias && r.ias.includes(u.name || u.username)) }));
+  const noIA = forIAs.filter(r => r.ias && !r.ias.length);
+
+  const wb = XLSX.utils.book_new();
+  // Summary
+  const count = k => G[k].length;
+  const sum = [
+    ['Check against Acacia'], [],
+    ['Acacia export', A.fileName], ['Exported', A.exportDate || ''], ['Checked', ymd(new Date(A.loadedAt)) + ' ' + new Date(A.loadedAt).toTimeString().slice(0, 5)],
+    ['CDFs read', A.rows.length], ['Match the Hub', matched],
+    ['Hub history starts', hubStart ? ymd(hubStart) : ''], [],
+    ['What doesn\'t match', 'CDFs', 'Priority'],
+    ...ACACIA_GROUPS.map(g => [g.label, count(g.key), g.sev === 'red' ? 'Red' : g.sev === 'amber' ? 'Amber' : 'Info']), [],
+    ['IA', 'To fix', 'Of which red'],
+    ...perIA.map(p => [p.name, p.list.length, p.list.filter(r => r.sev === 'red').length]),
+    ['No IA assigned', noIA.length, noIA.filter(r => r.sev === 'red').length],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(sum);
+  ws['!cols'] = [{ wch: 52 }, { wch: 40 }, { wch: 14 }];
+  const hdrRows = [0, 9, 10 + ACACIA_GROUPS.length + 1];
+  sum.forEach((row, r) => row.forEach((_, c) => {
+    const ref = XLSX.utils.encode_cell({ r, c }); if (!ws[ref]) return;
+    ws[ref].s = hdrRows.includes(r) ? p1CellStyle('1B4DA0', true, 'FFFFFF', r === 0 ? 14 : 11, 'left')
+                                     : p1CellStyle(c === 0 ? 'F5F5F5' : 'FFFFFF', c === 0, '2C2C2C', 11, 'left');
+  }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Summary');
+  // One sheet per IA (names made safe for Excel, at most 31 characters, unique)
+  const used = new Set(['Summary', 'No IA assigned', 'All differences']);
+  const safe = n => { let b = String(n).replace(/[:\\/?*\[\]]/g, ' ').trim().slice(0, 31) || 'IA'; let k = b, i = 2; while (used.has(k)) k = b.slice(0, 28) + ' ' + i++; used.add(k); return k; };
+  perIA.forEach(p => XLSX.utils.book_append_sheet(wb, toSheet(p.list), safe(p.name)));
+  if (noIA.length) XLSX.utils.book_append_sheet(wb, toSheet(noIA), 'No IA assigned');
+  XLSX.utils.book_append_sheet(wb, toSheet(rows), 'All differences');
+  XLSX.writeFile(wb, `acacia-check-${ymd(new Date(A.loadedAt))}.xlsx`);
+  toast(`✅ Downloaded: ${forIAs.length} to fix across ${perIA.filter(p => p.list.length).length} IA${perIA.filter(p => p.list.length).length !== 1 ? 's' : ''}${G.older.length ? ` · ${G.older.length} older than the Hub (All differences only)` : ''}.`);
+}
 
 function ccExportReport() {
   const cc = S._cc;
@@ -6844,7 +6930,7 @@ function ccExportReport() {
     const { G } = acaciaCompare(S._acacia, records);
     const acRows = [];
     ACACIA_GROUPS.forEach(g => G[g.key].forEach(x => acRows.push({ sev: g.sev === 'red' ? 'red' : 'amber', store: '', cells: [
-      g.sev === 'red' ? 'Red' : 'Amber', g.label, x.a ? x.a.ref : (x.r.acaciaRef || ''), x.r ? x.r.store || '' : '', x.a ? x.a.store : '',
+      g.sev === 'red' ? 'Red' : g.sev === 'amber' ? 'Amber' : 'Info', g.label, x.a ? x.a.ref : (x.r.acaciaRef || ''), x.r ? x.r.store || '' : '', x.a ? x.a.store : '',
       (ias => ias == null ? '' : (ias.join(', ') || 'no IA assigned'))(acaciaIAsFor((x.r && x.r.store) || (x.a && x.a.store) || '', users)),
       x.a ? x.a.status : '', x.r ? acaciaHubStage(x.r).label : 'no ticket', x.r ? x.r.cdf || '' : '',
       x.a && x.a.date ? x.a.date.toISOString().slice(0, 10) : '' ]})));
@@ -7789,7 +7875,7 @@ function ccRender(force) {
       : esc(x.a.ref);
     const groups = ACACIA_GROUPS.filter(g => G[g.key].length).map(g => {
       const items = G[g.key];
-      if (g.sev === 'red') acR += items.length; else acA += items.length;
+      if (g.sev === 'red') acR += items.length; else if (g.sev === 'amber') acA += items.length;
       return groupRow('ac:' + g.key, g.sev, g.label, `${items.length} CDF${items.length !== 1 ? 's' : ''}`,
         `<div class="ac-why">${esc(g.why)}</div>` + items.map(x => {
           const store = (x.r && x.r.store) || (x.a && x.a.store) || '';
@@ -7802,7 +7888,7 @@ function ccRender(force) {
         <div><b>${esc(A.fileName)}</b>${A.exportDate ? ` · exported ${esc(A.exportDate)}` : ''} · checked ${esc(histStamp(A.loadedAt))}</div>
         <div>${A.rows.length} CDFs read ${short ? `<span class="kv kv-bad">export says ${A.footerTotal} — some rows weren't read</span>` : A.footerTotal != null ? '<span class="kv kv-good">all rows read</span>' : ''}
           · <b>${matched}</b> match the Hub · <b>${acR + acA}</b> to look at</div>
-        <div class="ac-btns"><button class="btn btn-outline btn-sm" onclick="acaciaPick()">📂 Upload a newer export</button><button class="btn btn-outline btn-sm" onclick="acaciaClear()">Clear</button></div>
+        <div class="ac-btns"><button class="btn btn-primary btn-sm" style="width:auto" onclick="acaciaDownload()">⬇ Download for the IAs</button><button class="btn btn-outline btn-sm" onclick="acaciaPick()">📂 Upload a newer export</button><button class="btn btn-outline btn-sm" onclick="acaciaClear()">Clear</button></div>
       </div>
       ${groups || '<div class="cc-empty">Everything in this export matches the Hub.</div>'}`;
   })();
