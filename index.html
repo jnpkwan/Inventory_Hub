@@ -668,6 +668,30 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 @media (max-width: 980px){ .kb-wh .kpi-tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }
 .ssc.ssc-acacia{border-color:var(--blue);border-style:dashed;cursor:pointer;background:var(--blue-pale)}
 .ssc.ssc-acacia:hover{border-style:solid}
+/* ── Command Center on phones ── */
+@media (max-width: 760px){
+  /* group headers: name + Show on one line, the summary underneath at full width */
+  .cc-grp-hd{flex-wrap:wrap;row-gap:3px;align-items:center}
+  .cc-grp-l{min-width:0;flex:1 1 0}
+  .cc-grp-t{order:2}
+  .cc-grp-m{order:3;flex-basis:100%;padding-left:18px;font-size:12px;line-height:1.4}
+  .cc-sublist{padding-left:4px}
+  /* KPI window row: the key on its own line */
+  .kpi-win{flex-wrap:wrap;row-gap:6px}
+  .kpi-win .kpi-keytxt{flex-basis:100%;margin-left:0}
+  /* tables become one card per row */
+  #cc-workspace .cc-tbl{border:none;background:none;border-radius:0;min-width:0 !important;max-width:none !important}
+  #cc-workspace .cc-tbl thead{display:none}
+  #cc-workspace .cc-tbl, #cc-workspace .cc-tbl tbody{display:block;width:100%}
+  #cc-workspace .cc-tbl tr{display:block;border:1px solid var(--silver);border-radius:12px;padding:8px 12px;margin:0 0 8px;background:#fff}
+  #cc-workspace .cc-tbl tr:nth-child(even) td{background:none}
+  #cc-workspace .cc-tbl td{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0;border:none;text-align:right;white-space:normal !important}
+  #cc-workspace .cc-tbl td::before{content:attr(data-label);flex:0 0 auto;max-width:55%;text-align:left;font-size:10.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:#888}
+  #cc-workspace .cc-tbl td:first-child{display:block;text-align:left;font-size:14px;padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--mist)}
+  #cc-workspace .cc-tbl td:first-child::before, #cc-workspace .cc-tbl td[colspan]::before{content:none}
+  #cc-workspace .cc-tbl td[colspan]{display:block;text-align:left}
+  #cc-workspace .cc-tbl .cc-v{display:block;min-width:0}
+}
 .phc-attn{color:var(--red-d);font-weight:700}
 .phc-done{color:var(--green-dd);font-weight:700;margin-top:2px}
 .wf-undo-note{font-size:11px;font-weight:600;color:#999;border:1px dashed var(--silver);border-radius:8px;padding:4px 9px;cursor:help;white-space:nowrap}
@@ -1342,7 +1366,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-06 · 20:00';
+const HUB_BUILD = '2026-10-06 · 22:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -7695,6 +7719,24 @@ async function ccDismissErrors(slot) {
   ccLoad();
 }
 
+// Phones show Command Center tables as one card per row; each cell carries
+// its column heading so the card can say what each value is.
+function ccLabelTables(root) {
+  root.querySelectorAll('table.cc-tbl').forEach(t => {
+    const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent.replace(/\s+/g, ' ').trim());
+    t.querySelectorAll('tbody tr').forEach(tr => [...tr.cells].forEach((td, i) => {
+      if (td.hasAttribute('colspan') || !heads[i]) return;
+      td.setAttribute('data-label', heads[i]);
+      // Keep a cell's value together (e.g. "2 h ago · Oct 6") as one block.
+      if (i > 0 && td.childNodes.length > 1) {
+        const v = document.createElement('span'); v.className = 'cc-v';
+        while (td.firstChild) v.appendChild(td.firstChild);
+        td.appendChild(v);
+      }
+    }));
+  });
+}
+
 async function ccLoad() {
   S._cc = { loading: true, errors: [] };
   ccRender(true);
@@ -8147,6 +8189,7 @@ function ccRender(force) {
     + panel('cc-anom', '8', 'Data Anomalies', badge(anR, anA, 'None'), anomBody)
     + panel('cc-seen', '9', "Who's Been Using the Hub", !users || !presence ? '' : seenRed ? `<span class="wf-status-badge wfs-changes">${seenRed} not seen in 7+ days</span>` : `<span class="wf-status-badge wfs-approved">Everyone active</span>`, seenBody)
     + kpiPanel;
+  ccLabelTables(el);
 }
 
 /* ══════════════════ GAS HTTP ══════════════════ */
