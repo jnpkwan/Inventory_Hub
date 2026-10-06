@@ -1274,7 +1274,7 @@ const CFG = {
 const MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
 const _nowMonth = MONTHS[new Date().getMonth()];
 
-// Needs Attention: a ticket with no movement for more than this many days is
+// Needs Attention: a ticket more than this many days past its WHS date is
 // flagged. One constant, so the card, the row highlight, the spinner and the
 // export filter can't disagree — it used to be a literal repeated six times.
 const ATTN_DEFAULT_DAYS = 45;
@@ -1306,7 +1306,7 @@ const S = {
   searchTerm:   '',   // kept in state: the search input lives inside #sub-summary,
                       // which gets rebuilt wholesale, so the DOM value is not durable
   paperSize:    loadPaperSize(),   // CDF PDF page size; see PAPER_SIZES
-  attnDays:     ATTN_DEFAULT_DAYS,   // "no movement for N days" threshold. One source for both the
+  attnDays:     ATTN_DEFAULT_DAYS,   // "N days since WHS" threshold. One source for both the
                       // Needs Attention card and the row overdue highlight, which
                       // previously used 7 (hardcoded) and the spinner respectively.
   phaseFilter:  'p3', // default to Phase 3 (Approvals) on load
@@ -1339,7 +1339,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-06 · 15:00';
+const HUB_BUILD = '2026-10-06 · 18:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1935,7 +1935,7 @@ function todoBuild(records) {
   const flagged = new Set();
   const days = r => { const s = ccStage(r); return ccDaysSince(s.since) ?? 0; };
   ccStuck(records).forEach(x => {
-    fix[x.sev].push({ r: x.r, text: x.inStage ? `${x.days} days in ${x.stage}` : `No dispatch movement for ${x.days} days`, days: x.days });
+    fix[x.sev].push({ r: x.r, text: x.inStage ? `${x.days} days in ${x.stage}` : `${x.days} days since it left the warehouse`, days: x.days });
     flagged.add(x.r);
   });
   // Only check prices against a real price list — an empty one would flag every SKU.
@@ -2228,21 +2228,24 @@ function getFiltered() {
 }
 
 /* ── Summary cards ── */
-/* ── Needs Attention: "no dispatch movement for N days" ─────────────────────
-   Not received, and the latest dispatch date on the ticket is older than the
-   threshold (the Phase 4 spinner, default ATTN_DEFAULT_DAYS). A ticket with no
-   dispatch date yet is never counted. One rule for the Phase 4 card, its
-   filter, its export and the Command Center — they can't disagree.
+/* ── Needs Attention: over N days since it left the warehouse ─────────────
+   Not received, and the WHS date is more than the threshold ago (the Phase 4
+   spinner, default ATTN_DEFAULT_DAYS). Counted from the WHS date — the same
+   clock as the Transit column and the ⚠ Delayed badge — so a long trip is
+   chased even if a leg was logged recently. On Hold is included: a paused
+   order still needs a follow-up. No WHS date yet → never counted. One rule
+   for the card, the badge, the export, the To do list and the Command Center.
 ────────────────────────────────────────────────────────────────────────── */
-function attnLatestDate(r) {
-  const dates = [r.dWhs, r.dSdc, r.dDirect, r.dCdc, r.dSdc2, r.dCdc2, r.dRecv]
-    .filter(d => d && d.match(/^\d{4}-\d{2}-\d{2}/));
-  return dates.map(d => new Date(d)).filter(d => !isNaN(d)).sort((a, b) => b - a)[0] || null;
+function attnDaysSinceWhs(r, now = new Date()) {
+  const m = String(r.dWhs || '').match(/^\d{4}-\d{2}-\d{2}/);
+  if (!m) return null;
+  const d = new Date(m[0]);
+  return isNaN(d) ? null : (now - d) / 86400000;
 }
 function needsAttention(r, days = S.attnDays || ATTN_DEFAULT_DAYS, now = new Date()) {
   if (isReceivedTicket(r)) return false;
-  const latest = attnLatestDate(r);
-  return !!latest && (now - latest) / 86400000 > days;
+  const since = attnDaysSinceWhs(r, now);
+  return since !== null && since > days;
 }
 
 /* ── Phase pipeline summary (top of page) ── */
@@ -6925,7 +6928,7 @@ function ccExportReport() {
   ]})).sort(byStore);
   const stuckRows = stuck.map(x => ({ sev: x.sev, store: x.r.store || '', cells: [
     sevText(x.sev), `Phase ${x.phase}`, x.stage, x.days,
-    x.inStage ? `Unchanged in stage over ${CC_P3_STUCK_DAYS} days` : `No dispatch movement over ${attnDays} days`,
+    x.inStage ? `Unchanged in stage over ${CC_P3_STUCK_DAYS} days` : `Over ${attnDays} days since it left the warehouse`,
     x.r.store || '', iaFor(x.r), x.r.cdf || '', x.r.acaciaRef || '', x.r.updatedBy || '', stamp(x.r.updatedAt),
   ]})).sort(byStore);
   const covRows = coverage.map(c => ({ sev: 'red', store: c.store, cells: [
@@ -7103,7 +7106,7 @@ function ccStuck(records, now = new Date()) {
       const p4 = (r.storeStatus || '') === 'Approved';
       if (p4 && !CC_IN_STAGE_P4.includes(s.stage)) {
         if (!needsAttention(r, attnDays, now)) return null;
-        const days = Math.floor((now - attnLatestDate(r)) / 86400000);
+        const days = Math.floor(attnDaysSinceWhs(r, now));
         return { r, stage: s.stage, phase: 4, days, limit: attnDays, sev: days > attnDays * 2 ? 'red' : 'amber' };
       }
       const days = ccDaysSince(s.since, now);
@@ -7298,7 +7301,7 @@ function ccByIA(users, stuck, anomalies) {
     tickets.set(r, t);
   };
   stuck.forEach(x => {
-    note(x.r, x.sev, x.inStage ? `${x.days}d in ${x.stage}` : `${x.days}d with no dispatch movement`, 'stuck');
+    note(x.r, x.sev, x.inStage ? `${x.days}d in ${x.stage}` : `${x.days}d since it left the warehouse`, 'stuck');
     const t = tickets.get(x.r); if (!t.stuckAt) t.stuckAt = x;
   });
   anomalies.forEach(a => {
@@ -7311,7 +7314,7 @@ function ccByIA(users, stuck, anomalies) {
   tickets.forEach(t => {
     if (t.stuckAt) {
       const st = t.stuckAt.stage, i = CC_STAGE_ORDER.indexOf(st);
-      t.cat = t.stuckAt.inStage ? `Stuck in ${st}` : `No dispatch movement · ${st}`;
+      t.cat = t.stuckAt.inStage ? `Stuck in ${st}` : `Long since WHS · ${st}`;
       t.catRank = i < 0 ? CC_STAGE_ORDER.length : i;
       t.days = t.stuckAt.days;
     } else {
@@ -7798,7 +7801,7 @@ function ccRender(force) {
         </tr>`).join('')}</tbody></table></div>`;
 
   const attnDays = S.attnDays || ATTN_DEFAULT_DAYS;
-  const stuckRule = `<div class="cc-empty" style="padding:2px 0 6px">Phase 3, WHS Prepare Order and Awaiting Actual Count: unchanged for over ${CC_P3_STUCK_DAYS} days. Pending Dispatch, In Transit and On Hold: Needs Attention — no dispatch movement for over ${attnDays} days.</div>`;
+  const stuckRule = `<div class="cc-empty" style="padding:2px 0 6px">Phase 3, WHS Prepare Order and Awaiting Actual Count: unchanged for over ${CC_P3_STUCK_DAYS} days. Pending Dispatch, In Transit and On Hold: Needs Attention — over ${attnDays} days since it left the warehouse (WHS date), still not received.</div>`;
   // Workflow order, so the list reads the way a ticket travels.
   const STAGE_ORDER = CC_STAGE_ORDER;
   const stageRank = st => { const i = STAGE_ORDER.indexOf(st); return i < 0 ? STAGE_ORDER.length : i; };
@@ -7809,7 +7812,7 @@ function ccRender(force) {
         const oldest = Math.max(...g.items.map(x => x.days));
         return groupRow('stuck:' + g.key, g.sev, `Phase ${g.items[0].phase} · ${g.label}`,
           inStage ? `${plural(g.items.length, 'ticket')} unchanged ${CC_P3_STUCK_DAYS}d+ · oldest ${oldest}d`
-                  : `${plural(g.items.length, 'ticket')} with no movement for ${attnDays}d+ · oldest ${oldest}d`,
+                  : `${plural(g.items.length, 'ticket')} over ${attnDays} days since WHS · oldest ${oldest}d`,
           g.items.sort((a, b) => b.days - a.days).map(x => li(tLink(x.r), esc(x.r.store || ''),
             inStage ? `${x.days} days in ${esc(x.stage)}` : `${x.days} days since the last dispatch date`)).join(''));
       }).join(''));
@@ -8176,13 +8179,8 @@ function exportCSV() {
 
 /* ══════════════════ UTILS ══════════════════ */
 function isOverdue(r) {
-  // Phase 4 uses the same bucketing as the cards, so a ticket with a Received
-  // date is never marked Delayed just because its stored status fell behind.
-  const b = p4Bucket(r);
-  if (b) { if (b === 'Received' || b === 'On Hold') return false; }
-  else if(r.status!=='In Transit'&&r.status!=='Pending Dispatch'&&r.status!=='Preparing Order') return false;
-  if(!r.dWhs) return false;
-  return (Date.now()-new Date(r.dWhs))/ 86400000 > (S.attnDays||ATTN_DEFAULT_DAYS);
+  // ⚠ Delayed = Needs Attention: one rule, so the badge and the card agree.
+  return needsAttention(r);
 }
 
 function tdDays(r) {
