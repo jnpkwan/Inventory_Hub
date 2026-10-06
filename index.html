@@ -1339,7 +1339,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-05 · 22:00';
+const HUB_BUILD = '2026-10-06 · 15:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1792,8 +1792,10 @@ function startApp() {
 // laptop waking up — blanked the whole Hub until the next 30-second poll.
 const SYNC_RETRY_MS = [5000, 15000, 30000];
 async function loadData() {
-  if (S._loading) return;            // the poll and a retry never overlap
-  S._loading = true;
+  // The poll and a retry never overlap — unless a refresh has been "running"
+  // for over 90 seconds, which means it's stuck: go ahead regardless.
+  if (S._loading && Date.now() - (S._loadingAt || 0) < 90000) return;
+  S._loading = true; S._loadingAt = Date.now();
   if (!S._syncFails) setConn('syncing', 'Syncing…');
   try {
     let records;
@@ -4207,7 +4209,7 @@ function p3OpenUploadModal() {
     m.id = 'p3-upload-modal';
     m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:800;align-items:center;justify-content:center;padding:20px';
     m.innerHTML = `
-      <div style="background:#fff;border-radius:14px;width:100%;max-width:820px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)">
+      <div style="background:#fff;border-radius:14px;width:100%;max-width:1120px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)">
         <div style="padding:20px 24px 14px;border-bottom:1px solid var(--silver);display:flex;align-items:center;gap:10px">
           <span style="font-family:'Montserrat',sans-serif;font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.8px">📋 Upload Replenishment Order</span>
           <button onclick="p3CloseUploadModal()" style="margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:#888">✕</button>
@@ -4465,6 +4467,26 @@ function p3AppendStage(r) {
 }
 const P3_STAGE_LABEL = { ia: 'IA review', merch: 'Merchandiser', store: 'Store changes' };
 
+// Open (not received) orders for this store that are past the point where an
+// upload can add lines — so the upload would make a SEPARATE new ticket. The
+// review names them, so nobody mistakes "new ticket" for "added to the order".
+function p3FindLockedCDFs(store) {
+  const key = storeKey(store);
+  return (S.records || []).filter(r => storeKey(r.store) === key && !isReceivedTicket(r) && !p3AppendStage(r));
+}
+// What to undo so the order can take lines again.
+function p3UndoAdvice(r) {
+  return (r.storeStatus || '') === 'Approved'
+    ? 'Undo it back to Phase 3 first'
+    : 'Undo it back to IA review first';
+}
+function p3WhereIs(r) {
+  if ((r.storeStatus || '') === 'Approved') return `Phase 4 · ${p4Bucket(r) || 'Fulfillment'}`;
+  const sm = r.smgrStatus || '';
+  if (sm === 'Approved' && (r.pdfStatus || '') !== 'Generated') return 'Phase 3 · PDF Pending';
+  return 'Phase 3 · Awaiting Coordinator';
+}
+
 /**
  * Returns every existing CDF for this store that can still take uploaded
  * lines (see p3AppendStage). Ordered oldest first so the list reads in the
@@ -4583,6 +4605,7 @@ function p3RenderReviewTable(staged) {
   // the newest is pre-selected because that is usually the one in play.
   staged.forEach(s => {
     s._opens = p3FindOpenCDFs(s.store);
+    s._locked = s._opens.length ? [] : p3FindLockedCDFs(s.store);
     if (s.mode === undefined) s.mode = s._opens.length ? 'append' : 'new';
     if (!s._opens.length) { s.mode = 'new'; s.targetId = null; }
     if (s.mode === 'append') {
@@ -4603,17 +4626,18 @@ function p3RenderReviewTable(staged) {
   const appending = staged.filter(s => s.selected && s.mode === 'append' && s._target);
   const sumCount  = appending.filter(s => s._stage === 'ia').length;
   const newCount  = appending.length - sumCount;
-  if (appending.length) {
-    const msgs = [];
-    if (sumCount) msgs.push(`➕ ${sumCount} store${sumCount!==1?'s':''} will be ADDED to an order in IA review — quantities are summed. `
-      + `Uploading the same file twice will double those lines, so check the totals below before confirming.`);
-    if (newCount) msgs.push(`🆕 ${newCount} store${newCount!==1?'s':''} will get NEW SKUs on an order past IA review (Merchandiser or Store changes). `
-      + `SKUs already on that order are skipped — change those quantities in the ticket.`);
-    warn.style.display = '';
-    warn.textContent = msgs.join(' ');
-  } else {
-    warn.style.display = 'none';
-  }
+  // Stores whose open order is too far along to take lines: they get a
+  // separate new ticket, which is easy to miss — so the banner says so.
+  const lockedStores = staged.filter(s => s.selected && !s._opens.length && s._locked && s._locked.length);
+  const msgs = [];
+  if (sumCount) msgs.push(`➕ ${sumCount} store${sumCount!==1?'s':''} will be ADDED to an order in IA review — quantities are summed. `
+    + `Uploading the same file twice will double those lines, so check the totals below before confirming.`);
+  if (newCount) msgs.push(`🆕 ${newCount} store${newCount!==1?'s':''} will get NEW SKUs on an order past IA review (Merchandiser or Store changes). `
+    + `SKUs already on that order are skipped — change those quantities in the ticket.`);
+  if (lockedStores.length) msgs.push(`⚠ ${lockedStores.length} store${lockedStores.length !== 1 ? 's have an open order' : ' has an open order'} too far along to take new lines `
+    + `(${lockedStores.map(s => s.store).join(', ')}). ${lockedStores.length !== 1 ? 'They' : 'It'} will get a SEPARATE new ticket — to add to the existing order instead, Undo it back first (see each store below).`);
+  if (msgs.length) { warn.style.display = ''; warn.textContent = msgs.join(' '); }
+  else warn.style.display = 'none';
 
   count.textContent = `${staged.length} store${staged.length !== 1 ? 's' : ''}`;
 
@@ -4642,7 +4666,10 @@ function p3RenderReviewTable(staged) {
            ${s._opens.map(r => `<option value="${esc(r.id)}" ${s.targetId===r.id&&s.mode==='append'?'selected':''}>Add to ${esc(r.cdf)} (${p3ReadOrderLines(r).length} lines · ${P3_STAGE_LABEL[p3AppendStage(r)]})</option>`).join('')}
            <option value="new" ${s.mode==='new'?'selected':''}>Separate new order</option>
          </select>`
-      : `<span style="font-size:10px;color:var(--amber)">⏳ Awaiting IA</span>`;
+      : (s._locked && s._locked.length
+          ? `<div style="font-size:11px;font-weight:700;color:var(--blue)">🆕 New ticket → Awaiting IA Review</div>
+             <div style="font-size:10.5px;color:#8A5A00;background:#FDF1D8;border-radius:6px;padding:4px 7px;margin-top:3px;line-height:1.35;max-width:260px">⚠ ${s._locked.map(r => `<b>${esc(r.cdf)}</b> is in ${esc(p3WhereIs(r))}`).join('; ')}. Lines can't be added there, so this makes a separate ticket. To add to it instead, <b>${esc(p3UndoAdvice(s._locked[s._locked.length - 1]))}</b>.</div>`
+          : `<span style="font-size:11px;font-weight:700;color:var(--blue)">🆕 New ticket → Awaiting IA Review</span>`);
     return `<tr data-staged-idx="${idx}" style="border-bottom:1px solid var(--silver);opacity:${rowOpacity};transition:opacity .12s">
       <td style="padding:7px 10px;text-align:center">
         <input type="checkbox" class="p3-row-check" data-idx="${idx}"
@@ -8107,12 +8134,22 @@ async function gasPost(action, payload) {
   return data.data;
 }
 
+const READ_TIMEOUT_MS = 60000;
 async function gasGet(action, params={}) {
   const url = new URL(CFG.apiUrl);
   url.searchParams.set('action',action);
   url.searchParams.set('_build', HUB_BUILD);   // lets a failure log say "from the Hub, build …"
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));
-  const resp = await fetch(url.toString());
+  // Reads get a time limit. Without one, a request that never comes back (a
+  // laptop sleeping mid-request, Apps Script stalling) left the Hub on
+  // "Syncing…" forever. Reads are safe to retry; saves (gasPost) have no
+  // limit, because cutting one off here doesn't stop Apps Script finishing it.
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), READ_TIMEOUT_MS);
+  let resp;
+  try { resp = await fetch(url.toString(), { signal: ctl.signal }); }
+  catch (e) { throw e && e.name === 'AbortError' ? new Error(`no reply from Apps Script after ${READ_TIMEOUT_MS / 1000} seconds`) : e; }
+  finally { clearTimeout(timer); }
   const data = await resp.json();
   if(!data.ok) throw new Error(data.error||'API error');
   return data.data;
