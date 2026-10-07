@@ -720,6 +720,8 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 .td-red .td-it{border-left-color:#C0392B} .td-amber .td-it{border-left-color:#C98A00} .td-next .td-it{border-left-color:var(--blue)}
 .td-st{display:block;font-weight:800;font-size:13.5px;color:var(--ink)}
 .td-tx{display:block;font-size:13px;color:#444;margin-top:1px;line-height:1.35}
+.td-help .td-gh{color:#555} .td-help .td-gh b{background:var(--mist)}
+.td-it.td-s-red{border-left-color:#C0392B} .td-it.td-s-amber{border-left-color:#C98A00} .td-it.td-s-info{border-left-color:#bbb} .td-it.td-s-next{border-left-color:var(--blue)}
 .td-nx{display:block;font-size:12.5px;font-weight:700;color:var(--blue);margin-top:3px}
 .td-so{display:block;font-size:11.5px;color:#999;margin-top:2px;font-family:'DM Mono',monospace}
 .td-empty{padding:30px 10px;text-align:center;font-size:14px;color:#666}
@@ -1366,7 +1368,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-06 · 22:30';
+const HUB_BUILD = '2026-10-07 · 11:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1939,7 +1941,69 @@ async function loadData() {
    the ticket is actually fixed. A ticket already under "Fix" isn't repeated
    under "Next steps".
 ═════════════════════════════════════════════════════ */
-function todoIsViewer() { return !!S.user && normRole(S.user.role) === 'IS'; }
+function todoIsViewer() { return !!S.user && ['IS', 'COORDINATOR'].includes(normRole(S.user.role)); }
+function todoIsSC() { return !!S.user && normRole(S.user.role) === 'COORDINATOR'; }
+
+/* ── Sales Coordinator version ─────────────────────────────────────────────
+   Two sections, so ownership stays clear:
+     Yours        — steps only the SC does: the Merchandiser's "no changes"
+                    approval and the Store Manager's decision.
+     Help <IA>    — the partner IA's flagged tickets on the SC's stores, each
+                    with what the SC can do: chase the store when an order is
+                    45+ days out, or just know what the IA is working on.
+   Grouped by IA (from the Users-tab store lists); a store with no IA goes
+   under "Your stores". Same rules as the IA list — items leave when fixed. */
+function todoMerchChanged(r) {
+  let ls = []; try { ls = r.orderLines ? JSON.parse(r.orderLines) : []; } catch(e) {}
+  return ls.some(l => l.added === 'merch' || (olSet(l.merchOrder) && Number(l.merchOrder) !== olIaQty(l)));
+}
+function todoSCStep(r) {
+  if (isReceivedTicket(r) || (r.storeStatus || '') !== '') return null;
+  if ((r.smgrStatus || '') !== 'Approved' || (r.pdfStatus || '') !== 'Generated') return null;
+  if ((r.merchStatus || '') !== 'Reviewed')
+    return todoMerchChanged(r) ? null : { label: 'Merchandiser review — approve if there are no changes', rank: 1 };
+  return { label: "Record the Store Manager's decision", rank: 2 };
+}
+function todoBuildSC(records) {
+  const days = r => { const s = ccStage(r); return ccDaysSince(s.since) ?? 0; };
+  const T = todoBuild(records);
+  const flags = new Map();   // ticket → { sev, texts }
+  [['red', T.red], ['amber', T.amber]].forEach(([sev, list]) => list.forEach(x => flags.set(x.r, { sev, texts: x.texts, days: x.days })));
+  // Yours
+  const yours = records.map(r => ({ r, step: todoSCStep(r) })).filter(x => x.step).map(x => {
+    const f = flags.get(x.r);
+    return { r: x.r, texts: [x.step.label], flag: f ? f.texts.join(' · ') : '', sev: f ? f.sev : 'next', rank: x.step.rank, days: f ? f.days : days(x.r) };
+  }).sort((a, b) => (a.sev === 'red' ? 0 : 1) - (b.sev === 'red' ? 0 : 1) || a.rank - b.rank || b.days - a.days);
+  const mine = new Set(yours.map(x => x.r));
+  // Help your IA
+  const help = [];
+  flags.forEach((f, r) => {
+    if (mine.has(r)) return;
+    let action;
+    if (needsAttention(r)) action = p4Bucket(r) === 'In Transit' ? 'Ask the store if it arrived' : "Check why it hasn't left yet";
+    help.push({ r, texts: f.texts, action, sev: f.sev, days: f.days });
+  });
+  records.filter(r => !flags.has(r) && !mine.has(r) && !isReceivedTicket(r)).forEach(r => {
+    if ((r.storeStatus || '') === 'Changes Requested')
+      help.push({ r, texts: ['Store asked for changes — IA is updating the order'], sev: 'info', days: days(r) });
+    else if ((r.storeStatus || '') === '' && (r.merchStatus || '') !== 'Reviewed' && (r.pdfStatus || '') === 'Generated' && todoMerchChanged(r))
+      help.push({ r, texts: ['Merchandiser changes entered — IA to send the Updated PDF'], sev: 'info', days: days(r) });
+  });
+  // The same IA list the Showing dropdown uses (getUsers format).
+  const byStore = {};
+  ownerIAs().forEach(u => storeList(u.assignedStores).forEach(st => (byStore[st] = byStore[st] || []).push(u)));
+  const groups = new Map();
+  help.forEach(x => {
+    const ias = (byStore[storeKey(x.r.store)] || []).map(u => u.name || u.username);
+    const name = ias.length ? 'Help ' + ias.join(' & ') : 'Your stores';
+    (groups.get(name) || groups.set(name, []).get(name)).push(x);
+  });
+  const rankSev = { red: 0, amber: 1, info: 2 };
+  const helpGroups = [...groups.entries()].map(([name, items]) => ({ name,
+    items: items.sort((a, b) => rankSev[a.sev] - rankSev[b.sev] || b.days - a.days) }))
+    .sort((a, b) => (a.name === 'Your stores') - (b.name === 'Your stores') || a.name.localeCompare(b.name));
+  return { yours, helpGroups, total: yours.length + help.length };
+}
 function todoNextStep(r) {
   if (isReceivedTicket(r)) return null;
   const sm = r.smgrStatus || '', st = r.storeStatus || '';
@@ -2041,10 +2105,12 @@ function renderTodo() {
   el.style.display = '';
   const hdr = document.querySelector('header');
   el.style.top = ((hdr ? hdr.offsetHeight : 64) + 12) + 'px';
-  const T = todoBuild(applyOwnerView(S.records));
-  const total = T.red.length + T.amber.length + T.next.length;
-  const v = getOwnerView();
-  const whose = v === 'me' ? 'My stores' : v === 'all' ? 'All stores' : `${(ownerUser(v) || {}).name || v}'s stores`;
+  const sc = todoIsSC();
+  const T = sc ? null : todoBuild(applyOwnerView(S.records));
+  const SC = sc ? todoBuildSC(S.records || []) : null;
+  const total = sc ? SC.total : T.red.length + T.amber.length + T.next.length;
+  const v = sc ? 'mine' : getOwnerView();
+  const whose = sc ? 'Your stores' : v === 'me' ? 'My stores' : v === 'all' ? 'All stores' : `${(ownerUser(v) || {}).name || v}'s stores`;
   if (!todoIsOpen()) {
     el.className = 'todo-tab';
     el.innerHTML = `<button onclick="todoSetOpen(true)" title="Show your to-do list">📋 To do <b>${total}</b></button>`;
@@ -2058,9 +2124,11 @@ function renderTodo() {
   const group = (key, cls, title, items) => !items.length ? '' : `
     <div class="td-grp ${cls}">
       <button class="td-gh" onclick="todoToggleGroup('${key}')"><span>${title}</span><b>${items.length}</b><i>${shut[key] ? '▸' : '▾'}</i></button>
-      ${shut[key] ? '' : items.map(x => `<button class="td-it${(x.r.id || x.r.cdf) === S.expandedId ? ' td-cur' : ''}" onclick="todoOpen('${esc(x.r.id || x.r.cdf)}')">
+      ${shut[key] ? '' : items.map(x => `<button class="td-it${x.sev ? ' td-s-' + x.sev : ''}${(x.r.id || x.r.cdf) === S.expandedId ? ' td-cur' : ''}" onclick="todoOpen('${esc(x.r.id || x.r.cdf)}')">
           <span class="td-st">${esc(x.r.store || '')}</span>
           <span class="td-tx">${esc(x.texts.join(' · '))}</span>
+          ${x.flag ? `<span class="td-tx" style="color:#A3261B">${esc(x.flag)}</span>` : ''}
+          ${x.action ? `<span class="td-nx">You can: ${esc(x.action)}</span>` : ''}
           ${x.next ? `<span class="td-nx">Next: ${esc(x.next)}</span>` : ''}
           <span class="td-so">${esc(x.r.cdf || '')}${x.days ? ` · ${x.days}d` : ''}</span>
         </button>`).join('')}
@@ -2069,8 +2137,9 @@ function renderTodo() {
     <div class="td-head"><div><div class="td-title">To do <b>${total}</b></div><div class="td-sub">${esc(whose)}</div></div>
       <button class="td-fold" onclick="todoSetOpen(false)" title="${todoIsPhone() ? 'Close' : 'Fold the list away'}">${todoIsPhone() ? '✕' : '⟩'}</button></div>
     <div class="td-body">
-      ${total ? group('red', 'td-red', 'Fix now', T.red) + group('amber', 'td-amber', 'Fix soon', T.amber) + group('next', 'td-next', 'Next steps', T.next)
-              : '<div class="td-empty">Nothing to do for these stores. 🎉</div>'}
+      ${!total ? '<div class="td-empty">Nothing to do for these stores. 🎉</div>'
+        : sc ? group('sc-yours', 'td-next', 'Yours', SC.yours) + SC.helpGroups.map((g, i) => group('sc-help-' + i, 'td-help', g.name, g.items)).join('')
+        : group('red', 'td-red', 'Fix now', T.red) + group('amber', 'td-amber', 'Fix soon', T.amber) + group('next', 'td-next', 'Next steps', T.next)}
     </div>
     <div class="td-foot">Items leave the list when the ticket is fixed. Click one to open it.</div>`;
   const body = el.querySelector('.td-body');
