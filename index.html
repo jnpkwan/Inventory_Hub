@@ -1368,7 +1368,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-07 · 11:00';
+const HUB_BUILD = '2026-10-09 · 10:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -7756,7 +7756,7 @@ function ccErrorKind(detail) {
   const i = d.indexOf(': ');
   if (i < 0) return d || 'Unknown error';
   const action = d.slice(0, i), msg = d.slice(i + 2);
-  return action + ': ' + msg.split(':')[0].trim();
+  return action + ': ' + msg.split(':')[0].split(' · ')[0].trim();
 }
 function ccToggleGroup(key) {
   const p = ccPrefs();
@@ -8238,9 +8238,12 @@ function ccRender(force) {
         const slot = (S._errIds = S._errIds || []).push(ids) - 1;   // a number in the click handler — error text can hold quotes
         const dismiss = ids.length ? `<div class="err-dismiss"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ccDismissErrors(${slot})">✓ Dismiss ${ids.length === 1 ? 'this' : 'these ' + ids.length}</button>
             <span>Hides ${ids.length === 1 ? 'it' : 'them'} here for everyone. The rows stay in the ActivityLog sheet.</span></div>` : '';
+        const lostHelp = /lost in transit/i.test(g.key)
+          ? `<div class="cc-empty" style="padding:6px 0 10px"><b>What happened:</b> the save left the Hub but its data was dropped on the way to Google, so nothing was saved. The Hub already tried again once by itself.<br><b>What to do:</b> ask the person named on each line to redo their change on that ticket. If the same device keeps showing up, have them try another browser or network.</div>`
+          : '';
         return groupRow('err:' + g.key, g.sev, g.label,
           `${plural(g.items.length, 'time')} · ${users.slice(0, 3).join(', ')}${users.length > 3 ? '…' : ''} · last ${histStamp(g.items[0].timestamp)}`,
-          dismiss + g.items.map(e => {
+          lostHelp + dismiss + g.items.map(e => {
             const r = e.recordId ? S.records.find(x => x.id === e.recordId) : null;
             return li(esc(histStamp(e.timestamp)), esc(e.username || '?'),
               (r ? tLink(r) + ' · ' : '') + esc(e.detail || ''));
@@ -8262,7 +8265,17 @@ function ccRender(force) {
 }
 
 /* ══════════════════ GAS HTTP ══════════════════ */
-async function gasPost(action, payload) {
+// Short device label for failure logs — "iPhone Safari", "Mac Chrome".
+function hubDevice() {
+  const ua = navigator.userAgent || '';
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad'
+    : /Android/.test(ua) ? 'Android' : /Macintosh|Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Other';
+  const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox|FxiOS/.test(ua) ? 'Firefox'
+    : /Chrome|CriOS/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'browser';
+  return os + ' ' + br;
+}
+
+async function gasPost(action, payload, retryOf) {
   // Use POST with text/plain content-type. This avoids CORS preflight
   // (text/plain is in the "simple request" allowlist) while letting us send
   // payloads of arbitrary size — important for orderLines JSON which can
@@ -8271,13 +8284,29 @@ async function gasPost(action, payload) {
   const url = new URL(CFG.apiUrl);
   url.searchParams.set('action', action);
   url.searchParams.set('_build', HUB_BUILD);   // lets a failure log say "from the Hub, build …"
+  // Who / which ticket / which device also ride in the address, so a save
+  // whose body is lost on the way still shows up in Failed Actions with a
+  // name and a ticket. Never used to save anything — the body does that.
+  const who = payload?.username || S.user?.username || '';
+  if (who) url.searchParams.set('_u', who);
+  if (payload && (typeof payload.id === 'string' || typeof payload.id === 'number')) url.searchParams.set('_id', payload.id);
+  url.searchParams.set('_dev', hubDevice());
+  if (retryOf) url.searchParams.set('_retryOf', retryOf);
   const resp = await fetch(url.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ ...payload, action })
   });
   const data = await resp.json();
-  if(!data.ok) throw new Error(data.error||'API error');
+  if(!data.ok) {
+    // Lost in transit: the server saved nothing, so sending it again is safe.
+    // One automatic retry; if that works, the server clears the failure.
+    if (data.lostInTransit && !retryOf) {
+      await new Promise(r => setTimeout(r, 1500));
+      return gasPost(action, payload, data.logId || 'none');
+    }
+    throw new Error(data.error||'API error');
+  }
   return data.data;
 }
 
@@ -8364,7 +8393,7 @@ function toast(msg,type='ok') {
   el.className=`toast ${type}`;
   el.innerHTML=`<span>${{ok:'✅',err:'❌',warn:'⚠️'}[type]||''}</span> ${msg}`;
   document.getElementById('toasts').appendChild(el);
-  setTimeout(()=>el.remove(),3500);
+  setTimeout(()=>el.remove(), Math.min(12000, Math.max(3500, String(msg).length * 70)));
 }
 
 // Refresh straight away when the Hub comes back into view (incl. a laptop
