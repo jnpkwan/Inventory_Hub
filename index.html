@@ -1368,7 +1368,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-09 · 10:00';
+const HUB_BUILD = '2026-10-12 · 10:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -6848,7 +6848,7 @@ function acaciaCompare(A, records) {
     if (!tickets.length) { if (!isCancel) G.noTicket.push({ a, r: null, detail: `Acacia: ${a.status} · ${a.store || 'no store'}${a.date ? ' · ' + fmtD(a.date.toISOString().slice(0, 10)) : ''} — no Hub ticket has this CDF Ref` }); return; }
     tickets.forEach(r => {
       const h = acaciaHubStage(r);
-      const storeOff = a.store && r.store && storeKey(a.store) !== storeKey(r.store);
+      const storeOff = a.store && r.store && acaciaStoreKey(a.store) !== storeKey(r.store);
       let hit = false;
       if (storeOff) { G.store.push({ a, r, detail: `Acacia: ${a.store} · Hub: ${r.store} — the CDF Ref may be on the wrong ticket` }); hit = true; }
       if (isCancel) { G.cancelled.push({ a, r, detail: `Cancelled in Acacia · Hub: ${h.label} — delete this ticket` }); return; }
@@ -6883,10 +6883,19 @@ const ACACIA_GROUPS = [
   { key: 'older',       sev: 'grey',  label: 'In Acacia, older than the Hub — no action needed', why: 'Dated before the earliest CDF the Hub tracks, so they never had a Hub ticket. For reference only.' },
 ];
 // Who owns a store: the IA(s) whose Users-tab list includes it.
+// Acacia spells a few stores differently from the Hub. Same store, so the
+// check treats them as one. Add a line here for any other known spelling:
+// 'ACACIA NAME': 'HUB NAME'.
+const ACACIA_STORE_ALIASES = {
+  'STA# ANA - PAMPANGA': 'STA ANA - PAMPANGA',
+};
+const _acaciaAliasKeys = Object.fromEntries(Object.entries(ACACIA_STORE_ALIASES).map(([a, h]) => [storeKey(a), storeKey(h)]));
+function acaciaStoreKey(name) { const k = storeKey(name); return _acaciaAliasKeys[k] || k; }
+
 function acaciaIAsFor(store, users) {
   if (!store || !users || !users.length) return null;   // users didn't load: say nothing rather than "no IA"
   const { byStore } = ccStoreIAs(users || []);
-  return (byStore[storeKey(store)] || []).map(u => u.name || u.username);
+  return (byStore[acaciaStoreKey(store)] || []).map(u => u.name || u.username);
 }
 function acaciaPick() { const f = document.getElementById('acacia-file'); if (f) { f.value = ''; f.click(); } }
 // From the Phase 4 card: a picker that lives outside the redrawn page, then
