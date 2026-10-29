@@ -666,8 +666,6 @@ select.fs.active{background:var(--blue-pale); border-color:var(--blue); color:va
 /* Warehouse: 4 across — volume on the first row, speed and backlog on the second */
 .kb-wh .kpi-tiles{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width: 980px){ .kb-wh .kpi-tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }
-.ssc.ssc-acacia{border-color:var(--blue);border-style:dashed;cursor:pointer;background:var(--blue-pale)}
-.ssc.ssc-acacia:hover{border-style:solid}
 /* ── Command Center on phones ── */
 @media (max-width: 760px){
   /* group headers: name + Show on one line, the summary underneath at full width */
@@ -1368,7 +1366,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-10-29 · 10:00';
+const HUB_BUILD = '2026-10-29 · 14:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -2518,13 +2516,6 @@ function renderSummary(rows) {
       })()
       // Only rendered when non-zero: a record whose status is not one of the six
       // is a data error, and it needs to be reachable so someone can fix it.
-      // Check against Acacia — beside Received, Executives only (not Managers).
-      +(normRole(S.user?.role) === 'EXECUTIVE'
-        ? '<div class="ssc ssc-acacia" onclick="acaciaPickFromP4()" title="Upload the Acacia Concession Delivery List export and compare it with the Hub">'
-            +'<div class="ssc-n" style="color:var(--blue)">🔍</div>'
-            +'<div class="ssc-l" style="color:var(--blue);font-weight:700">Check against Acacia</div>'
-          +'</div>'
-        : '')
       +(oddStatus ? mkSub('p4_odd', '❓','Unrecognised Status', oddStatus,    '#C0392B') : '')
       +'</div>'
       // ── Phase 4 filter controls row ──────────────────────────────────────────
@@ -6898,19 +6889,6 @@ function acaciaIAsFor(store, users) {
   return (byStore[acaciaStoreKey(store)] || []).map(u => u.name || u.username);
 }
 function acaciaPick() { const f = document.getElementById('acacia-file'); if (f) { f.value = ''; f.click(); } }
-// From the Phase 4 card: a picker that lives outside the redrawn page, then
-// the Command Center opens at section 2 with the results.
-function acaciaPickFromP4() {
-  if (normRole(S.user?.role) !== 'EXECUTIVE') return;
-  let f = document.getElementById('acacia-file-p4');
-  if (!f) {
-    f = document.createElement('input');
-    f.type = 'file'; f.id = 'acacia-file-p4'; f.accept = '.xlsx,.xls,.csv'; f.style.display = 'none';
-    f.addEventListener('change', () => acaciaUpload(f, true));
-    document.body.appendChild(f);
-  }
-  f.value = ''; f.click();
-}
 function acaciaShowResults() {
   openCommandCenter();
   let tries = 0;
