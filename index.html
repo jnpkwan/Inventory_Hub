@@ -1053,6 +1053,21 @@ main{padding-bottom:96px}
 /* ═══════════════════════════ BREAKDOWN — heading, then the mini cards ═══════════════════════════ */
 .sub-summary{background:transparent;border:0;box-shadow:none;padding:0;margin-top:22px;gap:10px;
   grid-template-columns:repeat(auto-fill,minmax(122px,1fr));animation:none}
+/* On a desktop the cards share the whole row: one column per card, so Phase 3's
+   five cards get wide ones and their names fit on one line. Otherwise (narrow
+   windows, ten or more cards) the cards flow as before. */
+@media (min-width: 1000px){
+  .sub-summary:has(> .ssc:nth-child(3 of .ssc)):not(:has(> .ssc:nth-child(4 of .ssc))){grid-template-columns:repeat(3,minmax(0,1fr))}
+  .sub-summary:has(> .ssc:nth-child(4 of .ssc)):not(:has(> .ssc:nth-child(5 of .ssc))){grid-template-columns:repeat(4,minmax(0,1fr))}
+  .sub-summary:has(> .ssc:nth-child(5 of .ssc)):not(:has(> .ssc:nth-child(6 of .ssc))){grid-template-columns:repeat(5,minmax(0,1fr))}
+  .sub-summary:has(> .ssc:nth-child(6 of .ssc)):not(:has(> .ssc:nth-child(7 of .ssc))){grid-template-columns:repeat(6,minmax(0,1fr))}
+}
+/* seven or more cards only get one row each when there is room for it */
+@media (min-width: 1200px){
+  body:not(.todo-on) .sub-summary:has(> .ssc:nth-child(7 of .ssc)):not(:has(> .ssc:nth-child(8 of .ssc))){grid-template-columns:repeat(7,minmax(0,1fr))}
+  body:not(.todo-on) .sub-summary:has(> .ssc:nth-child(8 of .ssc)):not(:has(> .ssc:nth-child(9 of .ssc))){grid-template-columns:repeat(8,minmax(0,1fr))}
+  body:not(.todo-on) .sub-summary:has(> .ssc:nth-child(9 of .ssc)):not(:has(> .ssc:nth-child(10 of .ssc))){grid-template-columns:repeat(9,minmax(0,1fr))}
+}
 .sub-sticky:not(:empty){top:calc(76px + var(--toolbar-bottom,0px));background:var(--rk-mist);box-shadow:0 10px 12px -10px rgba(16,33,59,.12);padding-bottom:10px}
 .sub-label{font:800 28px/1.15 var(--rk-display);letter-spacing:-.02em;text-transform:none;color:#1B4DA0;margin:0 0 6px;align-items:flex-end!important;row-gap:10px}
 .owner-view{font:700 12px var(--rk-display);letter-spacing:.1em;color:var(--rk-muted)}
@@ -1359,7 +1374,8 @@ input::placeholder,textarea::placeholder{color:#767B82}
   .phc-sub{font-size:12.5px}
   .phc-num{font-size:10.5px;letter-spacing:.14em}
   .phc::after{left:12px;right:12px}
-  .sub-summary{margin-top:16px}
+  .sub-summary{margin-top:16px;grid-template-columns:repeat(2,1fr)}
+  body.todo-on .sub-summary{grid-template-columns:repeat(2,1fr)}
   .sub-label{font-size:22px}
   .ssc{min-height:72px;padding:12px 10px 9px}
   .ssc-n{font-size:20px}
@@ -1798,7 +1814,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-11-18 · 13:00';
+const HUB_BUILD = '2026-11-18 · 13:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
