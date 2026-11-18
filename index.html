@@ -1155,6 +1155,10 @@ tbody tr.exp-row{background:var(--rk-blue05)!important;box-shadow:inset 5px 0 0 
 .td-date,.td-dim{font-size:13px;color:var(--rk-muted)}
 .td-date.empty{color:#9AA0A8;font-style:normal}
 #tbody .btn-blue{padding:6px 12px!important;font-size:12.5px!important;border-radius:8px}
+/* Received card: "Showing 50 of 342 received · Show 50 more" */
+#tbody tr.more-row,#tbody tr.more-row:hover{background:#fff!important;transform:none!important;box-shadow:none!important}
+#tbody tr.more-row>td{text-align:center;padding:18px 16px!important;border-top:1px solid #ECEEF1;box-shadow:none!important}
+.more-count{font:600 14px var(--rk-body);color:var(--rk-muted);margin-right:14px}
 .empty-state{font-size:15px;color:var(--rk-muted)}
 
 /* Status tags: solid colour where something needs doing, soft where it's settled */
@@ -1833,7 +1837,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-11-18 · 14:30';
+const HUB_BUILD = '2026-11-18 · 15:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -3051,15 +3055,34 @@ function getWorkflowStatus(r) {
   return {label:'📬 Pending Dispatch',  cls:'wb-action'};
 }
 
+const RECV_PAGE = 50;   // Received card: rows shown at a time
 function renderTable(rows) {
   if(!rows) rows = getFiltered();
+  // The Received card is an archive: newest received first, until someone
+  // picks a sort of their own by clicking a column header.
+  const recvView = S.phaseFilter === 'p4' && S.subFilter === 'p4_recv';
+  const sortField = recvView && !S._sortTouched ? 'dRecv' : S.sortField;
+  const sortDir   = recvView && !S._sortTouched ? 'desc'  : S.sortDir;
   rows = [...rows].sort((a,b) => {
-    let av = S.sortField==='_transit' ? (tdDays(a)||0) : (a[S.sortField]||'');
-    let bv = S.sortField==='_transit' ? (tdDays(b)||0) : (b[S.sortField]||'');
-    return S.sortDir==='asc'
+    let av = sortField==='_transit' ? (tdDays(a)||0) : (a[sortField]||'');
+    let bv = sortField==='_transit' ? (tdDays(b)||0) : (b[sortField]||'');
+    return sortDir==='asc'
       ? String(av).localeCompare(String(bv),undefined,{numeric:true})
       : String(bv).localeCompare(String(av),undefined,{numeric:true});
   });
+  // …and it shows RECV_PAGE at a time. Search, Route, Type and Showing still
+  // run over every received ticket first; any change to them starts the list
+  // over at RECV_PAGE. An opened ticket further down is always kept in view.
+  let recvTotal = 0;
+  if (recvView) {
+    const key = [S.searchTerm || '', S.fRoute || '', S.fType || '', S.ownerView || ''].join('|');
+    if (S._recvKey !== key) { S._recvKey = key; S.recvLimit = RECV_PAGE; }
+    let limit = S.recvLimit || RECV_PAGE;
+    const openAt = S.expandedId ? rows.findIndex(r => (r.id||r.cdf) === S.expandedId) : -1;
+    if (openAt >= limit) limit = S.recvLimit = Math.ceil((openAt + 1) / RECV_PAGE) * RECV_PAGE;
+    recvTotal = rows.length;
+    if (rows.length > limit) rows = rows.slice(0, limit);
+  }
 
   const pf    = S.phaseFilter;
   const isP34 = pf==='p3';
@@ -3176,7 +3199,20 @@ function renderTable(rows) {
           </td>
       </tr>
       ${isEx?buildDetail(r, cols):''}`;
-  }).join('');
+  }).join('')
+  + (recvTotal > rows.length
+      ? `<tr class="more-row"><td colspan="${cols}">
+           <span class="more-count">Showing ${rows.length} of ${recvTotal} received</span>
+           <button class="btn btn-outline btn-sm" onclick="recvShowMore()">Show ${Math.min(RECV_PAGE, recvTotal - rows.length)} more</button>
+         </td></tr>`
+      : '');
+}
+
+// Received card: add the next RECV_PAGE rows under the ones already shown.
+// Only the table is redrawn, so the page stays where it is.
+function recvShowMore() {
+  S.recvLimit = (S.recvLimit || RECV_PAGE) + RECV_PAGE;
+  renderTable();
 }
 
 function toggleExpand(uid) {
@@ -7091,6 +7127,7 @@ function setSubFilter(k) {
 }
 
 function sortBy(f) {
+  S._sortTouched = true;   // from now on the Received card follows it too
   if(S.sortField===f) S.sortDir=S.sortDir==='asc'?'desc':'asc';
   else{S.sortField=f;S.sortDir='asc';}
   renderTable();
