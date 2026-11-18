@@ -1111,6 +1111,16 @@ select.fs.active{background-color:var(--rk-blue05);border-color:#1B4DA0;color:va
 .fbar-clear{font:700 13px var(--rk-display);color:#1B4DA0}
 .rc{font-size:13px;color:var(--rk-muted)}
 
+/* One line under the cards: search, route, type, flag — then "Filtered by" in the
+   space that used to sit empty — then Export, still on the right. The filter row
+   is unwrapped (display:contents) so its controls and the chips share one line;
+   with many chips they wrap underneath as before. */
+#sub-summary:not(:empty){display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;row-gap:10px}
+#sub-summary>.sub-summary{flex:0 0 100%;order:-1}
+#sub-summary>div[style*="flex-wrap:wrap;padding:8px 2px 0"]{display:contents!important}
+#sub-summary>.fbar{order:1;padding:0;margin-left:10px}
+#sub-summary .btn-toggle[onclick^="p4OpenExportModal"]{order:2}
+
 /* ═══════════════════════════ TABLE — blue header row, zebra rows ═══════════════════════════ */
 .tcard{border:0;border-radius:16px;box-shadow:var(--rk-rest)}
 .tcard-header{background:#fff;border-bottom:1px solid #ECEEF1;padding:16px 20px}
@@ -1131,6 +1141,15 @@ tbody tr.overdue-row,tbody tr.overdue-row:nth-child(n){background:var(--rk-redbg
 tbody tr.overdue-row>td:first-child{box-shadow:inset 5px 0 0 var(--rk-red)}
 tbody tr.overdue-row:hover{background:#F9DEDB;box-shadow:none}
 tbody tr.exp-row{background:var(--rk-blue05)!important;box-shadow:inset 5px 0 0 #1B4DA0}
+/* Rows move like the cards: a small lift and shadow, and a blue edge slides in */
+#tbody>tr:not(.det-tr){transition:background .2s cubic-bezier(.4,0,.2,1),transform .2s cubic-bezier(.4,0,.2,1),box-shadow .2s cubic-bezier(.4,0,.2,1)}
+#tbody>tr:not(.det-tr)>td:first-child{transition:box-shadow .2s cubic-bezier(.4,0,.2,1)}
+#tbody>tr:not(.det-tr):not(.overdue-row):hover>td:first-child{box-shadow:inset 5px 0 0 #1B4DA0}
+#tbody>tr:not(.det-tr):not(.overdue-row):not(.exp-row):hover{background:var(--rk-blue05)}
+#tbody>tr.overdue-row:hover{background:#F9DEDB}
+@media (prefers-reduced-motion: no-preference){
+  #tbody>tr:not(.det-tr):hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(27,77,160,.13);position:relative;z-index:1}
+}
 .td-cdf{font-size:13.5px;font-weight:700;color:#1B4DA0}
 .td-store{font:700 14px var(--rk-body);color:var(--rk-ink)}
 .td-date,.td-dim{font-size:13px;color:var(--rk-muted)}
@@ -1814,7 +1833,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-11-18 · 13:30';
+const HUB_BUILD = '2026-11-18 · 14:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
