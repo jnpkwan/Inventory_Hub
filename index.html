@@ -1179,6 +1179,15 @@ tbody tr.exp-row{background:var(--rk-blue05)!important;box-shadow:inset 5px 0 0 
 .tl-received{background:var(--rk-green05)} .tl-transit{background:var(--rk-sky)} .tl-pending{background:var(--rk-yelbg)}
 .tl-hold{background:var(--rk-mist)} .tl-attn{background:var(--rk-redbg)}
 .tl{font:700 11px var(--rk-display);letter-spacing:.08em}
+/* 4.2 Dispatch & Delivery: about a quarter shorter — smaller step circles and
+   tighter spacing; the step names and dates keep their size */
+.timeline-wrap{padding:8px 18px 4px;margin-bottom:10px}
+.timeline{padding:17px 0 6px}
+.tc{width:36px;height:36px;font-size:16px;border-width:2px}
+.ts:not(:last-child)::after{top:16.5px}
+.ts.active::before,.ts.active-pending::before{top:-17px}
+.tl{margin-top:6px}
+.td2{margin-top:2px}
 .td2{font-size:12.5px}
 .det-meta{font-size:14px;border-top-color:var(--rk-blue1)}
 .dml,.wf-ml{font:700 11px var(--rk-display);letter-spacing:.1em;color:var(--rk-muted)}
@@ -1401,6 +1410,8 @@ input::placeholder,textarea::placeholder{color:#767B82}
   body.todo-on .sub-summary{grid-template-columns:repeat(2,1fr)}
   .sub-label{font-size:22px}
   .ssc{min-height:72px;padding:12px 10px 9px}
+  .tc{width:30px;height:30px;font-size:14px}
+  .ts:not(:last-child)::after{top:13.5px}
   .ssc-n{font-size:20px}
   .sw{max-width:none}
   input[type=text],input[type=date],input[type=password],select.ms,textarea,.login-field-wrap input{font-size:16px}
@@ -1837,7 +1848,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-11-18 · 15:30';
+const HUB_BUILD = '2026-11-19 · 14:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
