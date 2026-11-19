@@ -1020,6 +1020,8 @@ header::after{display:none}
 header .btn-outline{height:44px;padding:0 18px;font-size:14px}
 #cc-btn{background:#fff;color:#1B4DA0;border:0;box-shadow:inset 0 0 0 1.5px #1B4DA0}
 #cc-btn:hover{background:var(--rk-green7);color:#fff;box-shadow:inset 0 0 0 1.5px var(--rk-green7),0 8px 20px rgba(26,113,62,.22)}
+/* Sign out turns red on hover — leaving, not going somewhere */
+header [onclick="doLogout()"]:hover{background:var(--rk-red);color:#fff;box-shadow:inset 0 0 0 1.5px var(--rk-red),0 8px 20px rgba(165,42,36,.22)}
 
 /* ═══════════════════════════ PHASE CARDS — option B: four cards, the open one in Deep Ink ═══════════════════════════ */
 main{padding-bottom:96px}
@@ -1848,7 +1850,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-11-19 · 15:00';
+const HUB_BUILD = '2026-11-19 · 16:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -3097,10 +3099,11 @@ function renderTable(rows) {
 
   const pf    = S.phaseFilter;
   const isP34 = pf==='p3';
-  // WHS Prepare Order: nothing has shipped, so the Truck column is always
-  // empty there — leave it out and give the long Store Order names the room.
+  // WHS Prepare Order: nothing has shipped or moved, so the Truck and Transit
+  // columns say nothing there — leave them out and give the long Store Order
+  // names the room. (showTruck covers both.)
   const showTruck = !(pf === 'p4' && S.subFilter === 'p4_whs');
-  const cols  = isP34 ? 7 : (showTruck ? 13 : 12);   // Phase 4 gained Last Updated
+  const cols  = isP34 ? 7 : (showTruck ? 13 : 11);   // Phase 4 gained Last Updated
 
   // Which identifier leads the table depends on the Phase 4 card in view.
   // Up to the actual count there is no CDF Ref yet, so Store Order leads. Once
@@ -3140,7 +3143,7 @@ function renderTable(rows) {
       <th>→ Hub</th>
       <th>→ Store</th>
       <th onclick="sortBy('dRecv')">Received</th>
-      <th onclick="sortBy('_transit')">Transit</th>
+      ${showTruck ? `<th onclick="sortBy('_transit')">Transit</th>` : ''}
       ${showTruck ? '<th>Truck</th>' : ''}
       <th onclick="sortBy('updatedBy')">Last Updated</th>
       <th></th>
@@ -3199,7 +3202,7 @@ function renderTable(rows) {
           ${hub2?`<span style="display:block;font-size:8px;color:#bbb;text-transform:uppercase;letter-spacing:.4px;margin-bottom:1px">→ Store</span>${fmtD(hub2)}`:'—'}
         </td>
         <td class="td-date${!r.dRecv?' empty':''}">${r.dRecv?fmtD(r.dRecv):'—'}</td>
-        <td class="td-dim" style="font-family:'DM Mono',monospace;${od?'color:#C0392B;font-weight:700':''}">${td!==null?(r.dRecv?td+'d':td+'d ▸'):'—'}</td>
+        ${showTruck ? `<td class="td-dim" style="font-family:'DM Mono',monospace;${od?'color:#C0392B;font-weight:700':''}">${td!==null?(r.dRecv?td+'d':td+'d ▸'):'—'}</td>` : ''}
         ${showTruck ? `<td class="td-dim" style="font-family:'DM Mono',monospace;font-size:11px">${esc(r.truck||'—')}</td>` : ''}
         <td class="td-dim" style="white-space:nowrap">
           ${r.updatedBy
