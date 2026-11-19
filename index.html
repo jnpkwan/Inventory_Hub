@@ -1848,7 +1848,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-11-19 · 14:30';
+const HUB_BUILD = '2026-11-19 · 15:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -3097,7 +3097,10 @@ function renderTable(rows) {
 
   const pf    = S.phaseFilter;
   const isP34 = pf==='p3';
-  const cols  = isP34 ? 7 : 13;   // Phase 4 gained Last Updated
+  // WHS Prepare Order: nothing has shipped, so the Truck column is always
+  // empty there — leave it out and give the long Store Order names the room.
+  const showTruck = !(pf === 'p4' && S.subFilter === 'p4_whs');
+  const cols  = isP34 ? 7 : (showTruck ? 13 : 12);   // Phase 4 gained Last Updated
 
   // Which identifier leads the table depends on the Phase 4 card in view.
   // Up to the actual count there is no CDF Ref yet, so Store Order leads. Once
@@ -3138,7 +3141,7 @@ function renderTable(rows) {
       <th>→ Store</th>
       <th onclick="sortBy('dRecv')">Received</th>
       <th onclick="sortBy('_transit')">Transit</th>
-      <th>Truck</th>
+      ${showTruck ? '<th>Truck</th>' : ''}
       <th onclick="sortBy('updatedBy')">Last Updated</th>
       <th></th>
     </tr>`;
@@ -3197,7 +3200,7 @@ function renderTable(rows) {
         </td>
         <td class="td-date${!r.dRecv?' empty':''}">${r.dRecv?fmtD(r.dRecv):'—'}</td>
         <td class="td-dim" style="font-family:'DM Mono',monospace;${od?'color:#C0392B;font-weight:700':''}">${td!==null?(r.dRecv?td+'d':td+'d ▸'):'—'}</td>
-        <td class="td-dim" style="font-family:'DM Mono',monospace;font-size:11px">${esc(r.truck||'—')}</td>
+        ${showTruck ? `<td class="td-dim" style="font-family:'DM Mono',monospace;font-size:11px">${esc(r.truck||'—')}</td>` : ''}
         <td class="td-dim" style="white-space:nowrap">
           ${r.updatedBy
             ? `<span style="font-weight:600;color:var(--ink)">${esc(r.updatedBy)}</span>
