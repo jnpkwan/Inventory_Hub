@@ -1146,6 +1146,9 @@ tbody tr.exp-row{background:var(--rk-blue05)!important;box-shadow:inset 5px 0 0 
 /* Rows move like the cards: a small lift and shadow, and a blue edge slides in */
 #tbody>tr:not(.det-tr){transition:background .2s cubic-bezier(.4,0,.2,1),transform .2s cubic-bezier(.4,0,.2,1),box-shadow .2s cubic-bezier(.4,0,.2,1)}
 #tbody>tr:not(.det-tr)>td:first-child{transition:box-shadow .2s cubic-bezier(.4,0,.2,1)}
+/* Frozen header (slid down by script): above the rows, with a shadow while frozen */
+#thead{position:relative;z-index:5}
+#thead.frozen th{box-shadow:0 8px 14px -8px rgba(16,33,59,.45)}
 #tbody>tr:not(.det-tr):not(.overdue-row):hover>td:first-child{box-shadow:inset 5px 0 0 #1B4DA0}
 #tbody>tr:not(.det-tr):not(.overdue-row):not(.exp-row):hover{background:var(--rk-blue05)}
 #tbody>tr.overdue-row:hover{background:#F9DEDB}
@@ -1850,7 +1853,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-11-19 · 16:00';
+const HUB_BUILD = '2026-11-19 · 16:30';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -3099,11 +3102,11 @@ function renderTable(rows) {
 
   const pf    = S.phaseFilter;
   const isP34 = pf==='p3';
-  // WHS Prepare Order: nothing has shipped or moved, so the Truck and Transit
-  // columns say nothing there — leave them out and give the long Store Order
-  // names the room. (showTruck covers both.)
+  // WHS Prepare Order: the order hasn't left the warehouse, so → Hub, → Store,
+  // Received, Transit and Truck are always empty there — leave them out and
+  // give the long Store Order names the room. (showTruck covers all five.)
   const showTruck = !(pf === 'p4' && S.subFilter === 'p4_whs');
-  const cols  = isP34 ? 7 : (showTruck ? 13 : 11);   // Phase 4 gained Last Updated
+  const cols  = isP34 ? 7 : (showTruck ? 13 : 8);   // Phase 4 gained Last Updated
 
   // Which identifier leads the table depends on the Phase 4 card in view.
   // Up to the actual count there is no CDF Ref yet, so Store Order leads. Once
@@ -3140,9 +3143,9 @@ function renderTable(rows) {
       <th onclick="sortBy('type')">Type</th>
       <th onclick="sortBy('status')">Workflow Status</th>
       <th onclick="sortBy('dWhs')">WHS</th>
-      <th>→ Hub</th>
+      ${showTruck ? `<th>→ Hub</th>
       <th>→ Store</th>
-      <th onclick="sortBy('dRecv')">Received</th>
+      <th onclick="sortBy('dRecv')">Received</th>` : ''}
       ${showTruck ? `<th onclick="sortBy('_transit')">Transit</th>` : ''}
       ${showTruck ? '<th>Truck</th>' : ''}
       <th onclick="sortBy('updatedBy')">Last Updated</th>
@@ -3153,6 +3156,7 @@ function renderTable(rows) {
   const tbody = document.getElementById('tbody');
   if(!rows.length){
     tbody.innerHTML=`<tr><td colspan="${cols}"><div class="empty-state"><div style="font-size:28px;margin-bottom:8px">📋</div>No records match your filters</div></td></tr>`;
+    syncFrozenHeader();
     return;
   }
 
@@ -3195,13 +3199,14 @@ function renderTable(rows) {
           ${od?'<span class="od-flag">⚠ Delayed</span>':''}
         </td>
         <td class="td-date${!r.dWhs?' empty':''}">${fmtD(r.dWhs)}</td>
+        ${showTruck ? `
         <td class="td-date${!hub1?' empty':''}">
           ${hub1?`<span style="display:block;font-size:8px;color:#bbb;text-transform:uppercase;letter-spacing:.4px;margin-bottom:1px">${r.route==='Via SDC'?'→ SDC':'→ CDC'}</span>${fmtD(hub1)}`:'—'}
         </td>
         <td class="td-date${!hub2?' empty':''}">
           ${hub2?`<span style="display:block;font-size:8px;color:#bbb;text-transform:uppercase;letter-spacing:.4px;margin-bottom:1px">→ Store</span>${fmtD(hub2)}`:'—'}
         </td>
-        <td class="td-date${!r.dRecv?' empty':''}">${r.dRecv?fmtD(r.dRecv):'—'}</td>
+        <td class="td-date${!r.dRecv?' empty':''}">${r.dRecv?fmtD(r.dRecv):'—'}</td>` : ''}
         ${showTruck ? `<td class="td-dim" style="font-family:'DM Mono',monospace;${od?'color:#C0392B;font-weight:700':''}">${td!==null?(r.dRecv?td+'d':td+'d ▸'):'—'}</td>` : ''}
         ${showTruck ? `<td class="td-dim" style="font-family:'DM Mono',monospace;font-size:11px">${esc(r.truck||'—')}</td>` : ''}
         <td class="td-dim" style="white-space:nowrap">
@@ -3223,7 +3228,37 @@ function renderTable(rows) {
            <button class="btn btn-outline btn-sm" onclick="recvShowMore()">Show ${Math.min(RECV_PAGE, recvTotal - rows.length)} more</button>
          </td></tr>`
       : '');
+  syncFrozenHeader();
 }
+
+// ── Frozen table header ────────────────────────────────────────────────────
+// The table sits in a box that scrolls sideways when it's wider than the
+// window, and that box stops a CSS sticky header from sticking to the page.
+// So once the header would scroll up under the cards and filters, it is slid
+// down (translateY) to sit just below them. It stays inside the same table, so
+// it lines up with the columns when scrolled sideways and its sort clicks
+// still work. It stops at the bottom of the list.
+function syncFrozenHeader() {
+  const th = document.getElementById('thead');
+  const tbl = th && th.closest('table');
+  if (!tbl || !tbl.offsetParent) return;
+  const hdr = document.querySelector('header');
+  const sub = document.getElementById('sub-summary');
+  let top = hdr ? hdr.getBoundingClientRect().bottom : 0;
+  if (sub && sub.offsetParent && getComputedStyle(sub).position === 'sticky')
+    top = Math.max(top, sub.getBoundingClientRect().bottom);
+  const room = Math.max(0, tbl.offsetHeight - th.offsetHeight * 2);
+  // ceil − 1: tuck the header a pixel under the block above, so no row can
+  // show through a rounding gap.
+  const off = Math.min(Math.max(0, Math.ceil(top - tbl.getBoundingClientRect().top) - 1), room);
+  th.style.transform = off ? `translateY(${off}px)` : '';
+  th.classList.toggle('frozen', off > 0);
+}
+let _frozenRaf = 0;
+window.addEventListener('scroll', () => {
+  if (!_frozenRaf) _frozenRaf = requestAnimationFrame(() => { _frozenRaf = 0; syncFrozenHeader(); });
+}, { passive: true });
+window.addEventListener('resize', () => syncFrozenHeader());
 
 // Received card: add the next RECV_PAGE rows under the ones already shown.
 // Only the table is redrawn, so the page stays where it is.
