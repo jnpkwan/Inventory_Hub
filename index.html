@@ -1146,9 +1146,9 @@ tbody tr.exp-row{background:var(--rk-blue05)!important;box-shadow:inset 5px 0 0 
 /* Rows move like the cards: a small lift and shadow, and a blue edge slides in */
 #tbody>tr:not(.det-tr){transition:background .2s cubic-bezier(.4,0,.2,1),transform .2s cubic-bezier(.4,0,.2,1),box-shadow .2s cubic-bezier(.4,0,.2,1)}
 #tbody>tr:not(.det-tr)>td:first-child{transition:box-shadow .2s cubic-bezier(.4,0,.2,1)}
-/* Frozen header (slid down by script): above the rows, with a shadow while frozen */
-#thead{position:relative;z-index:5}
-#thead.frozen th{box-shadow:0 8px 14px -8px rgba(16,33,59,.45)}
+/* Frozen header: the pinned copy of the column names (built by script) */
+#thead-float{box-shadow:0 8px 14px -8px rgba(16,33,59,.45);border-radius:0}
+#thead-float th{white-space:nowrap;overflow:hidden;text-overflow:clip}
 #tbody>tr:not(.det-tr):not(.overdue-row):hover>td:first-child{box-shadow:inset 5px 0 0 #1B4DA0}
 #tbody>tr:not(.det-tr):not(.overdue-row):not(.exp-row):hover{background:var(--rk-blue05)}
 #tbody>tr.overdue-row:hover{background:#F9DEDB}
@@ -1853,7 +1853,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-11-19 · 16:30';
+const HUB_BUILD = '2026-11-19 · 17:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -3232,33 +3232,53 @@ function renderTable(rows) {
 }
 
 // ── Frozen table header ────────────────────────────────────────────────────
-// The table sits in a box that scrolls sideways when it's wider than the
-// window, and that box stops a CSS sticky header from sticking to the page.
-// So once the header would scroll up under the cards and filters, it is slid
-// down (translateY) to sit just below them. It stays inside the same table, so
-// it lines up with the columns when scrolled sideways and its sort clicks
-// still work. It stops at the bottom of the list.
+// Once the column names would scroll up under the cards and filters, a copy
+// of the header row is pinned just below them. A copy (not the real header)
+// because Safari can't move or layer a table's own header section reliably,
+// and the table's sideways-scroll box stops CSS sticky from working. The copy
+// takes each column's exact width, slides sideways with the table, and its
+// column names sort like the real ones (same onclick). The real header is
+// never touched.
 function syncFrozenHeader() {
   const th = document.getElementById('thead');
   const tbl = th && th.closest('table');
-  if (!tbl || !tbl.offsetParent) return;
+  const tw = tbl && tbl.parentElement;
+  let fx = document.getElementById('thead-float');
+  const hide = () => { if (fx) fx.style.display = 'none'; };
+  if (!tbl || !tbl.offsetParent || !th.rows.length) return hide();
   const hdr = document.querySelector('header');
   const sub = document.getElementById('sub-summary');
   let top = hdr ? hdr.getBoundingClientRect().bottom : 0;
   if (sub && sub.offsetParent && getComputedStyle(sub).position === 'sticky')
     top = Math.max(top, sub.getBoundingClientRect().bottom);
-  const room = Math.max(0, tbl.offsetHeight - th.offsetHeight * 2);
-  // ceil − 1: tuck the header a pixel under the block above, so no row can
-  // show through a rounding gap.
-  const off = Math.min(Math.max(0, Math.ceil(top - tbl.getBoundingClientRect().top) - 1), room);
-  th.style.transform = off ? `translateY(${off}px)` : '';
-  th.classList.toggle('frozen', off > 0);
+  const tb = tbl.getBoundingClientRect();
+  if (tb.top >= top || tb.bottom - th.offsetHeight * 2 <= top) return hide();
+  if (!fx) {
+    fx = document.createElement('div');
+    fx.id = 'thead-float';
+    fx.innerHTML = '<table><thead></thead></table>';
+    document.body.appendChild(fx);
+  }
+  if (!tw._frozenBound) { tw.addEventListener('scroll', syncFrozenHeader, { passive: true }); tw._frozenBound = true; }
+  const twR = tw.getBoundingClientRect();
+  fx.style.cssText = `display:block;position:fixed;z-index:139;overflow:hidden;top:${Math.floor(top) - 1}px;left:${twR.left}px;width:${tw.clientWidth}px`;
+  const ft = fx.firstChild;
+  if (fx._src !== th.innerHTML) { ft.tHead.innerHTML = th.innerHTML; fx._src = th.innerHTML; }
+  ft.style.cssText = `table-layout:fixed;border-collapse:collapse;width:${tbl.offsetWidth}px;transform:translateX(${-tw.scrollLeft}px)`;
+  const src = th.rows[0].cells, dst = ft.tHead.rows[0] ? ft.tHead.rows[0].cells : [];
+  for (let i = 0; i < src.length && i < dst.length; i++) {
+    const w = src[i].getBoundingClientRect().width + 'px';
+    dst[i].style.width = w; dst[i].style.minWidth = w; dst[i].style.maxWidth = w;
+  }
 }
 let _frozenRaf = 0;
-window.addEventListener('scroll', () => {
+function frozenSoon() {
   if (!_frozenRaf) _frozenRaf = requestAnimationFrame(() => { _frozenRaf = 0; syncFrozenHeader(); });
-}, { passive: true });
-window.addEventListener('resize', () => syncFrozenHeader());
+}
+window.addEventListener('scroll', frozenSoon, { passive: true });
+window.addEventListener('resize', frozenSoon);
+// a click can switch phase or open the Command Center without a scroll
+document.addEventListener('click', () => setTimeout(frozenSoon, 0), true);
 
 // Received card: add the next RECV_PAGE rows under the ones already shown.
 // Only the table is redrawn, so the page stays where it is.
