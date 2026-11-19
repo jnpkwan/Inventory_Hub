@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#22A749">
+<script>try{if(localStorage.getItem('hub_theme')==='dark'){document.documentElement.classList.add('dark');document.querySelector('meta[name=theme-color]').content='#171717'}}catch(e){}</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -1444,6 +1445,274 @@ input::placeholder,textarea::placeholder{color:#767B82}
   .cc-head{padding:18px 18px;border-radius:14px}
   .cc-title{font-size:24px}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK MODE (Nov 2026) — on when <html> has class "dark" (the moon button in
+   the header; remembered per device). Shade from the Document Generator:
+   #171717 page with a faint grid, #2C2C2C raised and active, green #51A554
+   accent. Only colours change here — no sizes, no layout.
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.dark{
+  color-scheme:dark;
+  --dk-bg:#171717; --dk-grid:#212122;
+  --dk-1:#1E1E1E;   /* cards, panels */
+  --dk-2:#252525;   /* zebra rows, inputs, quiet fills */
+  --dk-3:#2C2C2C;   /* raised, active, headers */
+  --dk-4:#353535;   /* hover */
+  --dk-line:#2F2F2F; --dk-line2:#3A3A3A; --dk-line3:#4A4A4A;
+  --dk-tx:#F2F2F2; --dk-tx2:#BBBBBB; --dk-tx3:#8E8E8E;
+  --dk-green:#51A554; --dk-green-bg:#1C2B20; --dk-blue:#5B8FE3; --dk-blue-bg:#1D2533;
+  --dk-red:#E5635B; --dk-red-bg:#351E1D; --dk-yel:#FFC62E; --dk-yel-bg:#2F2810; --dk-yel-tx:#F1CC6B;
+  --dk-teal:#4CC2B4; --dk-teal-bg:#152C29; --dk-purple:#C38BE3; --dk-purple-bg:#2A1F31;
+
+  /* old tokens */
+  --white:var(--dk-1); --paper:var(--dk-1); --fog:var(--dk-bg); --mist:var(--dk-2);
+  --carbon:var(--dk-tx); --ink:var(--dk-tx); --slate:var(--dk-tx2);
+  --silver:var(--dk-line2); --silver-d:var(--dk-line3);
+  --blue:#3F74CF; --blue-d:#5B8FE3; --blue-dd:#8FB3EE;
+  --blue-pale:var(--dk-blue-bg); --blue-tint:var(--dk-blue-bg); --blue-mid:#3B5480; --sky:var(--dk-blue-bg);
+  --green-pale:var(--dk-green-bg); --green-tint:var(--dk-green-bg); --green-mid:#2F5C3B; --green-dd:#7BC985; --green-d:#3F9B4E;
+  --amber-pale:var(--dk-yel-bg); --amber-d:var(--dk-yel-tx);
+  --red-pale:var(--dk-red-bg); --red-d:#F08A84; --red-mid:#6B3330;
+  --teal-pale:var(--dk-teal-bg); --teal-d:var(--dk-teal); --grey-pale:var(--dk-2);
+  --sh:0 1px 2px rgba(0,0,0,.3); --shm:0 8px 24px rgba(0,0,0,.4); --shl:0 20px 48px rgba(0,0,0,.55);
+  --ring-green:0 0 0 3px rgba(81,165,84,.25); --ring-blue:0 0 0 3px rgba(91,143,227,.25);
+
+  /* Accounting Hub tokens */
+  --rk-ink:var(--dk-tx); --rk-carbon:var(--dk-tx); --rk-muted:var(--dk-tx2);
+  --rk-mist:var(--dk-bg); --rk-silver:var(--dk-line2);
+  --rk-blue05:var(--dk-blue-bg); --rk-blue1:#3A4A66; --rk-blue3:#3F5A87; --rk-blue7:#9DBCF0; --rk-sky:var(--dk-blue-bg);
+  --rk-green7:#3F9B4E; --rk-green05:var(--dk-green-bg); --rk-green3:#86D193;
+  --rk-red:#D4483F; --rk-redbg:var(--dk-red-bg); --rk-redline:var(--dk-red); --rk-coral:#F4908A;
+  --rk-yelbg:var(--dk-yel-bg); --rk-yelfg:var(--dk-yel-tx);
+  --rk-depth:var(--dk-3);
+  --rk-rest:0 0 0 1px var(--dk-line); --rk-shadow:0 0 0 1px var(--dk-line2),0 10px 28px rgba(0,0,0,.45); --rk-lift:0 0 0 1px var(--dk-line2),0 24px 56px rgba(0,0,0,.6);
+}
+html.dark body{background:var(--dk-bg);color:var(--dk-tx);
+  background-image:linear-gradient(var(--dk-grid) 1px,transparent 1px),linear-gradient(90deg,var(--dk-grid) 1px,transparent 1px);
+  background-size:48px 48px;background-attachment:fixed}
+html.dark ::selection{background:rgba(81,165,84,.35)}
+html.dark :focus-visible{outline-color:var(--dk-green)}
+html.dark #app{background:transparent}
+
+/* ── Header ── */
+html.dark header,html.dark .sub-sticky:not(:empty){background:rgba(23,23,23,.94)}
+html.dark .sub-sticky:not(:empty){box-shadow:0 10px 12px -10px rgba(0,0,0,.6)}
+html.dark .htitle{color:var(--dk-tx2)}
+html.dark .logo img,html.dark header img{filter:none}
+html.dark #hub-build{color:var(--dk-tx3)!important}
+html.dark .user-chip{background:var(--dk-1);border-color:var(--dk-line2);color:var(--dk-tx)}
+html.dark #user-role-badge{background:var(--dk-3);color:var(--dk-tx2)!important}
+html.dark .btn-outline,html.dark #cc-btn{background:transparent;color:var(--dk-tx);box-shadow:inset 0 0 0 1.5px var(--dk-line3)}
+html.dark .btn-outline:hover,html.dark #cc-btn:hover{background:var(--dk-green);color:#fff;box-shadow:inset 0 0 0 1.5px var(--dk-green)}
+html.dark header [onclick="doLogout()"]:hover{background:var(--rk-red);box-shadow:inset 0 0 0 1.5px var(--rk-red)}
+#theme-btn{display:inline-flex;align-items:center;justify-content:center;padding-left:0!important;padding-right:0!important;width:44px}
+#theme-btn .ic-sun,html.dark #theme-btn .ic-moon{display:none}
+html.dark #theme-btn .ic-sun{display:block}
+@media (max-width:768px){#theme-btn{width:40px}}
+
+/* ── Phase cards: like the Document Generator menu — #2C2C2C when open, green edge ── */
+html.dark .phc{background:var(--dk-1);box-shadow:inset 0 0 0 1px var(--dk-line)}
+html.dark .phc:hover{box-shadow:inset 0 0 0 1px var(--dk-line3)}
+html.dark .phc-l{color:var(--dk-blue)}
+html.dark .phc.active{background:var(--dk-3);box-shadow:inset 0 0 0 1px var(--dk-line2)}
+html.dark .phc.active::after{background:var(--dk-green)}
+html.dark .phc.active .phc-num{color:var(--dk-green)}
+html.dark .phc.active .phc-sub{color:var(--dk-tx2)}
+
+/* ── Mini cards ── */
+html.dark .sub-label{color:var(--dk-tx)}
+html.dark .ssc{background:var(--dk-1);border-color:var(--dk-line)}
+html.dark .ssc:hover{border-color:var(--dk-line3)}
+html.dark .ssc-l{color:var(--dk-tx2)}
+html.dark .ssc.active{background:var(--dk-3);border-color:var(--dk-line2);box-shadow:inset 4px 0 0 var(--dk-green)}
+html.dark .ssc[onclick]{background:var(--dk-green-bg);border-color:var(--dk-green)!important}
+html.dark .ssc[onclick] .ssc-n,html.dark .ssc[onclick] .ssc-l{color:var(--dk-green)!important}
+
+/* ── Filters ── */
+html.dark .sw input[type=text],html.dark select.fs,html.dark .owner-view select{background-color:var(--dk-1);border-color:var(--dk-line2);color:var(--dk-tx)}
+html.dark .sw input[type=text]:hover{background-color:var(--dk-1);border-color:var(--dk-line3)}
+html.dark .sw input[type=text]:focus,html.dark select.fs:focus{border-color:var(--dk-green);box-shadow:var(--ring-green)}
+html.dark select.fs.active{background-color:var(--dk-3);border-color:var(--dk-green);color:var(--dk-tx)}
+html.dark .dw input{background:var(--dk-1);border-color:#6B5A24;color:var(--dk-tx)}
+html.dark .btn-toggle{background:transparent;color:var(--dk-tx);box-shadow:inset 0 0 0 1.5px var(--dk-line3)}
+html.dark .btn-toggle:hover{background:var(--dk-green);color:#fff;box-shadow:inset 0 0 0 1.5px var(--dk-green)}
+html.dark .btn-toggle.active{background:var(--dk-3);color:var(--dk-tx);box-shadow:inset 0 0 0 1.5px var(--dk-green)}
+html.dark .fchip{background:var(--dk-3);color:var(--dk-tx);box-shadow:inset 0 0 0 1px var(--dk-line3)}
+html.dark .fbar-clear{color:var(--dk-blue)}
+
+/* ── Table ── */
+html.dark .tcard{background:var(--dk-1);box-shadow:inset 0 0 0 1px var(--dk-line)}
+html.dark .tcard-header{background:var(--dk-1);border-bottom-color:var(--dk-line)}
+html.dark .tcard-title{color:var(--dk-green)}
+html.dark #total-pill{background:var(--dk-3)!important;color:var(--dk-tx)!important}
+html.dark thead th{background:var(--dk-3);color:var(--dk-tx2);border-bottom:1px solid var(--dk-line2)}
+html.dark thead th:hover{background:var(--dk-4);color:var(--dk-tx)}
+html.dark thead th.sorted{color:var(--dk-green)}
+html.dark th[style*="#1a3a7a"]{background:#1D2533!important;color:var(--dk-tx)!important;box-shadow:inset 0 -3px 0 var(--dk-green)}
+html.dark tbody tr:nth-child(odd):not(.det-tr):not(.exp-row){background:var(--dk-1)}
+html.dark tbody tr:nth-child(even):not(.det-tr):not(.exp-row){background:var(--dk-2)}
+html.dark #tbody>tr:not(.det-tr):not(.overdue-row):not(.exp-row):hover,html.dark tbody tr:hover:not(.det-tr){background:var(--dk-3)}
+html.dark #tbody>tr:not(.det-tr):not(.overdue-row):hover>td:first-child{box-shadow:inset 5px 0 0 var(--dk-green)}
+@media (prefers-reduced-motion: no-preference){
+  html.dark #tbody>tr:not(.det-tr):hover{box-shadow:0 8px 20px rgba(0,0,0,.5)}
+}
+html.dark tbody tr.overdue-row,html.dark tbody tr.overdue-row:nth-child(n){background:var(--dk-red-bg)}
+html.dark tbody tr.overdue-row:hover,html.dark #tbody>tr.overdue-row:hover{background:#40231F}
+html.dark tbody tr.exp-row{background:var(--dk-3)!important;box-shadow:inset 5px 0 0 var(--dk-green)}
+html.dark td{border-color:var(--dk-line)}
+html.dark .td-cdf{color:var(--dk-blue)}
+html.dark .td-store{color:var(--dk-tx)}
+html.dark .td-date.empty{color:#6E6E6E}
+html.dark #tbody tr.more-row,html.dark #tbody tr.more-row:hover{background:var(--dk-1)!important}
+html.dark #tbody tr.more-row>td{border-top-color:var(--dk-line)}
+html.dark #thead-float{box-shadow:0 8px 14px -8px rgba(0,0,0,.8)}
+
+/* ── Status tags ── */
+html.dark .wb-await,html.dark .wfs-pending{background:transparent;color:var(--dk-tx2);box-shadow:inset 0 0 0 1px var(--dk-line3)}
+html.dark .wb-action,html.dark .wfs-changes,html.dark .btn-changes{color:#1A1A1A}
+html.dark .wb-done,html.dark .wfs-approved{background:var(--dk-green-bg);color:#86D193}
+html.dark .wb-info,html.dark .wfs-sent{background:var(--dk-blue-bg);color:#9DBCF0}
+html.dark .wfs-fulfilled{background:var(--dk-teal-bg);color:var(--dk-teal)}
+
+/* ── Opened ticket ── */
+html.dark .det-tr>td{background:var(--dk-2);border-bottom-color:var(--dk-line2)!important}
+html.dark .timeline-wrap{background:var(--dk-1);box-shadow:inset 0 0 0 1px var(--dk-line)}
+html.dark .tl-received{background:var(--dk-green-bg)} html.dark .tl-transit{background:var(--dk-blue-bg)} html.dark .tl-pending{background:var(--dk-yel-bg)}
+html.dark .tl-hold{background:var(--dk-2)} html.dark .tl-attn{background:var(--dk-red-bg)}
+html.dark .tc{background:var(--dk-2);border-color:var(--dk-line3);color:var(--dk-tx2)}
+html.dark .det-meta{border-top-color:var(--dk-line2)}
+html.dark .wf-panel{background:var(--dk-1);box-shadow:inset 0 0 0 1px var(--dk-line)}
+html.dark .wf-panel-hd{background:var(--dk-1);border-bottom-color:var(--dk-line)}
+html.dark .wf-note{color:var(--dk-tx)}
+html.dark .wf-note.resubmit{color:#9DBCF0;box-shadow:inset 4px 0 0 var(--dk-blue)}
+
+/* ── Buttons ── */
+html.dark .btn-primary,html.dark .btn-blue,html.dark .btn-resubmit,html.dark .p1-drop .btn-browse,html.dark .p1-generate,html.dark .p1-btn-dl{background:#3F74CF;color:#fff}
+html.dark .btn-primary:hover,html.dark .btn-blue:hover,html.dark .btn-resubmit:hover,html.dark .btn-approve:hover,html.dark .btn-fulfill:hover,html.dark .p1-drop .btn-browse:hover,html.dark .p1-generate:hover:not(:disabled),html.dark .p1-btn-dl:hover{background:var(--dk-green);color:#fff;box-shadow:0 8px 20px rgba(0,0,0,.45)}
+html.dark .p1-btn-reset{background:transparent;color:var(--dk-tx);box-shadow:inset 0 0 0 1.5px var(--dk-line3)}
+html.dark .p1-btn-reset:hover{background:var(--dk-green);color:#fff;box-shadow:none}
+
+/* ── Forms ── */
+html.dark label{color:var(--dk-tx2)}
+html.dark input[type=text],html.dark input[type=date],html.dark input[type=password],html.dark input[type=number],html.dark input[type=email],html.dark input:not([type]),html.dark select,html.dark textarea{background-color:var(--dk-2);border-color:var(--dk-line3);color:var(--dk-tx)}
+html.dark input[type=text]:hover,html.dark input[type=date]:hover,html.dark input[type=password]:hover,html.dark select.ms:hover,html.dark textarea:hover{background-color:var(--dk-2);border-color:#5A5A5A}
+html.dark input:focus,html.dark select:focus,html.dark textarea:focus{background-color:var(--dk-2);border-color:var(--dk-green);box-shadow:var(--ring-green)}
+html.dark input[type=date]:disabled,html.dark input:disabled,html.dark input[readonly]{background:var(--dk-1);color:var(--dk-tx3);border-color:var(--dk-line)}
+html.dark input::placeholder,html.dark textarea::placeholder{color:#7A7A7A}
+html.dark .section-label{color:var(--dk-green);border-top-color:var(--dk-line2)}
+html.dark input[type=checkbox],html.dark input[type=radio]{accent-color:var(--dk-green)}
+
+/* ── Pop-ups ── */
+html.dark .mo,html.dark #p3-upload-modal,html.dark #p4-export-modal,html.dark #sp-modal{background:rgba(0,0,0,.65)!important}
+html.dark .modal,html.dark #p3-upload-modal>div,html.dark #p4-export-modal>div,html.dark #sp-modal>div{background:var(--dk-1)!important;color:var(--dk-tx)}
+html.dark .mh,html.dark #p3-upload-modal>div>div:first-child,html.dark #p4-export-modal>div>div:first-child,html.dark #sp-modal>div>div:first-child{background:var(--dk-3);box-shadow:inset 0 -1px 0 var(--dk-line2)}
+html.dark .mf{background:var(--dk-1);border-top-color:var(--dk-line2);box-shadow:none}
+html.dark #sp-modal button[style*="border:none;background:var(--"],html.dark #p4-export-modal button[style*="border:none;background:var(--"]{background:#3F74CF!important}
+html.dark #sp-modal button[style*="border:none;background:var(--"]:hover:not(:disabled),html.dark #p4-export-modal button[style*="border:none;background:var(--"]:hover:not(:disabled){background:var(--dk-green)!important}
+html.dark .alert-info{color:#9DBCF0;box-shadow:inset 4px 0 0 var(--dk-blue)}
+html.dark .alert-err{color:#F4A39D}
+
+/* ── Toasts ── */
+html.dark .toast{background:var(--dk-3);color:var(--dk-tx);box-shadow:0 0 0 1px var(--dk-line2),0 20px 48px rgba(0,0,0,.6)}
+html.dark .toast.ok{box-shadow:inset 5px 0 0 var(--dk-green),0 0 0 1px var(--dk-line2),0 20px 48px rgba(0,0,0,.6)}
+
+/* ── Command Center & KPIs ── */
+html.dark .cc-head{background:var(--dk-3);box-shadow:inset 0 0 0 1px var(--dk-line2)}
+html.dark .cc-sub{color:var(--dk-tx2)}
+html.dark .cc-kpi,html.dark .kpi-block{background:var(--dk-1);box-shadow:inset 0 0 0 1px var(--dk-line)}
+html.dark .cc-tbl th{background:var(--dk-3);color:var(--dk-tx2)}
+html.dark .cc-tbl td{border-color:var(--dk-line)}
+html.dark .cc-tbl tbody tr:nth-child(even) td{background:var(--dk-2)}
+html.dark .cc-grp-t{color:var(--dk-blue)}
+html.dark .kpi-bh{border-bottom-color:var(--dk-line)}
+html.dark .kb-all .kpi-bh{background:var(--dk-blue-bg);--kb-c:var(--dk-blue)}
+html.dark .kb-ia .kpi-bh{background:var(--dk-purple-bg);--kb-c:var(--dk-purple)}
+html.dark .kb-wh .kpi-bh{background:var(--dk-teal-bg);--kb-c:var(--dk-teal)}
+html.dark .kpi-win button.on{background:#3F74CF}
+
+/* ── To do panel ── */
+html.dark #todo-panel{background:var(--dk-1)}
+html.dark #todo-panel.todo-tab button{background:var(--dk-3);color:var(--dk-tx);box-shadow:inset 0 0 0 1px var(--dk-line2)}
+html.dark #todo-panel.todo-tab b{color:var(--dk-tx)}
+html.dark .td-head{background:var(--dk-3)}
+html.dark .td-sub{color:var(--dk-tx2)}
+html.dark .td-amber .td-gh b{color:#1A1A1A}
+html.dark .td-next .td-gh{color:var(--dk-blue)} html.dark .td-next .td-gh b{background:#3F74CF}
+html.dark .td-it{background:var(--dk-2);box-shadow:inset 0 0 0 1px var(--dk-line),inset 5px 0 0 var(--td-c,var(--dk-blue))}
+html.dark .td-it:hover{background:var(--dk-3)}
+html.dark .td-it.td-cur{background:var(--dk-3);box-shadow:inset 0 0 0 2px var(--dk-green),inset 5px 0 0 var(--td-c,var(--dk-blue))}
+html.dark .td-next .td-it,html.dark .td-it.td-s-next{--td-c:var(--dk-blue)} html.dark .td-it.td-s-info{--td-c:#5A5A5A}
+html.dark .td-nx{color:var(--dk-blue)}
+html.dark .td-foot{background:var(--dk-1);border-top-color:var(--dk-line)}
+
+/* ── Phase 1 & 2 ── */
+html.dark .p1-card,html.dark .p1-progress,html.dark .p1-results{background:var(--dk-1)}
+html.dark .p1-card{box-shadow:inset 0 0 0 1px var(--dk-line)}
+html.dark .p1-card-h{background:var(--dk-1);border-bottom-color:var(--dk-line)}
+html.dark .p1-step{background:var(--dk-1)}
+html.dark .p1-step.active{border-color:var(--dk-green)}
+html.dark .p1-step-lbl,html.dark .p1-progress-h{color:var(--dk-blue)}
+html.dark .p1-drop{background:var(--dk-2);border-color:var(--dk-line3)}
+html.dark .p1-drop:hover,html.dark .p1-drop.drag-over{background:var(--dk-3);border-color:var(--dk-green)}
+html.dark .p1-pill.blue{color:#9DBCF0}
+html.dark .p1-results{box-shadow:inset 0 0 0 1px var(--dk-line),inset 0 5px 0 var(--dk-green)}
+html.dark .p1-results-t{color:var(--dk-green)}
+
+/* ── Colours written into the page by script (grey text, pale fills) ── */
+html.dark [style*="color:#555"],html.dark [style*="color:#666"],html.dark [style*="color:#777"]{color:var(--dk-tx2)!important}
+html.dark [style*="color:#888"],html.dark [style*="color:#999"],html.dark [style*="color:#aaa"],html.dark [style*="color:#AAA"]{color:var(--dk-tx3)!important}
+html.dark [style*="background:#fff"],html.dark [style*="background:#FFF"],html.dark [style*="background:white"],html.dark [style*="background:#FAFAFA"],html.dark [style*="background:#fafafa"],html.dark [style*="background:#F5F5F7"],html.dark [style*="background:#f5f5f7"],html.dark [style*="background:#F5F8FE"],html.dark [style*="background:#f5f8fe"]{background:var(--dk-2)!important}
+html.dark [style*="background:#FFFBEA"],html.dark [style*="background:#fffbea"],html.dark [style*="background:#FDF1D8"],html.dark [style*="background:#fdf1d8"]{background:var(--dk-yel-bg)!important}
+html.dark [style*="background:#F4FBF6"],html.dark [style*="background:#f4fbf6"]{background:var(--dk-green-bg)!important}
+html.dark [style*="color: rgb(85, 85, 85)"],html.dark [style*="color: rgb(102, 102, 102)"],html.dark [style*="color: rgb(119, 119, 119)"],html.dark [style*="color: #555"],html.dark [style*="color: #666"]{color:var(--dk-tx2)!important}
+html.dark [style*="color: rgb(136, 136, 136)"],html.dark [style*="color: rgb(153, 153, 153)"],html.dark [style*="color: rgb(170, 170, 170)"]{color:var(--dk-tx3)!important}
+html.dark [style*="background: rgb(255, 255, 255)"],html.dark [style*="background-color: rgb(255, 255, 255)"]{background:var(--dk-2)!important}
+html.dark [style*="color:#C0392B"],html.dark [style*="color:#c0392b"]{color:var(--dk-red)!important}
+html.dark [style*="color:#1a1a2e"],html.dark [style*="color:#1A1A2E"]{color:var(--dk-tx)!important}
+html.dark [style*="color:#7A5A00"],html.dark [style*="color:#7a5a00"],html.dark [style*="color:#7A5500"],html.dark [style*="color:#9A6900"],html.dark [style*="color:#8A5A00"]{color:var(--dk-yel-tx)!important}
+html.dark [style*="color:#00695C"],html.dark [style*="color:#00695c"]{color:var(--dk-teal)!important}
+html.dark [style*="color:#1A5A3A"],html.dark [style*="color:#1a5a3a"]{color:#86D193!important}
+html.dark [style*="color:#A3261B"],html.dark [style*="color:#a3261b"]{color:#F4A39D!important}
+html.dark [style*="color:#7B1FA2"],html.dark [style*="color:#9C27B0"]{color:var(--dk-purple)!important}
+html.dark [style*="color:#1A3A7A"],html.dark [style*="color:#1a3a7a"],html.dark [style*="color:#12294E"],html.dark [style*="color:#002266"],html.dark [style*="color:#003C96"]{color:#9DBCF0!important}
+html.dark .btn[style*="background:#ccc"]{background:var(--dk-3)!important;color:var(--dk-tx3)!important}
+
+/* ── Command Center KPIs: the coloured figures, readable on dark ── */
+html.dark .kpi-win button{background:transparent;border-color:var(--dk-line3);color:var(--dk-tx2)}
+html.dark .kpi-win button.on{background:#3F74CF;border-color:#3F74CF;color:#fff}
+html.dark .kpi-keytxt,html.dark .kpi-bd,html.dark .kpi-aim{color:var(--dk-tx2)}
+html.dark .kpi-aim-up::first-letter,html.dark .kpi-aim-down::first-letter{color:var(--dk-blue)}
+html.dark .kd-g{color:#86D193} html.dark .kd-b{color:#F4A39D} html.dark .kd-n{color:var(--dk-tx3)}
+html.dark .kpi-t.kt-good .kpi-n{color:#86D193} html.dark .kpi-t.kt-warn .kpi-n{color:var(--dk-yel-tx)} html.dark .kpi-t.kt-bad .kpi-n{color:#F4A39D}
+html.dark .kv-good{background:var(--dk-green-bg);color:#86D193} html.dark .kv-warn{background:var(--dk-yel-bg);color:var(--dk-yel-tx)} html.dark .kv-bad{background:var(--dk-red-bg);color:#F4A39D}
+html.dark .kb-all .kpi-bt{color:var(--dk-blue)} html.dark .kb-ia .kpi-bt{color:var(--dk-purple)} html.dark .kb-wh .kpi-bt{color:var(--dk-teal)}
+html.dark .ac-intro{color:var(--dk-tx2)}
+@media (max-width:760px){ html.dark #cc-workspace .cc-tbl tr{background:var(--dk-1);border-color:var(--dk-line2)} }
+
+/* ── To do: group names and counts ── */
+html.dark .td-red .td-gh{color:#F4A39D} html.dark .td-red .td-gh b{background:var(--rk-red);color:#fff}
+html.dark .td-amber .td-gh{color:var(--dk-yel-tx)}
+html.dark .td-help .td-gh{color:var(--dk-tx2)} html.dark .td-help .td-gh b{background:var(--dk-3);color:var(--dk-tx)}
+html.dark .td-gh i{color:var(--dk-tx3)}
+html.dark .td-tx{color:var(--dk-tx2)}
+html.dark #todo-panel.todo-tab b{background:var(--dk-green);color:#fff}
+
+/* ── Timeline step names ── */
+html.dark .ts.pending .tl{color:#808080}
+html.dark .tl-received .ts.pending .tl,html.dark .ts.done .tl{color:#86D193}
+html.dark .ts.active .tl{color:var(--dk-blue)}
+html.dark .tl-attn .ts.done .tl,html.dark .tl-attn .ts.active .tl,html.dark .tl-attn .ts.active-pending .tl{color:#F4A39D}
+html.dark .td-date.empty{color:#7A7A7A}
+
+/* ── Tables inside an opened ticket (order lines etc.) ── */
+html.dark .det-tr>td td{background:transparent;border-bottom:1px solid var(--dk-line)!important}
+html.dark thead[style*="background:var(--blue)"],html.dark tr[style*="background:var(--blue)"]{background:var(--dk-3)!important;color:var(--dk-tx2)!important}
+
+/* ── Sign-in (when this device is in dark mode) and the Phase 4 colour strip ── */
+html.dark #login-screen{background:var(--dk-bg);background-image:linear-gradient(var(--dk-grid) 1px,transparent 1px),linear-gradient(90deg,var(--dk-grid) 1px,transparent 1px);background-size:48px 48px}
+html.dark #login-screen .login-box{background:rgba(255,255,255,.05);border-color:var(--dk-line2)}
+html.dark .phc-4{--accent:#6B7FA3}
 </style>
 </head>
 <body>
@@ -1500,6 +1769,7 @@ input::placeholder,textarea::placeholder{color:#767B82}
         <span id="user-role-badge" style="font-size:9.5px;color:#888"></span>
       </div>
       <button class="btn btn-outline btn-sm" id="cc-btn" style="display:none" onclick="openCommandCenter()" title="Executive Command Center">🛰 Command Center</button>
+      <button class="btn btn-outline btn-sm" id="theme-btn" onclick="toggleTheme()" title="Dark mode" aria-label="Dark mode"><svg class="ic-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><svg class="ic-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/></svg></button>
       <button class="btn btn-outline btn-sm" onclick="doLogout()" title="Sign out">⏻</button>
     </div>
   </div>
@@ -1857,7 +2127,7 @@ const ROLE_COLORS = {EXECUTIVE:'#1B4DA0', MANAGER:'#12294E', IS:'#22A749', COORD
 // starts here. The account still shows MANAGER. Mirrors permRole in Code.gs.
 // Shown next to "Live" so anyone can confirm which build they're running.
 // Change it with every release of this file.
-const HUB_BUILD = '2026-11-20 · 09:00';
+const HUB_BUILD = '2026-11-20 · 14:00';
 
 const ROLE_ACTS_AS = { MANAGER: 'EXECUTIVE' };
 function permRole(role) { const r = normRole(role); return ROLE_ACTS_AS[r] || r; }
@@ -1946,6 +2216,21 @@ function showLoginErr(msg) {
   el.textContent = '⚠ ' + msg;
   el.style.display = 'flex';
 }
+
+/* Dark mode — remembered on this device, not per user */
+function toggleTheme() {
+  const dark = document.documentElement.classList.toggle('dark');
+  try { localStorage.setItem('hub_theme', dark ? 'dark' : 'light'); } catch (e) {}
+  syncThemeBtn();
+}
+function syncThemeBtn() {
+  const dark = document.documentElement.classList.contains('dark');
+  const b = document.getElementById('theme-btn');
+  if (b) { b.title = dark ? 'Light mode' : 'Dark mode'; b.setAttribute('aria-label', b.title); }
+  const m = document.querySelector('meta[name=theme-color]');
+  if (m) m.content = dark ? '#171717' : '#22A749';
+}
+syncThemeBtn();
 
 function doLogout() {
   try {
